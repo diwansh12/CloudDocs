@@ -119,7 +119,7 @@ public class SecurityConfig {
             .csrf(AbstractHttpConfigurer::disable)
             
             // ✅ CORS configuration
-            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+            //.cors(cors -> cors.configurationSource(corsConfigurationSource()))
             
             // ✅ Stateless session management
             .sessionManagement(session -> session
