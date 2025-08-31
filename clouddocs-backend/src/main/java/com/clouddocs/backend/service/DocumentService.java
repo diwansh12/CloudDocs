@@ -279,7 +279,7 @@ public class DocumentService {
         shareLink = shareLinksRepository.save(shareLink);
         
         // Generate public URL
-        String baseUrl = "http://localhost:3000"; // Configure this
+        String baseUrl = "https://cloud-docs-tan.vercel.app/"; // Configure this
         String shareUrl = baseUrl + "/shared/" + shareId;
         
         Map<String, Object> response = new HashMap<>();
@@ -310,7 +310,7 @@ public class DocumentService {
         return shareLinks.stream().map(link -> {
             Map<String, Object> linkMap = new HashMap<>();
             linkMap.put("id", link.getShareId());
-            linkMap.put("url", "http://localhost:3000/shared/" + link.getShareId());
+            linkMap.put("url", "https://cloud-docs-tan.vercel.app/shared/" + link.getShareId());
             linkMap.put("expiresAt", link.getExpiresAt().toString());
             linkMap.put("allowDownload", link.getAllowDownload());
             linkMap.put("hasPassword", link.getPassword() != null);

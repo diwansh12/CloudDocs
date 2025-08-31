@@ -39,7 +39,7 @@ public class NotificationService {
     @Value("${app.twilio.phone:+1234567890}")
     private String twilioPhoneNumber;
     
-    @Value("${app.base-url:http://localhost:3000}")
+    @Value("${app.base-url:https://cloud-docs-tan.vercel.app/}")
     private String baseUrl;
 
     // ✅ ADDED: Public method for test notifications
