@@ -1,8 +1,10 @@
 package com.clouddocs.backend.entity;
 
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.List;
 import java.util.UUID;
+import java.util.ArrayList;
 
 @Entity
 @Table(name = "workflow_templates")
@@ -10,7 +12,7 @@ public class WorkflowTemplate {
     
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;  // Changed from Long to UUID
+    private UUID id;
     
     @Column(name = "name", nullable = false)
     private String name;
@@ -25,11 +27,12 @@ public class WorkflowTemplate {
     private WorkflowType type;
     
     @Column(name = "default_sla_hours")
-    private Integer defaultSlaHours;  // Add this field
+    private Integer defaultSlaHours;
     
-    // Add relationship to workflow steps
+    // ✅ CRITICAL: Add @JsonIgnore to prevent serialization issues
     @OneToMany(mappedBy = "template", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @OrderBy("stepOrder ASC")
+    @JsonIgnore  // ✅ Prevents Jackson from trying to serialize lazy collection
     private List<WorkflowStep> steps;
     
     // Constructors
@@ -41,7 +44,16 @@ public class WorkflowTemplate {
         this.type = type;
     }
     
-    // Getters and setters
+    // ✅ Add safe accessor method
+    public List<WorkflowStep> getStepsSafe() {
+        try {
+            return steps != null ? steps : new ArrayList<>();
+        } catch (Exception e) {
+            return new ArrayList<>();
+        }
+    }
+    
+    // All your existing getters and setters remain the same...
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     
@@ -57,7 +69,6 @@ public class WorkflowTemplate {
     public WorkflowType getType() { return type; }
     public void setType(WorkflowType type) { this.type = type; }
     
-    // Add the missing methods
     public List<WorkflowStep> getSteps() { return steps; }
     public void setSteps(List<WorkflowStep> steps) { this.steps = steps; }
     

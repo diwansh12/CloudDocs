@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -558,38 +557,5 @@ public class DocumentController {
             return ResponseEntity.badRequest().body(error);
         }
     }
-
-    @GetMapping("/temp-fix")
-public ResponseEntity<Map<String, Object>> getAllDocumentsTemp(
-        @RequestParam(defaultValue = "0") int page,
-        @RequestParam(defaultValue = "12") int size) {
-    
-    Map<String, Object> response = new HashMap<>();
-    response.put("documents", new ArrayList<>());
-    response.put("currentPage", page);
-    response.put("totalItems", 0L);
-    response.put("totalPages", 0);
-    response.put("hasNext", false);
-    response.put("hasPrevious", false);
-    
-    return ResponseEntity.ok(response);
-}
-
-@GetMapping("/pending/temp-fix")
-@PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
-public ResponseEntity<Map<String, Object>> getPendingDocumentsTemp(
-        @RequestParam(defaultValue = "0") int page,
-        @RequestParam(defaultValue = "3") int size) {
-    
-    Map<String, Object> response = new HashMap<>();
-    response.put("documents", new ArrayList<>());
-    response.put("currentPage", page);
-    response.put("totalItems", 0L);
-    response.put("totalPages", 0);
-    response.put("hasNext", false);
-    response.put("hasPrevious", false);
-    
-    return ResponseEntity.ok(response);
-}
 
 }
