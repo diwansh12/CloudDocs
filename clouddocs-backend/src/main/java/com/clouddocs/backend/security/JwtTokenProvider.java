@@ -15,10 +15,10 @@ import java.util.stream.Collectors;
 @Component
 public class JwtTokenProvider {
     
-    @Value("${app.jwtSecret:mySecretKey123456789012345678901234567890}")
+    @Value("${app.jwtSecret}")
     private String jwtSecret;
     
-    @Value("${app.jwtExpirationMs:86400000}")
+    @Value("${app.jwtExpirationMs}")
     private int jwtExpirationMs;
     
     public String generateJwtToken(Authentication authentication) {
