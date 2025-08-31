@@ -3,8 +3,8 @@ package com.clouddocs.backend.dto.analytics.projections;
 public interface TemplateCountProjection {
     String getTemplateId();
     String getTemplateName();
-    long getTotal();
-    long getApproved();
-    long getRejected();
+    Long getTotal();
+    Long getApproved();
+    Long getRejected();
     Double getAvgDurationHours();
 }

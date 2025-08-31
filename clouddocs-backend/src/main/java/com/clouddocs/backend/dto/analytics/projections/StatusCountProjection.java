@@ -4,6 +4,6 @@ import com.clouddocs.backend.entity.WorkflowStatus;
 
 public interface StatusCountProjection {
     WorkflowStatus getStatus();
-    long getCnt();
+    Long getCount();
 }
 

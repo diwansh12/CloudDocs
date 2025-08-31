@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonFormat;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * DTO for workflow instance with complete details including tasks and history
@@ -15,6 +16,10 @@ public class WorkflowInstanceDTO {
     private Long id;
     private WorkflowStatus status;
     private Integer currentStepOrder;
+    
+    // ✅ ADD: Missing title and description fields
+    private String title;
+    private String description;
     
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime startDate;
@@ -26,8 +31,9 @@ public class WorkflowInstanceDTO {
     private LocalDateTime dueDate;
 
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
-private LocalDateTime updatedDate;
- @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    private LocalDateTime updatedDate;
+    
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime createdDate; 
     
     private WorkflowPriority priority;
@@ -41,7 +47,15 @@ private LocalDateTime updatedDate;
     private Long initiatedById;
     private String initiatedByName;
 
-    // Related data
+    // ✅ ADD: Template details
+    private UUID templateId;
+    private String templateName;
+    
+    // ✅ ADD: Task summary fields
+    private int totalTasks;
+    private int completedTasks;
+
+    // Related data collections
     private List<WorkflowTaskDTO> tasks;
     private List<WorkflowHistoryDTO> history;
     private List<WorkflowStepDTO> steps;
@@ -49,7 +63,26 @@ private LocalDateTime updatedDate;
     // Constructors
     public WorkflowInstanceDTO() {}
 
-    // Getters and Setters
+    // ✅ ADD: Getters and setters for new fields
+    public String getTitle() { return title; }
+    public void setTitle(String title) { this.title = title; }
+
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
+
+    public UUID getTemplateId() { return templateId; }
+    public void setTemplateId(UUID templateId) { this.templateId = templateId; }
+
+    public String getTemplateName() { return templateName; }
+    public void setTemplateName(String templateName) { this.templateName = templateName; }
+
+    public int getTotalTasks() { return totalTasks; }
+    public void setTotalTasks(int totalTasks) { this.totalTasks = totalTasks; }
+
+    public int getCompletedTasks() { return completedTasks; }
+    public void setCompletedTasks(int completedTasks) { this.completedTasks = completedTasks; }
+
+    // Your existing getters and setters remain the same...
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
@@ -72,7 +105,7 @@ private LocalDateTime updatedDate;
     public void setCreatedDate(LocalDateTime createdDate) { this.createdDate = createdDate; }
 
     public LocalDateTime getUpdatedDate() { return updatedDate; }
-public void setUpdatedDate(LocalDateTime updatedDate) { this.updatedDate = updatedDate; }
+    public void setUpdatedDate(LocalDateTime updatedDate) { this.updatedDate = updatedDate; }
 
     public WorkflowPriority getPriority() { return priority; }
     public void setPriority(WorkflowPriority priority) { this.priority = priority; }
