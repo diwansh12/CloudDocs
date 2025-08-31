@@ -6,7 +6,7 @@ class ApiClient {
 
   constructor() {
     this.axiosInstance = axios.create({
-      baseURL: process.env.REACT_APP_API_BASE_URL || 'http://localhost:8080/api',
+      baseURL: process.env.REACT_APP_API_BASE_URL || 'https://clouddocs.onrender.com/api',
       timeout: 60000,
       withCredentials: true, // ✅ Increased timeout for file uploads
       // ✅ REMOVED: Default Content-Type header - set dynamically per request
