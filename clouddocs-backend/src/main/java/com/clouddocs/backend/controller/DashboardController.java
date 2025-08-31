@@ -91,45 +91,44 @@ public class DashboardController {
     /**
  * Get recent documents with proper DTO mapping and role-based access
  */
-@GetMapping("/recent-documents")
-@Transactional(readOnly = true)  // ✅ Add transaction to keep session open
-public ResponseEntity<?> getRecentDocuments(@RequestParam(defaultValue = "10") int limit) {
-    try {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
-        }
+ @GetMapping("/recent-documents")
+    @Transactional(readOnly = true)  // ✅ ADD THIS ANNOTATION
+    public ResponseEntity<?> getRecentDocuments(@RequestParam(defaultValue = "10") int limit) {
+        try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication == null) {
+                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+            }
 
-        boolean isAdmin = authentication.getAuthorities().stream()
-                .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN") || 
-                                auth.getAuthority().equals("ROLE_MANAGER"));
-        
-        Page<Document> documents;
-        
-        if (isAdmin) {
-            // ✅ Use JOIN FETCH to avoid lazy loading issues
-            documents = documentRepository.findRecentDocuments(PageRequest.of(0, limit));
-        } else {
-            // Regular user sees only their own documents
-            UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
-            documents = documentRepository.findByUploadedByIdOrderByUploadDateDesc(
-                userPrincipal.getId(), PageRequest.of(0, limit));
+            boolean isAdmin = authentication.getAuthorities().stream()
+                    .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN") || 
+                                    auth.getAuthority().equals("ROLE_MANAGER"));
+            
+            Page<Document> documents;
+            
+            if (isAdmin) {
+                // ✅ Use JOIN FETCH query
+                documents = documentRepository.findRecentDocuments(PageRequest.of(0, limit));
+            } else {
+                UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
+                documents = documentRepository.findByUploadedByIdOrderByUploadDateDesc(
+                    userPrincipal.getId(), PageRequest.of(0, limit));
+            }
+            
+            // ✅ Convert to DTOs within transaction
+            var documentDTOs = documents.getContent().stream()
+                    .map(this::convertToDTO)
+                    .collect(Collectors.toList());
+            
+            return ResponseEntity.ok(documentDTOs);
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+            Map<String, String> error = new HashMap<>();
+            error.put("error", "Failed to fetch recent documents: " + e.getMessage());
+            return ResponseEntity.status(500).body(error);
         }
-        
-        // ✅ Convert to DTOs within transaction
-        var documentDTOs = documents.getContent().stream()
-                .map(this::convertToDTO)
-                .collect(Collectors.toList());
-        
-        return ResponseEntity.ok(documentDTOs);
-        
-    } catch (Exception e) {
-        e.printStackTrace();
-        Map<String, String> error = new HashMap<>();
-        error.put("error", "Failed to fetch recent documents: " + e.getMessage());
-        return ResponseEntity.status(500).body(error);
     }
-}
 
 /**
  * Convert Document entity to DTO to avoid serialization issues

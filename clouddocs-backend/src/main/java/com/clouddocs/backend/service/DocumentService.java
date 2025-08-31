@@ -199,11 +199,12 @@ public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, Stri
         return documentRepository.findAllTags();
     }
     
-    public Page<DocumentDTO> getPendingDocuments(int page, int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by("uploadDate").ascending());
-        Page<Document> documents = documentRepository.findPendingDocuments(pageable);
-        return documents.map(this::convertToDTO);
-    }
+    @Transactional(readOnly = true)  // ✅ ADD THIS
+public Page<DocumentDTO> getPendingDocuments(int page, int size) {
+    Pageable pageable = PageRequest.of(page, size, Sort.by("uploadDate").ascending());
+    Page<Document> documents = documentRepository.findPendingDocuments(pageable);
+    return documents.map(this::convertToDTO);
+}
     
     // ===== NEW METHODS FOR SHARE AND METADATA =====
     

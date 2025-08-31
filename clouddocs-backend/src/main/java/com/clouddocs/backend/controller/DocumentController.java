@@ -13,6 +13,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.transaction.annotation.Transactional;
+
 
 import java.util.Arrays;
 import java.util.HashMap;
@@ -368,9 +370,10 @@ public class DocumentController {
      */
     @GetMapping("/pending")
     @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @Transactional(readOnly = true)  // ✅ ADD TRANSACTION
     public ResponseEntity<Map<String, Object>> getPendingDocuments(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "3") int size) {  // ✅ Use size=3 as expected by frontend
         
         try {
             Page<DocumentDTO> documents = documentService.getPendingDocuments(page, size);
@@ -380,13 +383,15 @@ public class DocumentController {
             response.put("currentPage", documents.getNumber());
             response.put("totalItems", documents.getTotalElements());
             response.put("totalPages", documents.getTotalPages());
+            response.put("hasNext", documents.hasNext());
+            response.put("hasPrevious", documents.hasPrevious());
             
             return ResponseEntity.ok(response);
             
         } catch (Exception e) {
             Map<String, Object> error = new HashMap<>();
             error.put("error", "Failed to fetch pending documents: " + e.getMessage());
-            return ResponseEntity.badRequest().body(error);
+            return ResponseEntity.status(500).body(error);
         }
     }
 
