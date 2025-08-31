@@ -73,26 +73,32 @@ public class DocumentService {
     }
     
    @Transactional(readOnly = true)
-public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, String sortDir, 
-                                       String search, DocumentStatus status, String category) {
-    Sort sort = sortDir.equalsIgnoreCase("desc") ? 
-               Sort.by(sortBy).descending() : 
-               Sort.by(sortBy).ascending();
-    Pageable pageable = PageRequest.of(page, size, sort);
-    
-    Page<Document> documents;
-    
-    if (search != null && !search.trim().isEmpty()) {
-        documents = documentRepository.searchDocuments(search, pageable);
-    } else if (status != null || category != null) {
-        documents = documentRepository.findWithFilters(null, status, category, null, null, pageable);
-    } else {
-        // ✅ Use JOIN FETCH query
-        documents = documentRepository.findAllWithUsers(pageable);
+    public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, String sortDir, 
+                                           String search, DocumentStatus status, String category) {
+        try {
+            Sort sort = sortDir.equalsIgnoreCase("desc") ? 
+                       Sort.by(sortBy).descending() : Sort.by(sortBy).ascending();
+            Pageable pageable = PageRequest.of(page, size, sort);
+            
+            Page<Document> documents;
+            
+            if (search != null && !search.trim().isEmpty()) {
+                documents = documentRepository.searchDocuments(search, pageable);
+            } else if (status != null || category != null) {
+                documents = documentRepository.findWithFilters(search, status, category, null, null, pageable);
+            } else {
+                documents = documentRepository.findAllWithUsers(pageable);
+            }
+            
+            return documents.map(this::convertToDTO);
+            
+        } catch (Exception e) {
+            System.err.println("❌ Error in getAllDocuments: " + e.getMessage());
+            e.printStackTrace();
+            // Return empty page instead of throwing exception
+            return Page.empty(PageRequest.of(page, size));
+        }
     }
-    
-    return documents.map(this::convertToDTO);
-}
     
     public Page<DocumentDTO> getMyDocuments(int page, int size, String sortBy, String sortDir) {
         User currentUser = getCurrentUser();

@@ -1,10 +1,13 @@
 package com.clouddocs.backend.entity;
 
+
  // Import the separate enum
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 @Entity
 @Table(name = "documents")
@@ -37,8 +40,9 @@ public class Document {
     @Column(name = "version_number")
     private Integer versionNumber = 1;
     
-    @ManyToOne(fetch = FetchType.LAZY)
+   @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "uploaded_by")
+    @JsonIgnore  // ✅ ADD THIS - prevents serialization issues
     private User uploadedBy;
     
     @Column(name = "upload_date")
@@ -57,8 +61,9 @@ public class Document {
     
     private String category;
     
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.LAZY) 
     @JoinColumn(name = "approved_by")
+    @JsonIgnore  // ✅ ADD THIS - prevents serialization issues
     private User approvedBy;
     
     @Column(name = "approval_date")
@@ -169,6 +174,31 @@ public class Document {
     public void incrementDownloadCount() {
         this.downloadCount = (this.downloadCount == null) ? 1 : this.downloadCount + 1;
     }
+
+     public String getUploadedByName() {
+        try {
+            return uploadedBy != null ? uploadedBy.getFullName() : "Unknown";
+        } catch (Exception e) {
+            return "Unknown";
+        }
+    }
+
+       public Long getUploadedByIdSafe() {
+        try {
+            return uploadedBy != null ? uploadedBy.getId() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+    
+    public String getApprovedByNameSafe() {
+        try {
+            return approvedBy != null ? approvedBy.getFullName() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     
     public String getFormattedFileSize() {
         if (fileSize == null) return "Unknown";

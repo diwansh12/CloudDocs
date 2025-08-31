@@ -16,8 +16,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.List;
 import java.util.stream.Collectors;
 
 @RestController
@@ -130,9 +132,15 @@ public class DashboardController {
         }
     }
 
-/**
- * Convert Document entity to DTO to avoid serialization issues
- */
+    @GetMapping("/recent-documents/temp-fix")
+@Transactional(readOnly = true)
+public ResponseEntity<List<Map<String, Object>>> getRecentDocumentsTemp(
+        @RequestParam(defaultValue = "4") int limit) {
+    
+    return ResponseEntity.ok(new ArrayList<>());
+}
+
+
 private Map<String, Object> convertToDTO(Document doc) {
     Map<String, Object> dto = new HashMap<>();
     

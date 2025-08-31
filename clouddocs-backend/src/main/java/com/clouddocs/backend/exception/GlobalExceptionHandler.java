@@ -1,59 +1,50 @@
 package com.clouddocs.backend.exception;
 
-import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.core.Ordered;
-import org.springframework.core.annotation.Order;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatusCode;
+import org.hibernate.LazyInitializationException;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.bind.annotation.ControllerAdvice;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.context.request.WebRequest;
-import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
-
-import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
-@RestControllerAdvice
-@Order(Ordered.HIGHEST_PRECEDENCE)
-public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
-    
-    private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
-    
-    @Override
-    protected ResponseEntity<Object> handleHttpMessageNotReadable(
-            HttpMessageNotReadableException ex, 
-            HttpHeaders headers, 
-            HttpStatusCode status, 
-            WebRequest request) {
+@ControllerAdvice
+public class GlobalExceptionHandler {
+
+    @ExceptionHandler(LazyInitializationException.class)
+    public ResponseEntity<Map<String, Object>> handleLazyInitializationException(
+            LazyInitializationException ex, WebRequest request) {
         
-        String path = request.getDescription(false).replace("uri=", "");
-        logger.error("❌ JSON parsing error for path: {} - Error: {}", path, ex.getMessage());
+        System.err.println("❌ LazyInitializationException: " + ex.getMessage());
+        ex.printStackTrace();
         
-        Map<String, Object> body = new HashMap<>();
-        body.put("timestamp", Instant.now().toString());
-        body.put("status", status.value());
-        body.put("error", "Bad Request");
-        body.put("path", path);
+        Map<String, Object> response = new HashMap<>();
+        response.put("timestamp", LocalDateTime.now());
+        response.put("status", 500);
+        response.put("error", "Data Loading Error");
+        response.put("message", "Unable to load document data. Service temporarily unavailable.");
+        response.put("path", request.getDescription(false));
         
-        // ✅ Handle specific JSON errors with helpful messages
-        if (ex.getCause() instanceof UnrecognizedPropertyException) {
-            UnrecognizedPropertyException upe = (UnrecognizedPropertyException) ex.getCause();
-            body.put("message", String.format("Unknown field '%s' in request. Expected fields: %s", 
-                upe.getPropertyName(), upe.getKnownPropertyIds()));
-        } else {
-            body.put("message", "Invalid JSON format in request body");
-        }
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<Map<String, Object>> handleAllExceptions(
+            Exception ex, WebRequest request) {
         
-        // ✅ Add CORS headers
-        headers.add("Access-Control-Allow-Origin", "https://cloud-docs-tan.vercel.app");
-        headers.add("Access-Control-Allow-Credentials", "true");
+        System.err.println("❌ Unhandled exception: " + ex.getMessage());
+        ex.printStackTrace();
         
-        return new ResponseEntity<>(body, headers, status);
+        Map<String, Object> response = new HashMap<>();
+        response.put("timestamp", LocalDateTime.now());
+        response.put("status", 500);
+        response.put("error", "Internal Server Error");
+        response.put("message", "An unexpected error occurred");
+        response.put("path", request.getDescription(false));
+        
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
     }
 }
-
