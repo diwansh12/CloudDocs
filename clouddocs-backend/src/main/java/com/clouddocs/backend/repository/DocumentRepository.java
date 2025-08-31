@@ -15,75 +15,64 @@ import java.util.List;
 
 @Repository
 public interface DocumentRepository extends JpaRepository<Document, Long> {
+
+    // ===== BASIC FIND METHODS =====
     
     // Find documents by status
     Page<Document> findByStatus(DocumentStatus status, Pageable pageable);
-    
-    // ✅ Fix: Find documents by uploaded user - make sure this method exists
+
+    // Find documents by uploaded user
     Page<Document> findByUploadedBy(User user, Pageable pageable);
-    
-    // ✅ Add: Find documents by uploaded user ID (alternative method)
+
+    // Find documents by uploaded user ID
     Page<Document> findByUploadedById(Long uploadedById, Pageable pageable);
-    
-    // ✅ Add: Find documents by uploaded user ID ordered by date
-    Page<Document> findByUploadedByIdOrderByUploadDateDesc(Long uploadedById, Pageable pageable);
-    
+
+    // ✅ CRITICAL: JOIN FETCH to prevent lazy loading exceptions
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+           "WHERE d.uploadedBy.id = :userId ORDER BY d.uploadDate DESC")
+    Page<Document> findByUploadedByIdOrderByUploadDateDesc(@Param("userId") Long userId, Pageable pageable);
+
     // Find documents by status and user
     Page<Document> findByStatusAndUploadedBy(DocumentStatus status, User user, Pageable pageable);
+
+    // Find documents by category
+    Page<Document> findByCategory(String category, Pageable pageable);
+
+    // Find documents by document type
+    Page<Document> findByDocumentType(String documentType, Pageable pageable);
+
+    // ===== SEARCH AND FILTER METHODS WITH JOIN FETCH =====
     
-    // Search documents by filename or description
-    @Query("SELECT d FROM Document d WHERE " +
+    // ✅ CRITICAL: Search with JOIN FETCH to avoid lazy loading
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy WHERE " +
            "LOWER(d.filename) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
            "LOWER(d.description) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
            "LOWER(d.originalFilename) LIKE LOWER(CONCAT('%', :query, '%'))")
     Page<Document> searchDocuments(@Param("query") String query, Pageable pageable);
-    
-    // Find documents by category
-    Page<Document> findByCategory(String category, Pageable pageable);
-    
-    // Find documents by document type
-    Page<Document> findByDocumentType(String documentType, Pageable pageable);
-    
-    // Find documents uploaded within date range
-    @Query("SELECT d FROM Document d WHERE d.uploadDate BETWEEN :startDate AND :endDate")
+
+    // ✅ CRITICAL: Find all with JOIN FETCH
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy")
+    Page<Document> findAllWithUsers(Pageable pageable);
+
+    // ✅ CRITICAL: Date range with JOIN FETCH
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+           "WHERE d.uploadDate BETWEEN :startDate AND :endDate")
     Page<Document> findByUploadDateBetween(@Param("startDate") LocalDateTime startDate, 
                                          @Param("endDate") LocalDateTime endDate, 
                                          Pageable pageable);
-    
-    // Get documents requiring approval (for managers/admins)
-    @Query("SELECT d FROM Document d WHERE d.status = 'PENDING'")
+
+    // ✅ CRITICAL: Pending documents with JOIN FETCH
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+           "WHERE d.status = 'PENDING'")
     Page<Document> findPendingDocuments(Pageable pageable);
-    
-    // Find recent documents
-    @Query("SELECT d FROM Document d ORDER BY d.uploadDate DESC")
+
+    // ✅ CRITICAL: Recent documents with JOIN FETCH
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+           "ORDER BY d.uploadDate DESC")
     Page<Document> findRecentDocuments(Pageable pageable);
-    
-    // Count documents by status
-    long countByStatus(DocumentStatus status);
-    
-    // ✅ Add: Count documents by user
-    long countByUploadedBy(User user);
-    
-    // ✅ Add: Count documents by user ID
-    long countByUploadedById(Long uploadedById);
-    
-    // ✅ Add: Count documents by user ID and status
-    long countByUploadedByIdAndStatus(Long uploadedById, DocumentStatus status);
-    
-    // Find documents by tags
-    @Query("SELECT DISTINCT d FROM Document d JOIN d.tags t WHERE t IN :tags")
-    Page<Document> findByTagsIn(@Param("tags") List<String> tags, Pageable pageable);
-    
-    // Get all unique categories
-    @Query("SELECT DISTINCT d.category FROM Document d WHERE d.category IS NOT NULL ORDER BY d.category")
-    List<String> findAllCategories();
-    
-    // Get all unique tags
-    @Query("SELECT DISTINCT t FROM Document d JOIN d.tags t ORDER BY t")
-    List<String> findAllTags();
-    
-    // Advanced search with multiple filters
-    @Query("SELECT d FROM Document d WHERE " +
+
+    // ✅ Advanced filter with JOIN FETCH to prevent lazy loading
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy WHERE " +
            "(:query IS NULL OR :query = '' OR " +
            "LOWER(d.filename) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
            "LOWER(COALESCE(d.description, '')) LIKE LOWER(CONCAT('%', :query, '%'))) AND " +
@@ -98,34 +87,53 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
                                  @Param("uploadedBy") User uploadedBy,
                                  Pageable pageable);
 
-    // ===== ✅ FIXED: ADD @Query ANNOTATIONS FOR THESE METHODS =====
+    // ===== COUNT METHODS =====
+    
+    // Count documents by status
+    long countByStatus(DocumentStatus status);
 
-    /**
-     * ✅ FIXED: Count documents by category with proper JPQL
-     */
+    // Count documents by user
+    long countByUploadedBy(User user);
+
+    // Count documents by user ID
+    long countByUploadedById(Long uploadedById);
+
+    // Count documents by user ID and status
+    long countByUploadedByIdAndStatus(Long uploadedById, DocumentStatus status);
+
+    // Count documents uploaded after specific date
+    @Query("SELECT COUNT(d) FROM Document d WHERE d.uploadDate > :date")
+    long countByUploadDateAfter(@Param("date") LocalDateTime date);
+
+    // ===== TAGS AND CATEGORIES =====
+    
+    // Find documents by tags
+    @Query("SELECT DISTINCT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+           "JOIN d.tags t WHERE t IN :tags")
+    Page<Document> findByTagsIn(@Param("tags") List<String> tags, Pageable pageable);
+
+    // Get all unique categories
+    @Query("SELECT DISTINCT d.category FROM Document d WHERE d.category IS NOT NULL ORDER BY d.category")
+    List<String> findAllCategories();
+
+    // Get all unique tags
+    @Query("SELECT DISTINCT t FROM Document d JOIN d.tags t ORDER BY t")
+    List<String> findAllTags();
+
+    // ===== STATISTICS METHODS =====
+    
+    // Count documents by category
     @Query("SELECT d.category as category, COUNT(d) as count FROM Document d " +
            "WHERE d.category IS NOT NULL " +
            "GROUP BY d.category " +
            "ORDER BY COUNT(d) DESC")
     List<Object[]> countByCategory();
 
-    /**
-     * ✅ FIXED: Count documents uploaded after specific date
-     */
-    @Query("SELECT COUNT(d) FROM Document d WHERE d.uploadDate > :date")
-    long countByUploadDateAfter(@Param("date") LocalDateTime date);
-
-    /**
-     * ✅ FIXED: Sum all download counts across documents
-     */
+    // Sum all download counts
     @Query("SELECT COALESCE(SUM(d.downloadCount), 0) FROM Document d")
     long sumDownloadCounts();
 
-    // ===== ADDITIONAL USEFUL STATISTICS METHODS =====
-
-    /**
-     * Get comprehensive document statistics
-     */
+    // Get comprehensive document statistics
     @Query("SELECT " +
            "COUNT(d) as totalCount, " +
            "COUNT(CASE WHEN d.status = 'PENDING' THEN 1 END) as pendingCount, " +
@@ -136,9 +144,7 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
            "FROM Document d")
     Object[] getDocumentStatistics();
 
-    /**
-     * Get upload trends by date
-     */
+    // Get upload trends by date
     @Query("SELECT DATE(d.uploadDate) as uploadDate, COUNT(d) as count " +
            "FROM Document d " +
            "WHERE d.uploadDate >= :startDate " +
@@ -146,15 +152,12 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
            "ORDER BY DATE(d.uploadDate) DESC")
     List<Object[]> getUploadTrendsByDate(@Param("startDate") LocalDateTime startDate);
 
-    /**
-     * Find most downloaded documents
-     */
-    @Query("SELECT d FROM Document d WHERE d.downloadCount > 0 ORDER BY d.downloadCount DESC")
+    // Find most downloaded documents
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+           "WHERE d.downloadCount > 0 ORDER BY d.downloadCount DESC")
     List<Document> findMostDownloadedDocuments(Pageable pageable);
 
-    /**
-     * Get file size statistics
-     */
+    // Get file size statistics
     @Query("SELECT " +
            "COUNT(CASE WHEN d.fileSize < 1048576 THEN 1 END) as smallFiles, " +
            "COUNT(CASE WHEN d.fileSize BETWEEN 1048576 AND 10485760 THEN 1 END) as mediumFiles, " +

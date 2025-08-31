@@ -72,25 +72,27 @@ public class DocumentService {
         }
     }
     
-    public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, String sortDir, 
-                                           String search, DocumentStatus status, String category) {
-        Sort sort = sortDir.equalsIgnoreCase("desc") ? 
-                   Sort.by(sortBy).descending() : 
-                   Sort.by(sortBy).ascending();
-        Pageable pageable = PageRequest.of(page, size, sort);
-        
-        Page<Document> documents;
-        
-        if (search != null && !search.trim().isEmpty()) {
-            documents = documentRepository.searchDocuments(search, pageable);
-        } else if (status != null || category != null) {
-            documents = documentRepository.findWithFilters(null, status, category, null, null, pageable);
-        } else {
-            documents = documentRepository.findAll(pageable);
-        }
-        
-        return documents.map(this::convertToDTO);
+   @Transactional(readOnly = true)
+public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, String sortDir, 
+                                       String search, DocumentStatus status, String category) {
+    Sort sort = sortDir.equalsIgnoreCase("desc") ? 
+               Sort.by(sortBy).descending() : 
+               Sort.by(sortBy).ascending();
+    Pageable pageable = PageRequest.of(page, size, sort);
+    
+    Page<Document> documents;
+    
+    if (search != null && !search.trim().isEmpty()) {
+        documents = documentRepository.searchDocuments(search, pageable);
+    } else if (status != null || category != null) {
+        documents = documentRepository.findWithFilters(null, status, category, null, null, pageable);
+    } else {
+        // ✅ Use JOIN FETCH query
+        documents = documentRepository.findAllWithUsers(pageable);
     }
+    
+    return documents.map(this::convertToDTO);
+}
     
     public Page<DocumentDTO> getMyDocuments(int page, int size, String sortBy, String sortDir) {
         User currentUser = getCurrentUser();
@@ -446,34 +448,38 @@ public class DocumentService {
     // ===== HELPER METHODS =====
     
     private DocumentDTO convertToDTO(Document document) {
-        DocumentDTO dto = new DocumentDTO();
-        dto.setId(document.getId());
-        dto.setFilename(document.getFilename());
-        dto.setOriginalFilename(document.getOriginalFilename());
-        dto.setDescription(document.getDescription());
-        dto.setFileSize(document.getFileSize());
-        dto.setFormattedFileSize(document.getFormattedFileSize());
-        dto.setMimeType(document.getMimeType());
-        dto.setStatus(document.getStatus());
-        dto.setVersionNumber(document.getVersionNumber());
+    DocumentDTO dto = new DocumentDTO();
+    dto.setId(document.getId());
+    dto.setFilename(document.getFilename());
+    dto.setOriginalFilename(document.getOriginalFilename());
+    dto.setDescription(document.getDescription());
+    dto.setFileSize(document.getFileSize());
+    dto.setFormattedFileSize(document.getFormattedFileSize());
+    dto.setMimeType(document.getMimeType());
+    dto.setStatus(document.getStatus());
+    dto.setVersionNumber(document.getVersionNumber());
+    dto.setUploadDate(document.getUploadDate());
+    dto.setLastModified(document.getLastModified());
+    dto.setDownloadCount(document.getDownloadCount());
+    dto.setTags(document.getTags());
+    dto.setCategory(document.getCategory());
+    dto.setDocumentType(document.getDocumentType());
+    
+    // ✅ Access lazy-loaded relationship within transaction
+    if (document.getUploadedBy() != null) {
         dto.setUploadedByName(document.getUploadedBy().getFullName());
         dto.setUploadedById(document.getUploadedBy().getId());
-        dto.setUploadDate(document.getUploadDate());
-        dto.setLastModified(document.getLastModified());
-        dto.setDownloadCount(document.getDownloadCount());
-        dto.setTags(document.getTags());
-        dto.setCategory(document.getCategory());
-        dto.setDocumentType(document.getDocumentType());
-        
-        if (document.getApprovedBy() != null) {
-            dto.setApprovedByName(document.getApprovedBy().getFullName());
-            dto.setApprovalDate(document.getApprovalDate());
-        }
-        
-        dto.setRejectionReason(document.getRejectionReason());
-        
-        return dto;
     }
+    
+    if (document.getApprovedBy() != null) {
+        dto.setApprovedByName(document.getApprovedBy().getFullName());
+        dto.setApprovalDate(document.getApprovalDate());
+    }
+    
+    dto.setRejectionReason(document.getRejectionReason());
+    
+    return dto;
+}
     
     private User getCurrentUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();

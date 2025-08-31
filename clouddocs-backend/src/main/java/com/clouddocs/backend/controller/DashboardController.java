@@ -12,6 +12,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.transaction.annotation.Transactional;
+
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -86,82 +88,88 @@ public class DashboardController {
     /**
      * Get recent documents with proper DTO mapping and role-based access
      */
-    @GetMapping("/recent-documents")
-    public ResponseEntity<?> getRecentDocuments(@RequestParam(defaultValue = "10") int limit) {
-        try {
-            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-            if (authentication == null) {
-                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
-            }
-
-            boolean isAdmin = authentication.getAuthorities().stream()
-                    .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN") || auth.getAuthority().equals("ROLE_MANAGER"));
-            
-            Page<Document> documents;
-            
-            if (isAdmin) {
-                // Admin can see all recent documents
-                documents = documentRepository.findRecentDocuments(PageRequest.of(0, limit));
-            } else {
-                // Regular user sees only their own documents
-                UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
-                documents = documentRepository.findByUploadedByIdOrderByUploadDateDesc(
-                    userPrincipal.getId(), PageRequest.of(0, limit));
-            }
-            
-            // ✅ Convert to DTOs to avoid lazy loading issues
-            var documentDTOs = documents.getContent().stream()
-                    .map(this::convertToDTO)
-                    .collect(Collectors.toList());
-            
-            return ResponseEntity.ok(documentDTOs);
-            
-        } catch (Exception e) {
-            e.printStackTrace();
-            Map<String, String> error = new HashMap<>();
-            error.put("error", "Failed to fetch recent documents: " + e.getMessage());
-            return ResponseEntity.status(500).body(error);
-        }
-    }
-
     /**
-     * Convert Document entity to DTO to avoid serialization issues
-     */
-    private Map<String, Object> convertToDTO(Document doc) {
-        Map<String, Object> dto = new HashMap<>();
+ * Get recent documents with proper DTO mapping and role-based access
+ */
+@GetMapping("/recent-documents")
+@Transactional(readOnly = true)  // ✅ Add transaction to keep session open
+public ResponseEntity<?> getRecentDocuments(@RequestParam(defaultValue = "10") int limit) {
+    try {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+        }
+
+        boolean isAdmin = authentication.getAuthorities().stream()
+                .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN") || 
+                                auth.getAuthority().equals("ROLE_MANAGER"));
         
-        dto.put("id", doc.getId());
-        dto.put("filename", doc.getFilename());
-        dto.put("originalFilename", doc.getOriginalFilename());
-        dto.put("description", doc.getDescription());
-        dto.put("fileSize", doc.getFileSize());
-        dto.put("formattedFileSize", doc.getFormattedFileSize());
-        dto.put("mimeType", doc.getMimeType());
-        dto.put("status", doc.getStatus());
-        dto.put("versionNumber", doc.getVersionNumber());
-        dto.put("uploadDate", doc.getUploadDate());
-        dto.put("lastModified", doc.getLastModified());
-        dto.put("downloadCount", doc.getDownloadCount());
-        dto.put("tags", doc.getTags());
-        dto.put("category", doc.getCategory());
-        dto.put("documentType", doc.getDocumentType());
+        Page<Document> documents;
         
-        // ✅ Safely handle potentially null relationships
-        if (doc.getUploadedBy() != null) {
-            dto.put("uploadedByName", doc.getUploadedBy().getFullName());
-            dto.put("uploadedById", doc.getUploadedBy().getId());
+        if (isAdmin) {
+            // ✅ Use JOIN FETCH to avoid lazy loading issues
+            documents = documentRepository.findRecentDocuments(PageRequest.of(0, limit));
         } else {
-            dto.put("uploadedByName", "Unknown");
-            dto.put("uploadedById", null);
+            // Regular user sees only their own documents
+            UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
+            documents = documentRepository.findByUploadedByIdOrderByUploadDateDesc(
+                userPrincipal.getId(), PageRequest.of(0, limit));
         }
         
-        if (doc.getApprovedBy() != null) {
-            dto.put("approvedByName", doc.getApprovedBy().getFullName());
-            dto.put("approvalDate", doc.getApprovalDate());
-        }
+        // ✅ Convert to DTOs within transaction
+        var documentDTOs = documents.getContent().stream()
+                .map(this::convertToDTO)
+                .collect(Collectors.toList());
         
-        dto.put("rejectionReason", doc.getRejectionReason());
+        return ResponseEntity.ok(documentDTOs);
         
-        return dto;
+    } catch (Exception e) {
+        e.printStackTrace();
+        Map<String, String> error = new HashMap<>();
+        error.put("error", "Failed to fetch recent documents: " + e.getMessage());
+        return ResponseEntity.status(500).body(error);
     }
+}
+
+/**
+ * Convert Document entity to DTO to avoid serialization issues
+ */
+private Map<String, Object> convertToDTO(Document doc) {
+    Map<String, Object> dto = new HashMap<>();
+    
+    dto.put("id", doc.getId());
+    dto.put("filename", doc.getFilename());
+    dto.put("originalFilename", doc.getOriginalFilename());
+    dto.put("description", doc.getDescription());
+    dto.put("fileSize", doc.getFileSize());
+    dto.put("formattedFileSize", doc.getFormattedFileSize());
+    dto.put("mimeType", doc.getMimeType());
+    dto.put("status", doc.getStatus());
+    dto.put("versionNumber", doc.getVersionNumber());
+    dto.put("uploadDate", doc.getUploadDate());
+    dto.put("lastModified", doc.getLastModified());
+    dto.put("downloadCount", doc.getDownloadCount());
+    dto.put("tags", doc.getTags());
+    dto.put("category", doc.getCategory());
+    dto.put("documentType", doc.getDocumentType());
+    
+    // ✅ Now safe to access lazy-loaded relationship within transaction
+    if (doc.getUploadedBy() != null) {
+        dto.put("uploadedByName", doc.getUploadedBy().getFullName());
+        dto.put("uploadedById", doc.getUploadedBy().getId());
+    } else {
+        dto.put("uploadedByName", "Unknown");
+        dto.put("uploadedById", null);
+    }
+    
+    if (doc.getApprovedBy() != null) {
+        dto.put("approvedByName", doc.getApprovedBy().getFullName());
+        dto.put("approvalDate", doc.getApprovalDate());
+    }
+    
+    dto.put("rejectionReason", doc.getRejectionReason());
+    
+    return dto;
+}
+
 }
