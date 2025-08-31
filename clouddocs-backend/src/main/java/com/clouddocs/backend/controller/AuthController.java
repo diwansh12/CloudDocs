@@ -279,4 +279,68 @@ public ResponseEntity<?> fixUserPassword(@RequestBody Map<String, String> reques
     }
 }
 
+@GetMapping("/debug/user-info/{username}")
+public ResponseEntity<Map<String, Object>> getUserInfo(@PathVariable String username) {
+    try {
+        Optional<User> userOpt = userRepository.findByUsername(username);
+        if (userOpt.isEmpty()) {
+            userOpt = userRepository.findByEmail(username);
+        }
+        
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            Map<String, Object> info = new HashMap<>();
+            info.put("userId", user.getId());
+            info.put("username", user.getUsername());
+            info.put("email", user.getEmail());
+            info.put("passwordLength", user.getPassword() != null ? user.getPassword().length() : 0);
+            info.put("passwordFormat", user.getPassword() != null ? 
+                user.getPassword().substring(0, Math.min(20, user.getPassword().length())) + "..." : "NULL");
+            info.put("hasPrefix", user.getPassword() != null && user.getPassword().startsWith("{bcrypt}"));
+            info.put("createdAt", user.getCreatedAt());
+            
+            return ResponseEntity.ok(info);
+        } else {
+            return ResponseEntity.notFound().build();
+        }
+    } catch (Exception e) {
+        return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+    }
+}
+@PostMapping("/debug/reset-user-password")
+public ResponseEntity<?> resetUserPassword(@RequestBody Map<String, String> request) {
+    try {
+        String username = request.get("username");
+        String newPassword = request.get("newPassword");
+        
+        Optional<User> userOpt = userRepository.findByUsername(username);
+        if (userOpt.isEmpty()) {
+            userOpt = userRepository.findByEmail(username);
+        }
+        
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            
+            // Encode the new password with proper prefix
+            String encodedPassword = encoder.encode(newPassword);
+            user.setPassword(encodedPassword);
+            userRepository.save(user);
+            
+            logger.info("✅ Password reset for user: {}", username);
+            
+            return ResponseEntity.ok(Map.of(
+                "message", "Password reset successfully",
+                "username", username,
+                "newPasswordFormat", encodedPassword.substring(0, 20) + "..."
+            ));
+        } else {
+            return ResponseEntity.notFound().build();
+        }
+    } catch (Exception e) {
+        logger.error("Error resetting password", e);
+        return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+    }
+}
+
+
 }
