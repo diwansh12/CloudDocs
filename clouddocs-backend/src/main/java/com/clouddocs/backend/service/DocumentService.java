@@ -9,6 +9,8 @@ import com.clouddocs.backend.entity.User;
 import com.clouddocs.backend.repository.DocumentRepository;
 import com.clouddocs.backend.repository.DocumentShareLinkRepository;
 import com.clouddocs.backend.repository.UserRepository;
+
+import org.hibernate.LazyInitializationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
@@ -19,6 +21,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -27,6 +31,8 @@ import java.util.stream.Collectors;
 @Service
 @Transactional
 public class DocumentService {
+
+     private static final Logger logger = LoggerFactory.getLogger(DocumentService.class);
     
     @Autowired
     private DocumentRepository documentRepository;
@@ -454,39 +460,78 @@ public Page<DocumentDTO> getPendingDocuments(int page, int size) {
     
     // ===== HELPER METHODS =====
     
-    private DocumentDTO convertToDTO(Document document) {
-    DocumentDTO dto = new DocumentDTO();
-    dto.setId(document.getId());
-    dto.setFilename(document.getFilename());
-    dto.setOriginalFilename(document.getOriginalFilename());
-    dto.setDescription(document.getDescription());
-    dto.setFileSize(document.getFileSize());
-    dto.setFormattedFileSize(document.getFormattedFileSize());
-    dto.setMimeType(document.getMimeType());
-    dto.setStatus(document.getStatus());
-    dto.setVersionNumber(document.getVersionNumber());
-    dto.setUploadDate(document.getUploadDate());
-    dto.setLastModified(document.getLastModified());
-    dto.setDownloadCount(document.getDownloadCount());
-    dto.setTags(document.getTags());
-    dto.setCategory(document.getCategory());
-    dto.setDocumentType(document.getDocumentType());
-    
-    // ✅ Access lazy-loaded relationship within transaction
-    if (document.getUploadedBy() != null) {
-        dto.setUploadedByName(document.getUploadedBy().getFullName());
-        dto.setUploadedById(document.getUploadedBy().getId());
+ private DocumentDTO convertToDTO(Document document) {
+        try {
+            DocumentDTO dto = new DocumentDTO();
+            
+            // Basic fields - no lazy loading issues
+            dto.setId(document.getId());
+            dto.setFilename(document.getFilename());
+            dto.setOriginalFilename(document.getOriginalFilename());
+            dto.setDescription(document.getDescription());
+            dto.setFileSize(document.getFileSize());
+            dto.setFormattedFileSize(document.getFormattedFileSize());
+            dto.setMimeType(document.getMimeType());
+            dto.setStatus(document.getStatus());
+            dto.setVersionNumber(document.getVersionNumber());
+            dto.setUploadDate(document.getUploadDate());
+            dto.setLastModified(document.getLastModified());
+            dto.setDownloadCount(document.getDownloadCount());
+            dto.setCategory(document.getCategory());
+            dto.setDocumentType(document.getDocumentType());
+            dto.setRejectionReason(document.getRejectionReason());
+            
+            // ✅ Safe handling of lazy-loaded tags collection
+            try {
+                List<String> tags = document.getTags();
+                dto.setTags(tags != null ? new ArrayList<>(tags) : new ArrayList<>());
+            } catch (LazyInitializationException e) {
+                logger.warn("⚠️ Could not load tags for document {}: Using safe accessor", document.getId());
+                dto.setTags(document.getTagsSafe());
+            }
+            
+            // ✅ Safe handling of lazy-loaded uploadedBy relationship
+            try {
+                if (document.getUploadedBy() != null) {
+                    dto.setUploadedByName(document.getUploadedBy().getFullName());
+                    dto.setUploadedById(document.getUploadedBy().getId());
+                } else {
+                    dto.setUploadedByName("Unknown");
+                    dto.setUploadedById(null);
+                }
+            } catch (LazyInitializationException e) {
+                logger.warn("⚠️ Could not load uploadedBy for document {}: Using safe accessor", document.getId());
+                dto.setUploadedByName(document.getUploadedByNameSafe());
+                dto.setUploadedById(document.getUploadedByIdSafe());
+            }
+            
+            // ✅ Safe handling of lazy-loaded approvedBy relationship
+            try {
+                if (document.getApprovedBy() != null) {
+                    dto.setApprovedByName(document.getApprovedBy().getFullName());
+                    dto.setApprovalDate(document.getApprovalDate());
+                }
+            } catch (LazyInitializationException e) {
+                logger.warn("⚠️ Could not load approvedBy for document {}: Using safe accessor", document.getId());
+                dto.setApprovedByName(document.getApprovedByNameSafe());
+                dto.setApprovalDate(document.getApprovalDate());
+            }
+            
+            return dto;
+            
+        } catch (Exception e) {
+            logger.error("❌ Error converting document {} to DTO: {}", document.getId(), e.getMessage(), e);
+            
+            // Return minimal DTO on error
+            DocumentDTO dto = new DocumentDTO();
+            dto.setId(document.getId());
+            dto.setFilename(document.getFilename());
+            dto.setStatus(document.getStatus());
+            dto.setTags(new ArrayList<>());
+            dto.setUploadedByName("Unknown");
+            return dto;
+        }
     }
-    
-    if (document.getApprovedBy() != null) {
-        dto.setApprovedByName(document.getApprovedBy().getFullName());
-        dto.setApprovalDate(document.getApprovalDate());
-    }
-    
-    dto.setRejectionReason(document.getRejectionReason());
-    
-    return dto;
-}
     
     private User getCurrentUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();

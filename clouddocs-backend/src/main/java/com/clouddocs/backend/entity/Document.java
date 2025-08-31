@@ -1,17 +1,19 @@
 package com.clouddocs.backend.entity;
 
-
- // Import the separate enum
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Entity
 @Table(name = "documents")
 public class Document {
+    
+    private static final Logger logger = LoggerFactory.getLogger(Document.class);
+    
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -33,16 +35,15 @@ public class Document {
     @Column(name = "mime_type")
     private String mimeType;
     
-    // Use the external DocumentStatus enum (NOT an inner enum)
     @Enumerated(EnumType.STRING)
     private DocumentStatus status = DocumentStatus.PENDING;
     
     @Column(name = "version_number")
     private Integer versionNumber = 1;
     
-   @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "uploaded_by")
-    @JsonIgnore  // ✅ ADD THIS - prevents serialization issues
+    @JsonIgnore  // ✅ CRITICAL: Prevents Jackson serialization issues
     private User uploadedBy;
     
     @Column(name = "upload_date")
@@ -54,16 +55,17 @@ public class Document {
     @Column(name = "download_count")
     private Integer downloadCount = 0;
     
-    @ElementCollection
+    @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(name = "document_tags", joinColumns = @JoinColumn(name = "document_id"))
     @Column(name = "tags")
+    @JsonIgnore  // ✅ CRITICAL: Prevents lazy collection serialization issues
     private List<String> tags = new ArrayList<>();
     
     private String category;
     
     @ManyToOne(fetch = FetchType.LAZY) 
     @JoinColumn(name = "approved_by")
-    @JsonIgnore  // ✅ ADD THIS - prevents serialization issues
+    @JsonIgnore  // ✅ CRITICAL: Prevents Jackson serialization issues
     private User approvedBy;
     
     @Column(name = "approval_date")
@@ -108,7 +110,44 @@ public class Document {
         return "file";
     }
     
-    // Getters and Setters
+    // ✅ SAFE ACCESSOR METHODS - Prevent LazyInitializationException
+    public String getUploadedByNameSafe() {
+        try {
+            return uploadedBy != null ? uploadedBy.getFullName() : "Unknown";
+        } catch (Exception e) {
+            logger.warn("Could not access uploadedBy for document {}: {}", id, e.getMessage());
+            return "Unknown";
+        }
+    }
+
+    public Long getUploadedByIdSafe() {
+        try {
+            return uploadedBy != null ? uploadedBy.getId() : null;
+        } catch (Exception e) {
+            logger.warn("Could not access uploadedBy ID for document {}: {}", id, e.getMessage());
+            return null;
+        }
+    }
+    
+    public String getApprovedByNameSafe() {
+        try {
+            return approvedBy != null ? approvedBy.getFullName() : null;
+        } catch (Exception e) {
+            logger.warn("Could not access approvedBy for document {}: {}", id, e.getMessage());
+            return null;
+        }
+    }
+
+    public List<String> getTagsSafe() {
+        try {
+            return tags != null ? new ArrayList<>(tags) : new ArrayList<>();
+        } catch (Exception e) {
+            logger.warn("Could not access tags for document {}: {}", id, e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+    
+    // Standard Getters and Setters
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     
@@ -130,7 +169,6 @@ public class Document {
     public String getMimeType() { return mimeType; }
     public void setMimeType(String mimeType) { this.mimeType = mimeType; }
     
-    // Fixed: Use external DocumentStatus enum
     public DocumentStatus getStatus() { return status; }
     public void setStatus(DocumentStatus status) { 
         this.status = status; 
@@ -174,31 +212,6 @@ public class Document {
     public void incrementDownloadCount() {
         this.downloadCount = (this.downloadCount == null) ? 1 : this.downloadCount + 1;
     }
-
-     public String getUploadedByName() {
-        try {
-            return uploadedBy != null ? uploadedBy.getFullName() : "Unknown";
-        } catch (Exception e) {
-            return "Unknown";
-        }
-    }
-
-       public Long getUploadedByIdSafe() {
-        try {
-            return uploadedBy != null ? uploadedBy.getId() : null;
-        } catch (Exception e) {
-            return null;
-        }
-    }
-    
-    public String getApprovedByNameSafe() {
-        try {
-            return approvedBy != null ? approvedBy.getFullName() : null;
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
     
     public String getFormattedFileSize() {
         if (fileSize == null) return "Unknown";
