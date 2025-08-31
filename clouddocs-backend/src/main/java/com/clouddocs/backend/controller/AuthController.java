@@ -22,6 +22,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @CrossOrigin(origins = {"https://cloud-docs-tan.vercel.app", "http://localhost:3000"}, 
              maxAge = 3600, allowCredentials = "true")
@@ -166,4 +167,62 @@ public class AuthController {
         info.put("sampleUsers", sampleUsers);
         return ResponseEntity.ok(info);
     }
+
+    // Debug endpoint to check user existence and password format
+@GetMapping("/debug/user/{username}")
+public ResponseEntity<Map<String, Object>> debugUser(@PathVariable String username) {
+    try {
+        Map<String, Object> info = new HashMap<>();
+        
+        Optional<User> userOpt = userRepository.findByUsername(username);
+        if (userOpt.isEmpty()) {
+            userOpt = userRepository.findByEmail(username);
+        }
+        
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            info.put("userExists", true);
+            info.put("userId", user.getId());
+            info.put("username", user.getUsername());
+            info.put("email", user.getEmail());
+            info.put("enabled", user.isEnabled());
+            info.put("role", user.getRole());
+            
+            // Show password format (first 20 chars for security)
+            String passwordPreview = user.getPassword() != null ? 
+                user.getPassword().substring(0, Math.min(20, user.getPassword().length())) + "..." : "NULL";
+            info.put("passwordFormat", passwordPreview);
+            info.put("passwordLength", user.getPassword() != null ? user.getPassword().length() : 0);
+            info.put("startsWithBcrypt", user.getPassword() != null && user.getPassword().startsWith("{bcrypt}"));
+            
+        } else {
+            info.put("userExists", false);
+            info.put("totalUsers", userRepository.count());
+        }
+        
+        return ResponseEntity.ok(info);
+    } catch (Exception e) {
+        return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+    }
+}
+
+// Test password encoding
+@PostMapping("/debug/test-password")
+public ResponseEntity<Map<String, Object>> testPassword(@RequestBody Map<String, String> request) {
+    try {
+        String rawPassword = request.get("password");
+        String encodedPassword = encoder.encode(rawPassword);
+        
+        Map<String, Object> result = new HashMap<>();
+        result.put("rawPassword", rawPassword);
+        result.put("encodedPassword", encodedPassword);
+        result.put("encoderType", encoder.getClass().getSimpleName());
+        result.put("matchesItself", encoder.matches(rawPassword, encodedPassword));
+        
+        return ResponseEntity.ok(result);
+    } catch (Exception e) {
+        return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+    }
+}
+
 }
