@@ -41,7 +41,7 @@ export const auditApi = {
   async list(params: Record<string, string | null | undefined> = {}):
     Promise<AuditLogItem[]> {
 
-    const url = `${API_BASE}/api/audit?${buildQuery(params)}`;
+    const url = `${API_BASE}/audit?${buildQuery(params)}`;
     const res = await fetch(url, { headers: authHeaders() });
 
     if (!res.ok) throw new Error(`API ${res.status}`);
@@ -49,7 +49,7 @@ export const auditApi = {
   },
 
 exportCsv(params: Record<string, string | null | undefined> = {}) {
-  const url = `${API_BASE}/api/audit/export?${buildQuery(params)}`;
+  const url = `${API_BASE}/audit/export?${buildQuery(params)}`;
   window.open(url, '_blank', 'noopener,noreferrer');           // open first
   // then add the header via fetch‐stream or build the CSV in list()
 }

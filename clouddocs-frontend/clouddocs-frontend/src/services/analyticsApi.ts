@@ -93,7 +93,7 @@ export const analyticsApi = {
       const toParam = formatDateForBackend(to, true);
       
       const response = await fetch(
-        `${API_BASE_URL}/api/workflows/metrics/overview?from=${fromParam}&to=${toParam}`,
+        `${API_BASE_URL}/workflows/metrics/overview?from=${fromParam}&to=${toParam}`,
         { headers: getAuthHeaders() }
       );
       return handleApiResponse<OverviewMetricsDTO>(response);
@@ -111,7 +111,7 @@ export const analyticsApi = {
       const toParam = formatDateForBackend(to, true);
       
       const response = await fetch(
-        `${API_BASE_URL}/api/workflows/metrics/by-template?from=${fromParam}&to=${toParam}`,
+        `${API_BASE_URL}/workflows/metrics/by-template?from=${fromParam}&to=${toParam}`,
         { headers: getAuthHeaders() }
       );
       return handleApiResponse<TemplateMetricsDTO[]>(response);
@@ -129,7 +129,7 @@ export const analyticsApi = {
       const toParam = formatDateForBackend(to, true);
       
       const response = await fetch(
-        `${API_BASE_URL}/api/workflows/metrics/by-step?from=${fromParam}&to=${toParam}`,
+        `${API_BASE_URL}/workflows/metrics/by-step?from=${fromParam}&to=${toParam}`,
         { headers: getAuthHeaders() }
       );
       return handleApiResponse<StepMetricsDTO[]>(response);
@@ -147,7 +147,7 @@ export const analyticsApi = {
       const toParam = formatDateForBackend(to, true);
       
       const response = await fetch(
-        `${API_BASE_URL}/api/workflows/metrics/my?from=${fromParam}&to=${toParam}`,
+        `${API_BASE_URL}/workflows/metrics/my?from=${fromParam}&to=${toParam}`,
         { headers: getAuthHeaders() }
       );
       return handleApiResponse<MyMetricsDTO>(response);
@@ -185,7 +185,7 @@ export const analyticsApi = {
       }
 
       const response = await fetch(
-        `${API_BASE_URL}/api/workflows/metrics/${endpoint}/export?from=${fromParam}&to=${toParam}`,
+        `${API_BASE_URL}/workflows/metrics/${endpoint}/export?from=${fromParam}&to=${toParam}`,
         { headers: getAuthHeaders() }
       );
 
