@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
@@ -221,6 +222,59 @@ public ResponseEntity<Map<String, Object>> testPassword(@RequestBody Map<String,
         
         return ResponseEntity.ok(result);
     } catch (Exception e) {
+        return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+    }
+}
+
+@PostMapping("/debug/fix-user-password")
+public ResponseEntity<?> fixUserPassword(@RequestBody Map<String, String> request) {
+    try {
+        String username = request.get("username");
+        String rawPassword = request.get("password");
+        
+        Optional<User> userOpt = userRepository.findByUsername(username);
+        if (userOpt.isEmpty()) {
+            userOpt = userRepository.findByEmail(username);
+        }
+        
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            
+            // Check if password needs migration (no {bcrypt} prefix)
+            if (!user.getPassword().startsWith("{bcrypt}")) {
+                // Verify the raw password against current hash first
+                BCryptPasswordEncoder bcrypt = new BCryptPasswordEncoder();
+                String storedHash = user.getPassword();
+                
+                if (bcrypt.matches(rawPassword, storedHash)) {
+                    // Add {bcrypt} prefix to existing valid hash
+                    String migratedPassword = "{bcrypt}" + storedHash;
+                    user.setPassword(migratedPassword);
+                    userRepository.save(user);
+                    
+                    logger.info("✅ Migrated password for user: {}", username);
+                    
+                    return ResponseEntity.ok(Map.of(
+                        "message", "Password migrated successfully",
+                        "username", username,
+                        "oldFormat", storedHash.substring(0, 15) + "...",
+                        "newFormat", migratedPassword.substring(0, 20) + "..."
+                    ));
+                } else {
+                    return ResponseEntity.badRequest()
+                        .body(Map.of("error", "Invalid password provided"));
+                }
+            } else {
+                return ResponseEntity.ok(Map.of(
+                    "message", "Password already in correct format",
+                    "username", username
+                ));
+            }
+        } else {
+            return ResponseEntity.notFound().build();
+        }
+    } catch (Exception e) {
+        logger.error("Error fixing user password", e);
         return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
     }
 }
