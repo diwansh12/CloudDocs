@@ -20,7 +20,7 @@ import static org.springframework.http.HttpStatus.UNAUTHORIZED;
 
 @RestController
 @RequestMapping("/tasks")
-@CrossOrigin(origins = "*", maxAge = 3600)
+@CrossOrigin(origins = {"https://cloud-docs-tan.vercel.app", "http://localhost:3000"})
 public class TaskController {
 
     @Autowired private WorkflowTaskRepository taskRepository;

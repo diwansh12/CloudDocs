@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.*;
 @Slf4j
 @RestController
 @RequestMapping("/settings")
-@CrossOrigin(origins = "*")
+@CrossOrigin(origins = {"https://cloud-docs-tan.vercel.app", "http://localhost:3000"})
 @RequiredArgsConstructor
 public class SettingsController {
 

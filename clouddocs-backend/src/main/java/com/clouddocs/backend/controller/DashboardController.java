@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/dashboard")
-@CrossOrigin(origins = "*", maxAge = 3600)
+@CrossOrigin(origins = {"https://cloud-docs-tan.vercel.app", "http://localhost:3000"})
 public class DashboardController {
 
     @Autowired

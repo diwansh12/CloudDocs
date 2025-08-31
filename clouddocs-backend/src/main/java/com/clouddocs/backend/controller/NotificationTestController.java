@@ -12,7 +12,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/test")
-@CrossOrigin(origins = "*")
+@CrossOrigin(origins = {"https://cloud-docs-tan.vercel.app", "http://localhost:3000"})
 public class NotificationTestController {
 
     @Autowired

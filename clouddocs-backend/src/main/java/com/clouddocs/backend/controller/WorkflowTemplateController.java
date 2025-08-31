@@ -23,7 +23,7 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 @RestController
 @RequestMapping("/workflow-templates")
-@CrossOrigin(origins = "*", maxAge = 3600)
+@CrossOrigin(origins = {"https://cloud-docs-tan.vercel.app", "http://localhost:3000"})
 public class WorkflowTemplateController {
 
     @Autowired

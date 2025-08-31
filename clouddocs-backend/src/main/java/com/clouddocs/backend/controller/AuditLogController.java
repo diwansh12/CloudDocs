@@ -142,7 +142,7 @@ public class AuditLogController {
      * Get all audit logs (admin only)
      */
     @GetMapping("/all")
-    @PreAuthorize("hasRole('ADMIN')")
+   @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<List<AuditLog>> getAllAuditLogsAdmin() {
         try {
             List<AuditLog> logs = auditService.getAllAuditLogs();
@@ -285,7 +285,7 @@ public class AuditLogController {
      * Backfill audit logs for existing workflows (admin only)
      */
     @PostMapping("/backfill")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<Map<String, Object>> backfillAuditLogs(Authentication authentication) {
         try {
             List<WorkflowInstance> workflows = workflowInstanceRepository.findAll();
@@ -414,7 +414,7 @@ public class AuditLogController {
      * Get audit statistics (admin only)
      */
     @GetMapping("/stats")
-    @PreAuthorize("hasRole('ADMIN')")
+   @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     public ResponseEntity<Map<String, Object>> getAuditStats() {
         try {
             List<AuditLog> allLogs = auditService.getAllAuditLogs();

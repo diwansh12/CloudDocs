@@ -26,7 +26,7 @@ import static org.springframework.http.HttpStatus.UNAUTHORIZED;
  */
 @RestController
 @RequestMapping("/users/notification-settings")
-@CrossOrigin(origins = "*", maxAge = 3600)
+@CrossOrigin(origins = {"https://cloud-docs-tan.vercel.app", "http://localhost:3000"})
 @PreAuthorize("isAuthenticated()")
 public class NotificationSettingsController {
     

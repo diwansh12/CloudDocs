@@ -21,7 +21,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/documents")
-@CrossOrigin(origins = "*", maxAge = 3600)
+@CrossOrigin(origins = {"https://cloud-docs-tan.vercel.app", "http://localhost:3000"})
 public class DocumentController {
 
     @Autowired

@@ -20,7 +20,7 @@ import java.util.Map;
 @Slf4j
 @RestController
 @RequestMapping("/users/settings")
-@CrossOrigin(origins = "*")
+@CrossOrigin(origins = {"https://cloud-docs-tan.vercel.app", "http://localhost:3000"})
 @RequiredArgsConstructor
 @PreAuthorize("isAuthenticated()")
 public class UserSettingsController {

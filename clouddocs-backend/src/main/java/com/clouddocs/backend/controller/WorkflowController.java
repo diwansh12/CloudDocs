@@ -23,7 +23,7 @@ import java.util.UUID;
 @Slf4j
 @RestController
 @RequestMapping("/workflows")
-@CrossOrigin(origins = "*", maxAge = 3600)
+@CrossOrigin(origins = {"https://cloud-docs-tan.vercel.app", "http://localhost:3000"})
 @RequiredArgsConstructor
 public class WorkflowController {
 
