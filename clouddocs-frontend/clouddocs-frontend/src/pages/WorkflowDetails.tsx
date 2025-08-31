@@ -73,12 +73,14 @@ interface WorkflowStep {
   requiredRoles: string[];
 }
 
-// Progress Component
+// ✅ FIXED: Progress Component with null safety
 const WorkflowProgress = ({ workflow }: { workflow: WorkflowDetails }) => {
-  const completedTasks = workflow.tasks.filter(task => 
+  // ✅ CRITICAL FIX: Safe array filtering with null checks
+  const tasks = workflow?.tasks || [];
+  const completedTasks = tasks.filter(task => 
     task.status === 'COMPLETED' || task.status === 'APPROVED'
   ).length;
-  const totalTasks = workflow.tasks.length;
+  const totalTasks = tasks.length;
   const progressPercentage = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
 
   return (
@@ -100,6 +102,8 @@ const WorkflowProgress = ({ workflow }: { workflow: WorkflowDetails }) => {
 export default function WorkflowDetails() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  
+  // ✅ FIXED: Initialize with safe defaults
   const [workflow, setWorkflow] = useState<WorkflowDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -117,10 +121,17 @@ export default function WorkflowDetails() {
       setLoading(true);
       setError('');
       const data = await workflowService.getWorkflowWithTasks(workflowId);
-      setWorkflow(data);
+      
+      // ✅ CRITICAL FIX: Ensure arrays are never null
+      setWorkflow({
+        ...data,
+        tasks: data.tasks || [],
+        steps: data.steps || [],
+        history: data.history || []
+      });
     } catch (err: any) {
       console.error('Failed to load workflow:', err);
-      setError(err.message);
+      setError(err.message || 'Failed to load workflow details');
     } finally {
       setLoading(false);
     }
@@ -197,8 +208,8 @@ export default function WorkflowDetails() {
     }
   };
 
-const getPriorityColor = (priority: string | number | null | undefined) => {
-    // Handle null/undefined priority with fallback
+  // ✅ FIXED: Safe priority handling with null checks
+  const getPriorityColor = (priority: string | number | null | undefined) => {
     if (priority === null || priority === undefined) {
       return 'bg-gray-100 text-gray-800 border-gray-200';
     }
@@ -251,6 +262,7 @@ const getPriorityColor = (priority: string | number | null | undefined) => {
     return due.getTime() < now.getTime();
   };
 
+  // ✅ Loading state
   if (loading) {
     return (
       <div className="flex h-screen bg-gray-50">
@@ -314,6 +326,7 @@ const getPriorityColor = (priority: string | number | null | undefined) => {
         </header>
 
         <div className="flex-1 p-4 md:p-8 overflow-auto">
+          {/* ✅ Error state */}
           {error ? (
             <Card className="border-red-200 bg-red-50">
               <CardContent className="p-6 flex items-center">
@@ -380,7 +393,7 @@ const getPriorityColor = (priority: string | number | null | undefined) => {
                       <div>
                         <label className="text-sm font-medium text-gray-500">Priority</label>
                         <Badge className={`ml-2 ${getPriorityColor(workflow.priority)}`}>
-                          {workflow.priority}
+                          {workflow.priority || 'Normal'}
                         </Badge>
                       </div>
                     </div>
@@ -424,11 +437,11 @@ const getPriorityColor = (priority: string | number | null | undefined) => {
                 </CardContent>
               </Card>
 
-              {/* Tasks */}
+              {/* ✅ FIXED: Safe Tasks rendering */}
               {workflow.tasks && workflow.tasks.length > 0 && (
                 <Card>
                   <CardHeader>
-                    <CardTitle>Tasks</CardTitle>
+                    <CardTitle>Tasks ({workflow.tasks.length})</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
@@ -499,11 +512,11 @@ const getPriorityColor = (priority: string | number | null | undefined) => {
                 </Card>
               )}
 
-              {/* History */}
+              {/* ✅ FIXED: Safe History rendering */}
               {workflow.history && workflow.history.length > 0 && (
                 <Card>
                   <CardHeader>
-                    <CardTitle>Workflow History</CardTitle>
+                    <CardTitle>Workflow History ({workflow.history.length})</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
@@ -524,12 +537,30 @@ const getPriorityColor = (priority: string | number | null | undefined) => {
                   </CardContent>
                 </Card>
               )}
+
+              {/* ✅ Show message when no tasks or history */}
+              {(!workflow.tasks || workflow.tasks.length === 0) && (!workflow.history || workflow.history.length === 0) && (
+                <Card>
+                  <CardContent className="p-6 text-center">
+                    <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-500">No tasks or history available for this workflow</p>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           ) : (
+            // ✅ No data state
             <Card>
               <CardContent className="p-6 text-center">
                 <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                 <p className="text-gray-500">No workflow data available</p>
+                <Button
+                  variant="outline"
+                  onClick={() => id && loadWorkflow(id)}
+                  className="mt-4"
+                >
+                  Reload
+                </Button>
               </CardContent>
             </Card>
           )}
