@@ -3,6 +3,7 @@ package com.clouddocs.backend.repository;
 import com.clouddocs.backend.dto.analytics.projections.StepMetricsProjection;
 import com.clouddocs.backend.entity.TaskStatus;
 import com.clouddocs.backend.entity.User;
+import com.clouddocs.backend.entity.WorkflowInstance;
 import com.clouddocs.backend.entity.WorkflowTask;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -16,6 +17,9 @@ import java.util.List;
 public interface WorkflowTaskRepository extends JpaRepository<WorkflowTask, Long> {
 
     // Basic queries
+
+     List<WorkflowTask> findByWorkflowInstanceOrderByStepOrder(WorkflowInstance workflowInstance);
+
     List<WorkflowTask> findByAssignedToAndStatus(User assignedTo, TaskStatus status);
     
     Page<WorkflowTask> findByAssignedTo(User assignedTo, Pageable pageable);
