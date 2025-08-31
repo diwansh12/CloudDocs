@@ -3,8 +3,8 @@ package com.clouddocs.backend.repository;
 import com.clouddocs.backend.dto.analytics.projections.StepMetricsProjection;
 import com.clouddocs.backend.entity.TaskStatus;
 import com.clouddocs.backend.entity.User;
-import com.clouddocs.backend.entity.WorkflowInstance;
 import com.clouddocs.backend.entity.WorkflowTask;
+import com.clouddocs.backend.entity.WorkflowInstance;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -16,10 +16,18 @@ import java.util.List;
 
 public interface WorkflowTaskRepository extends JpaRepository<WorkflowTask, Long> {
 
+    // ✅ CRITICAL FIX: Replace the problematic method with explicit @Query
+    @Query("SELECT t FROM WorkflowTask t " +
+           "LEFT JOIN t.workflowStep ws " +
+           "WHERE t.workflowInstance = :workflowInstance " +
+           "ORDER BY ws.stepOrder ASC")
+    List<WorkflowTask> findByWorkflowInstanceOrderByStepOrder(@Param("workflowInstance") WorkflowInstance workflowInstance);
+
+    // ✅ Alternative method name if you prefer method naming convention
+    // (This assumes your WorkflowTask has a 'workflowStep' field with 'stepOrder' property)
+    // List<WorkflowTask> findByWorkflowInstanceOrderByWorkflowStepStepOrder(WorkflowInstance workflowInstance);
+
     // Basic queries
-
-     List<WorkflowTask> findByWorkflowInstanceOrderByStepOrder(WorkflowInstance workflowInstance);
-
     List<WorkflowTask> findByAssignedToAndStatus(User assignedTo, TaskStatus status);
     
     Page<WorkflowTask> findByAssignedTo(User assignedTo, Pageable pageable);
@@ -30,7 +38,7 @@ public interface WorkflowTaskRepository extends JpaRepository<WorkflowTask, Long
     
     long countByAssignedToAndStatus(User assignedTo, TaskStatus status);
 
-    // SLA and Scheduler queries - THESE WERE MISSING
+    // SLA and Scheduler queries
     Page<WorkflowTask> findByStatusAndDueDateBefore(TaskStatus status, LocalDateTime dateTime, Pageable pageable);
     
     List<WorkflowTask> findByStatusAndDueDateBefore(TaskStatus status, LocalDateTime dateTime);
