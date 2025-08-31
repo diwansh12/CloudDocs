@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -25,12 +26,6 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.util.Arrays;
 import java.util.List;
 
-/**
- * ✅ UPDATED: Spring Security 6.1+ compatible configuration
- * - All deprecated methods removed
- * - Production-ready security settings
- * - Environment-based CORS configuration
- */
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity(prePostEnabled = true)
@@ -41,25 +36,19 @@ public class SecurityConfig {
     @Autowired
     private JwtAuthenticationFilter jwtAuthenticationFilter;
 
-    // ✅ PRODUCTION: Environment-based CORS origins
-    @Value("${app.cors.allowed-origins:http://localhost:3000}")
+    // ✅ FIXED: Updated to match your frontend domain
+    @Value("${app.cors.allowed-origins:https://cloud-docs-tan.vercel.app,http://localhost:3000}")
     private String allowedOrigins;
 
     public SecurityConfig(CustomUserDetailsService userDetailsService) {
         this.userDetailsService = userDetailsService;
     }
 
-    /**
-     * ✅ PRODUCTION: Strong password encoding
-     */
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder(12);
     }
 
-    /**
-     * ✅ FIXED: Updated DaoAuthenticationProvider configuration (no deprecations)
-     */
     @Bean
     public DaoAuthenticationProvider authenticationProvider() {
         DaoAuthenticationProvider provider = new DaoAuthenticationProvider(userDetailsService);
@@ -67,40 +56,36 @@ public class SecurityConfig {
         return provider;
     }
 
-    /**
-     * ✅ PRODUCTION: Authentication manager
-     */
     @Bean
     public AuthenticationManager authenticationManager() {
         return new ProviderManager(List.of(authenticationProvider()));
     }
 
     /**
-     * ✅ PRODUCTION: Environment-based CORS configuration
+     * ✅ FIXED: CORS configuration for preflight requests
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         
-        // ✅ PRODUCTION: Use environment variable for allowed origins
+        // ✅ CRITICAL FIX: Use setAllowedOrigins instead of setAllowedOriginPatterns
         List<String> origins = Arrays.asList(allowedOrigins.split(","));
-        configuration.setAllowedOriginPatterns(origins);
+        for (String origin : origins) {
+            configuration.addAllowedOrigin(origin.trim());
+        }
         
+        // ✅ CRITICAL: Include OPTIONS for preflight requests
         configuration.setAllowedMethods(Arrays.asList(
             "GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"
         ));
         
-        configuration.setAllowedHeaders(Arrays.asList(
-            "Authorization", 
-            "Content-Type", 
-            "X-Requested-With", 
-            "Accept", 
-            "Origin", 
-            "Access-Control-Request-Method", 
-            "Access-Control-Request-Headers"
-        ));
+        // ✅ Allow all headers including custom ones
+        configuration.addAllowedHeader("*");
         
+        // ✅ CRITICAL: Enable credentials for authentication
         configuration.setAllowCredentials(true);
+        
+        // ✅ Expose headers that frontend might need
         configuration.setExposedHeaders(Arrays.asList("Authorization", "Content-Type"));
         configuration.setMaxAge(3600L);
         
@@ -110,23 +95,26 @@ public class SecurityConfig {
     }
 
     /**
-     * ✅ UPDATED: Spring Security 6.1+ compatible filter chain (no deprecated methods)
+     * ✅ FIXED: Security filter chain with proper CORS handling
      */
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         return http
+            // ✅ CRITICAL FIX: Enable CORS - this was commented out!
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+            
             // ✅ CSRF disabled for REST APIs
             .csrf(AbstractHttpConfigurer::disable)
-            
-            // ✅ CORS configuration
-            //.cors(cors -> cors.configurationSource(corsConfigurationSource()))
             
             // ✅ Stateless session management
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 
-            // ✅ Request authorization
+            // ✅ FIXED: Request authorization with proper endpoint mapping
             .authorizeHttpRequests(auth -> auth
+                // ✅ CRITICAL: Allow OPTIONS requests for all paths (preflight)
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                
                 // Public static resources
                 .requestMatchers(
                     "/favicon.ico",
@@ -135,47 +123,52 @@ public class SecurityConfig {
                     "/actuator/info",
                     "/static/**",
                     "/public/**",
-                    "/uploads/**"
+                    "/uploads/**",
+                    "/health" // Add health endpoint
                 ).permitAll()
                 
-                // Authentication endpoints
+                // ✅ FIXED: Authentication endpoints - corrected paths
                 .requestMatchers(
-                    "/api/auth/login",
-                    "/api/auth/register", 
-                    "/api/auth/refresh",
-                    "/api/auth/forgot-password",
-                    "/api/auth/reset-password",
-                    "/api/public/**"
+                    "/auth/signin",      // ✅ FIXED: was /api/auth/login
+                    "/auth/signup",      // ✅ FIXED: was /api/auth/register
+                    "/auth/refresh",
+                    "/auth/forgot-password",
+                    "/auth/reset-password",
+                    "/public/**"
                 ).permitAll()
                 
                 // User endpoints require authentication
                 .requestMatchers(
-                    "/api/users/**",
-                    "/api/workflows/**",
-                    "/api/documents/**",
-                    "/api/notifications/**",
-                    "/api/settings/**",
-                    "/api/audit/**"
+                    "/users/**",
+                    "/workflows/**",
+                    "/documents/**",
+                    "/notifications/**",
+                    "/settings/**",
+                    "/audit/**"
                 ).authenticated()
                 
                 // Admin endpoints require admin role
                 .requestMatchers(
-                    "/api/admin/**",
+                    "/admin/**",
                     "/actuator/**"
                 ).hasRole("ADMIN")
                 
                 // Test endpoints (remove in production)
-                .requestMatchers("/api/test/**").permitAll()
+                .requestMatchers("/test/**").permitAll()
                 
                 // All other requests require authentication
                 .anyRequest().authenticated())
                 
-            // ✅ UPDATED: Exception handling (no deprecated methods)
+            // ✅ Exception handling
             .exceptionHandling(exceptions -> exceptions
                 .authenticationEntryPoint((request, response, authException) -> {
                     response.setStatus(401);
                     response.setContentType("application/json");
                     response.setCharacterEncoding("UTF-8");
+                    
+                    // ✅ Add CORS headers to error responses
+                    response.setHeader("Access-Control-Allow-Origin", "https://cloud-docs-tan.vercel.app");
+                    response.setHeader("Access-Control-Allow-Credentials", "true");
                     
                     String errorResponse = String.format(
                         "{\"error\":\"Unauthorized\",\"message\":\"Authentication required\",\"timestamp\":\"%s\",\"path\":\"%s\"}",
@@ -190,6 +183,10 @@ public class SecurityConfig {
                     response.setContentType("application/json");
                     response.setCharacterEncoding("UTF-8");
                     
+                    // ✅ Add CORS headers to error responses
+                    response.setHeader("Access-Control-Allow-Origin", "https://cloud-docs-tan.vercel.app");
+                    response.setHeader("Access-Control-Allow-Credentials", "true");
+                    
                     String errorResponse = String.format(
                         "{\"error\":\"Forbidden\",\"message\":\"Access denied\",\"timestamp\":\"%s\",\"path\":\"%s\"}",
                         java.time.Instant.now().toString(),
@@ -199,10 +196,6 @@ public class SecurityConfig {
                     response.getWriter().write(errorResponse);
                 })
             )
-            
-            // ✅ REMOVED: Deprecated headers configuration
-            // Note: Spring Security 6.1+ provides secure defaults automatically
-            // If you need custom headers, implement a custom filter or use @Bean WebSecurityCustomizer
                 
             // ✅ Authentication provider
             .authenticationProvider(authenticationProvider())
