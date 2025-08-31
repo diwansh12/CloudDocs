@@ -25,7 +25,7 @@ import static org.springframework.http.HttpStatus.UNAUTHORIZED;
  * ✅ COMPLETE FIXED: Notification Settings Controller with all warnings resolved
  */
 @RestController
-@RequestMapping("/api/users/notification-settings")
+@RequestMapping("/users/notification-settings")
 @CrossOrigin(origins = "*", maxAge = 3600)
 @PreAuthorize("isAuthenticated()")
 public class NotificationSettingsController {

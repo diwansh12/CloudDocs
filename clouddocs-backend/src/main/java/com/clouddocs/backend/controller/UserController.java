@@ -30,7 +30,7 @@ import java.util.Map;
  * Handles user profile operations, profile pictures, and user settings
  */
 @RestController
-@RequestMapping("/api/users")
+@RequestMapping("/users")
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class UserController {
 

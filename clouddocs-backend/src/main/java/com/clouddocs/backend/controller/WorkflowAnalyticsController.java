@@ -25,7 +25,7 @@ import java.util.List;
 import static org.springframework.http.HttpStatus.UNAUTHORIZED;
 
 @RestController
-@RequestMapping("/api/workflows/metrics")
+@RequestMapping("/workflows/metrics")
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class WorkflowAnalyticsController {
 

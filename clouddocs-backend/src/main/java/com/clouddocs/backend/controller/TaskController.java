@@ -19,7 +19,7 @@ import java.util.Map;
 import static org.springframework.http.HttpStatus.UNAUTHORIZED;
 
 @RestController
-@RequestMapping("/api/tasks")
+@RequestMapping("/tasks")
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class TaskController {
 

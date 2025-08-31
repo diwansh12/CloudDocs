@@ -19,7 +19,7 @@ import java.util.Map;
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/users/settings")
+@RequestMapping("/users/settings")
 @CrossOrigin(origins = "*")
 @RequiredArgsConstructor
 @PreAuthorize("isAuthenticated()")

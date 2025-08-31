@@ -22,7 +22,7 @@ import java.util.stream.Collectors;
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 @RestController
-@RequestMapping("/api/workflow-templates")
+@RequestMapping("/workflow-templates")
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class WorkflowTemplateController {
 
