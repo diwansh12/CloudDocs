@@ -4,13 +4,13 @@ import { AxiosResponse } from 'axios';
 export interface WorkflowItem {
   id: string;
   title: string;
-   initiatedByName: string;    
+  initiatedByName: string;    
   updatedDate: string;        
   assignedTo: string;
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'IN_PROGRESS' | 'CANCELLED' | 'COMPLETED';
   documentName?: string;
   templateName?: string;
-   tasks?: Array<{
+  tasks?: Array<{
     id: string;
     assignedToName?: string;
     assignedToId?: string;
@@ -39,7 +39,8 @@ export interface WorkflowTemplate {
 
 class WorkflowService {
   /**
-   * Get paginated workflows with filtering
+   * ✅ FIXED: Get paginated workflow instances with filtering
+   * Changed from /workflows/mine to /workflow-instances/mine
    */
   async getWorkflows(
     page: number = 0,
@@ -57,8 +58,9 @@ class WorkflowService {
       if (status && status !== 'All Statuses') params.append('status', status);
       if (templateId) params.append('templateId', templateId);
 
+      // ✅ FIXED: Changed endpoint to match backend controller
       const response: AxiosResponse<WorkflowPage> = await api.get<WorkflowPage>(
-        `/workflows/mine?${params.toString()}`
+        `/workflow-instances/mine?${params.toString()}`
       );
       
       return {
@@ -77,7 +79,7 @@ class WorkflowService {
   }
 
   /**
-   * Search workflows by document name
+   * ✅ FIXED: Search workflow instances by document name
    */
   async searchWorkflows(
     query: string,
@@ -90,8 +92,9 @@ class WorkflowService {
       params.append('page', page.toString());
       params.append('size', size.toString());
 
+      // ✅ FIXED: Changed to workflow-instances search endpoint
       const response: AxiosResponse<WorkflowPage> = await api.get<WorkflowPage>(
-        `/workflows/search?${params.toString()}`
+        `/workflow-instances/search?${params.toString()}`
       );
       
       return {
@@ -109,11 +112,13 @@ class WorkflowService {
   }
 
   /**
-   * Get user's pending tasks
+   * ✅ FIXED: Get user's pending tasks
+   * Changed from /workflows/tasks/my to /workflows/tasks/user
    */
   async getMyTasks() {
     try {
-      const response: AxiosResponse<any[]> = await api.get<any[]>('/workflows/tasks/my');
+      // ✅ FIXED: Updated endpoint path
+      const response: AxiosResponse<any[]> = await api.get<any[]>('/workflows/tasks/user');
       return response.data;
     } catch (error: any) {
       throw new Error(error.response?.data?.message || 'Failed to fetch tasks');
@@ -139,7 +144,7 @@ class WorkflowService {
   }
 
   /**
-   * ✅ NEW: Update task status (approve/reject)
+   * ✅ Update task status (approve/reject)
    */
   async updateTaskStatus(taskId: string, action: 'approve' | 'reject', comments?: string) {
     try {
@@ -157,7 +162,7 @@ class WorkflowService {
   }
 
   /**
-   * ✅ NEW: Download document by ID
+   * Download document by ID
    */
   async downloadDocument(documentId: number) {
     try {
@@ -171,11 +176,13 @@ class WorkflowService {
   }
 
   /**
-   * Get workflow details by ID
+   * ✅ FIXED: Get workflow instance details by ID
+   * Changed from /workflows/{id} to /workflow-instances/{id}
    */
   async getWorkflowById(id: string) {
     try {
-      const response: AxiosResponse<any> = await api.get(`/workflows/${id}`);
+      // ✅ FIXED: Updated endpoint path
+      const response: AxiosResponse<any> = await api.get(`/workflow-instances/${id}`);
       return response.data;
     } catch (error: any) {
       throw new Error(error.response?.data?.message || 'Failed to fetch workflow details');
@@ -183,11 +190,12 @@ class WorkflowService {
   }
 
   /**
-   * Get workflow with complete task details
+   * ✅ FIXED: Get workflow instance with complete task details
    */
   async getWorkflowWithTasks(id: string) {
     try {
-      const response: AxiosResponse<any> = await api.get(`/workflows/${id}/details`);
+      // ✅ FIXED: Updated endpoint path  
+      const response: AxiosResponse<any> = await api.get(`/workflow-instances/${id}/details`);
       return response.data;
     } catch (error: any) {
       throw new Error(error.response?.data?.message || 'Failed to fetch workflow tasks');
@@ -202,8 +210,9 @@ class WorkflowService {
       const params = new URLSearchParams();
       if (reason?.trim()) params.append('reason', reason.trim());
       
+      // ✅ FIXED: Updated endpoint path
       const response: AxiosResponse<any> = await api.put(
-        `/workflows/${id}/cancel?${params.toString()}`
+        `/workflow-instances/${id}/cancel?${params.toString()}`
       );
       return response.data;
     } catch (error: any) {
@@ -212,42 +221,41 @@ class WorkflowService {
   }
 
   /**
-   * Start a new workflow
+   * ✅ Start a new workflow (stays on /workflows)
+   * This is a workflow operation, not instance query
    */
-// In workflowService.ts
-async startWorkflow(
-  documentId: number, 
-  templateId: string, 
-  title?: string, 
-  description?: string,
-  priority?: string
-): Promise<any> {
-  try {
-    const requestData = {
-      documentId,
-      templateId,
-      title: title?.trim() || undefined,
-      description: description?.trim() || undefined,
-      priority: priority || 'NORMAL'
-    };
+  async startWorkflow(
+    documentId: number, 
+    templateId: string, 
+    title?: string, 
+    description?: string,
+    priority?: string
+  ): Promise<any> {
+    try {
+      const requestData = {
+        documentId,
+        templateId,
+        title: title?.trim() || undefined,
+        description: description?.trim() || undefined,
+        priority: priority || 'NORMAL'
+      };
 
-    console.log('📤 WorkflowService: Sending request with data:', requestData);
+      console.log('📤 WorkflowService: Sending request with data:', requestData);
 
-    // ✅ FIXED: Use api instance like other methods, not native fetch
-    const response: AxiosResponse<any> = await api.post('/workflows', requestData);
-    
-    console.log('✅ WorkflowService: Response received:', response.data);
-    return response.data;
-    
-  } catch (error: any) {
-    console.error('❌ WorkflowService: Creation failed:', error);
-    throw new Error(error.response?.data?.message || 'Failed to create workflow');
+      // ✅ CORRECT: Create workflow stays on /workflows
+      const response: AxiosResponse<any> = await api.post('/workflows', requestData);
+      
+      console.log('✅ WorkflowService: Response received:', response.data);
+      return response.data;
+      
+    } catch (error: any) {
+      console.error('❌ WorkflowService: Creation failed:', error);
+      throw new Error(error.response?.data?.message || 'Failed to create workflow');
+    }
   }
-}
-
 
   /**
-   * Get available workflow templates - FIXED: Proper typing and safe response handling
+   * Get available workflow templates
    */
   async getWorkflowTemplates(): Promise<WorkflowTemplate[]> {
     try {
@@ -290,11 +298,12 @@ async startWorkflow(
   }
 
   /**
-   * ✅ NEW: Get workflow history
+   * ✅ FIXED: Get workflow history
    */
   async getWorkflowHistory(workflowId: string) {
     try {
-      const response: AxiosResponse<any[]> = await api.get(`/workflows/${workflowId}/history`);
+      // ✅ FIXED: Updated endpoint path
+      const response: AxiosResponse<any[]> = await api.get(`/workflow-instances/${workflowId}/history`);
       return response.data;
     } catch (error: any) {
       throw new Error(error.response?.data?.message || 'Failed to fetch workflow history');
@@ -302,7 +311,7 @@ async startWorkflow(
   }
 
   /**
-   * ✅ NEW: Get task details by ID
+   * Get task details by ID (stays on /workflows)
    */
   async getTaskById(taskId: string) {
     try {
@@ -314,11 +323,12 @@ async startWorkflow(
   }
 
   /**
-   * ✅ NEW: Get workflow metrics for analytics
+   * ✅ FIXED: Get workflow metrics for analytics
    */
   async getWorkflowMetrics(workflowId: string) {
     try {
-      const response: AxiosResponse<any> = await api.get(`/workflows/${workflowId}/metrics`);
+      // ✅ FIXED: Updated endpoint path
+      const response: AxiosResponse<any> = await api.get(`/workflow-instances/${workflowId}/metrics`);
       return response.data;
     } catch (error: any) {
       throw new Error(error.response?.data?.message || 'Failed to fetch workflow metrics');
@@ -326,7 +336,7 @@ async startWorkflow(
   }
 
   /**
-   * ✅ NEW: Reassign task to different user
+   * Reassign task to different user (stays on /workflows)
    */
   async reassignTask(taskId: string, newAssigneeId: string, reason?: string) {
     try {
@@ -344,12 +354,13 @@ async startWorkflow(
   }
 
   /**
-   * ✅ NEW: Add comment to workflow
+   * ✅ FIXED: Add comment to workflow instance
    */
   async addWorkflowComment(workflowId: string, comment: string) {
     try {
+      // ✅ FIXED: Updated endpoint path
       const response: AxiosResponse<any> = await api.post(
-        `/workflows/${workflowId}/comments`,
+        `/workflow-instances/${workflowId}/comments`,
         { comment: comment.trim() }
       );
       return response.data;
@@ -359,11 +370,12 @@ async startWorkflow(
   }
 
   /**
-   * ✅ NEW: Get workflow comments
+   * ✅ FIXED: Get workflow instance comments
    */
   async getWorkflowComments(workflowId: string) {
     try {
-      const response: AxiosResponse<any[]> = await api.get(`/workflows/${workflowId}/comments`);
+      // ✅ FIXED: Updated endpoint path
+      const response: AxiosResponse<any[]> = await api.get(`/workflow-instances/${workflowId}/comments`);
       return response.data;
     } catch (error: any) {
       throw new Error(error.response?.data?.message || 'Failed to fetch comments');
