@@ -33,11 +33,8 @@ public class WorkflowInstanceController {
     private final WorkflowInstanceRepository instanceRepository;
     private final UserRepository userRepository;
 
-    // ===== MAIN ENDPOINTS =====
-
     /**
-     * ✅ Get user's workflow instances with filtering and pagination
-     * Maps to: GET /workflow-instances/mine
+     * ✅ FIXED: Get user's workflow instances with enhanced display
      */
     @PreAuthorize("isAuthenticated()")
     @GetMapping("/mine")
@@ -64,11 +61,9 @@ public class WorkflowInstanceController {
                     : Sort.by(sortBy).ascending();
             Pageable pageable = PageRequest.of(page, size, sort);
 
-            // Get workflows with filters
             Page<WorkflowInstance> pageResult = getWorkflowsWithFilters(
                 currentUser, status, templateId, from, to, pageable);
 
-            // Convert to DTOs safely
             List<Map<String, Object>> workflowDTOs = pageResult.getContent().stream()
                     .map(this::convertToEnhancedWorkflowDTO)
                     .filter(Objects::nonNull)
@@ -97,8 +92,7 @@ public class WorkflowInstanceController {
     }
 
     /**
-     * ✅ ADDED: Search workflow instances
-     * Maps to: GET /workflow-instances/search
+     * ✅ Search workflow instances
      */
     @PreAuthorize("isAuthenticated()")
     @GetMapping("/search")
@@ -115,11 +109,9 @@ public class WorkflowInstanceController {
             
             Pageable pageable = PageRequest.of(page, size, Sort.by("createdDate").descending());
             
-            // Use existing repository method for now - you can enhance this for actual search
             Page<WorkflowInstance> searchResults = instanceRepository.findByInitiatedByWithDetailsOrderByCreatedDateDesc(
                 currentUser, pageable);
             
-            // Filter results by search query (basic implementation)
             List<WorkflowInstance> filteredResults = searchResults.getContent().stream()
                 .filter(w -> matchesSearchQuery(w, q))
                 .collect(Collectors.toList());
@@ -148,7 +140,6 @@ public class WorkflowInstanceController {
 
     /**
      * ✅ Get specific workflow instance by ID
-     * Maps to: GET /workflow-instances/{id}
      */
     @PreAuthorize("isAuthenticated()")
     @GetMapping("/{id}")
@@ -179,8 +170,7 @@ public class WorkflowInstanceController {
     }
 
     /**
-     * ✅ ADDED: Get workflow instance with detailed task information
-     * Maps to: GET /workflow-instances/{id}/details
+     * ✅ Get workflow instance with detailed task information
      */
     @PreAuthorize("isAuthenticated()")
     @GetMapping("/{id}/details")
@@ -189,7 +179,6 @@ public class WorkflowInstanceController {
         try {
             log.debug("Fetching detailed workflow instance with ID: {}", id);
             
-            // Get workflow with tasks
             WorkflowInstance instance = instanceRepository.findByIdWithTasks(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow instance not found"));
             
@@ -200,7 +189,6 @@ public class WorkflowInstanceController {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied to this workflow instance");
             }
             
-            // Convert to detailed DTO
             Map<String, Object> response = convertToDetailedWorkflowDTO(instance);
             
             log.debug("✅ Returning detailed workflow instance: {}", id);
@@ -221,8 +209,7 @@ public class WorkflowInstanceController {
     }
 
     /**
-     * ✅ ADDED: Cancel workflow instance
-     * Maps to: PUT /workflow-instances/{id}/cancel
+     * ✅ Cancel workflow instance
      */
     @PreAuthorize("isAuthenticated()")
     @PutMapping("/{id}/cancel")
@@ -242,7 +229,6 @@ public class WorkflowInstanceController {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
             }
             
-            // Update workflow status to cancelled
             instance.setStatus(WorkflowStatus.CANCELLED);
             instance.setEndDate(LocalDateTime.now());
             instance.setComments(reason != null ? reason : "Cancelled by user");
@@ -268,8 +254,7 @@ public class WorkflowInstanceController {
     }
 
     /**
-     * ✅ ADDED: Get workflow instance history
-     * Maps to: GET /workflow-instances/{id}/history
+     * ✅ Get workflow instance history
      */
     @PreAuthorize("isAuthenticated()")
     @GetMapping("/{id}/history")
@@ -323,8 +308,7 @@ public class WorkflowInstanceController {
     }
 
     /**
-     * ✅ ADDED: Add comment to workflow instance
-     * Maps to: POST /workflow-instances/{id}/comments
+     * ✅ Add comment to workflow instance
      */
     @PreAuthorize("isAuthenticated()")
     @PostMapping("/{id}/comments")
@@ -347,7 +331,6 @@ public class WorkflowInstanceController {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
             }
             
-            // Add comment to existing comments
             String existingComments = instance.getComments();
             String newComments = existingComments != null ? 
                 existingComments + "\n" + currentUser.getUsername() + ": " + comment.trim() :
@@ -374,8 +357,7 @@ public class WorkflowInstanceController {
     }
 
     /**
-     * ✅ ADDED: Get workflow instance comments
-     * Maps to: GET /workflow-instances/{id}/comments
+     * ✅ Get workflow instance comments
      */
     @PreAuthorize("isAuthenticated()")
     @GetMapping("/{id}/comments")
@@ -394,7 +376,6 @@ public class WorkflowInstanceController {
             
             List<String> comments = new ArrayList<>();
             if (instance.getComments() != null && !instance.getComments().trim().isEmpty()) {
-                // Split comments by newline
                 String[] commentLines = instance.getComments().split("\n");
                 comments.addAll(Arrays.asList(commentLines));
             }
@@ -409,10 +390,10 @@ public class WorkflowInstanceController {
         }
     }
 
-    // ===== DTO CONVERSION METHODS =====
+    // ===== DTO CONVERSION METHODS WITH FIXES =====
 
     /**
-     * ✅ Enhanced DTO conversion with comprehensive error handling
+     * ✅ FIXED: Enhanced DTO conversion with better display logic
      */
     private Map<String, Object> convertToEnhancedWorkflowDTO(WorkflowInstance workflow) {
         Map<String, Object> dto = new HashMap<>();
@@ -427,30 +408,54 @@ public class WorkflowInstanceController {
             dto.put("currentStepOrder", workflow.getCurrentStepOrder());
             dto.put("comments", workflow.getComments());
 
-            // Enhanced date handling
+            // ✅ FIXED: Enhanced date handling with better labels
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-            dto.put("createdDate", workflow.getCreatedDate() != null ? 
-                workflow.getCreatedDate().format(formatter) : LocalDateTime.now().format(formatter));
+            DateTimeFormatter displayFormatter = DateTimeFormatter.ofPattern("MMM dd, yyyy 'at' hh:mm a");
+            
+            LocalDateTime createdDate = workflow.getCreatedDate() != null ? workflow.getCreatedDate() : LocalDateTime.now();
+            LocalDateTime updatedDate = workflow.getUpdatedDate();
+            
+            dto.put("createdDate", createdDate.format(formatter));
+            dto.put("createdDateDisplay", createdDate.format(displayFormatter));
             dto.put("startDate", workflow.getStartDate() != null ? 
-                workflow.getStartDate().format(formatter) : workflow.getCreatedDate().format(formatter));
-            dto.put("updatedDate", workflow.getUpdatedDate() != null ? 
-                workflow.getUpdatedDate().format(formatter) : workflow.getCreatedDate().format(formatter));
+                workflow.getStartDate().format(formatter) : createdDate.format(formatter));
+            dto.put("startDateDisplay", workflow.getStartDate() != null ? 
+                workflow.getStartDate().format(displayFormatter) : createdDate.format(displayFormatter));
+            
+            // ✅ FIXED: Better updated date handling
+            if (updatedDate != null && !updatedDate.equals(createdDate)) {
+                dto.put("updatedDate", updatedDate.format(formatter));
+                dto.put("updatedDateDisplay", updatedDate.format(displayFormatter));
+                dto.put("lastUpdatedRelative", calculateRelativeTime(updatedDate));
+                dto.put("lastUpdatedAbsolute", updatedDate.format(displayFormatter));
+                dto.put("hasBeenUpdated", true);
+                dto.put("createdLabel", "Created");
+            } else {
+                dto.put("updatedDate", createdDate.format(formatter));
+                dto.put("updatedDateDisplay", "Not updated yet");
+                dto.put("lastUpdatedRelative", "Not updated");
+                dto.put("lastUpdatedAbsolute", createdDate.format(displayFormatter));
+                dto.put("hasBeenUpdated", false);
+                dto.put("createdLabel", "Created (not updated)");
+            }
+            
             dto.put("endDate", workflow.getEndDate() != null ? 
                 workflow.getEndDate().format(formatter) : null);
+            dto.put("endDateDisplay", workflow.getEndDate() != null ? 
+                workflow.getEndDate().format(displayFormatter) : null);
             dto.put("dueDate", workflow.getDueDate() != null ? 
                 workflow.getDueDate().format(formatter) : null);
+            dto.put("dueDateDisplay", workflow.getDueDate() != null ? 
+                workflow.getDueDate().format(displayFormatter) : null);
 
-            // Calculate and display relative time
-            LocalDateTime lastUpdate = workflow.getUpdatedDate() != null ? 
-                workflow.getUpdatedDate() : workflow.getCreatedDate();
-            dto.put("lastUpdatedRelative", calculateRelativeTime(lastUpdate));
-            dto.put("lastUpdatedAbsolute", lastUpdate.format(formatter));
+            // ✅ FIXED: Better relative time for started date
+            dto.put("startedRelative", calculateRelativeTime(createdDate));
 
             // Safe template, initiator, document, and task handling
             handleTemplateInfo(workflow, dto);
-            handleInitiatorInfo(workflow, dto);
+            handleInitiatorInfoFixed(workflow, dto);
             handleDocumentInfo(workflow, dto);
-            handleTasksInfo(workflow, dto);
+            handleTasksInfoFixed(workflow, dto);
 
             return dto;
             
@@ -463,7 +468,7 @@ public class WorkflowInstanceController {
     }
 
     /**
-     * ✅ ADDED: Convert workflow to detailed DTO with complete task information
+     * ✅ Convert workflow to detailed DTO with complete task information
      */
     private Map<String, Object> convertToDetailedWorkflowDTO(WorkflowInstance workflow) {
         Map<String, Object> dto = new HashMap<>();
@@ -490,13 +495,185 @@ public class WorkflowInstanceController {
             log.error("❌ Error creating detailed workflow DTO for workflow {}: {}", 
                     workflow.getId(), e.getMessage());
             
-            // Return basic DTO on error
             return convertToEnhancedWorkflowDTO(workflow);
         }
     }
 
     /**
-     * ✅ ADDED: Create detailed task DTO with all information
+     * ✅ FIXED: Better initiator handling with clearer assignee logic
+     */
+    private void handleInitiatorInfoFixed(WorkflowInstance workflow, Map<String, Object> dto) {
+        try {
+            if (workflow.getInitiatedBy() != null) {
+                String fullName = workflow.getInitiatedBy().getFullName();
+                String displayName = fullName != null && !fullName.trim().isEmpty() ? 
+                    fullName : workflow.getInitiatedBy().getUsername();
+                    
+                dto.put("initiatedByName", displayName);
+                dto.put("initiatedById", workflow.getInitiatedBy().getId());
+                
+                // ✅ FIXED: Better default assignee logic - check for current pending tasks first
+                String currentAssignee = findCurrentAssigneeFromTasks(workflow.getTasks());
+                dto.put("assignedTo", currentAssignee != null ? currentAssignee : "No assignee");
+                dto.put("assignedToDisplay", currentAssignee != null ? currentAssignee : "No assignee");
+                
+            } else {
+                dto.put("initiatedByName", "System");
+                dto.put("initiatedById", null);
+                dto.put("assignedTo", "System");
+                dto.put("assignedToDisplay", "System");
+            }
+        } catch (Exception e) {
+            log.debug("⚠️ Could not load initiator for workflow {}: {}", workflow.getId(), e.getMessage());
+            dto.put("initiatedByName", "Unknown User");
+            dto.put("initiatedById", null);
+            dto.put("assignedTo", "No assignee");
+            dto.put("assignedToDisplay", "No assignee");
+        }
+    }
+
+    /**
+     * ✅ FIXED: Better task handling with improved assignee display
+     */
+    private void handleTasksInfoFixed(WorkflowInstance workflow, Map<String, Object> dto) {
+        try {
+            if (workflow.getTasks() != null && !workflow.getTasks().isEmpty()) {
+                List<Map<String, Object>> taskDTOs = new ArrayList<>();
+                
+                int totalTasks = workflow.getTasks().size();
+                int completedTasks = 0;
+                int pendingTasks = 0;
+                
+                for (WorkflowTask task : workflow.getTasks()) {
+                    Map<String, Object> taskDto = createTaskDTOFixed(task);
+                    taskDTOs.add(taskDto);
+                    
+                    if ("COMPLETED".equals(task.getStatus().toString()) || 
+                        "APPROVED".equals(task.getStatus().toString())) {
+                        completedTasks++;
+                    } else if ("PENDING".equals(task.getStatus().toString())) {
+                        pendingTasks++;
+                    }
+                }
+                
+                dto.put("tasks", taskDTOs);
+                dto.put("totalTasks", totalTasks);
+                dto.put("completedTasks", completedTasks);
+                dto.put("pendingTasks", pendingTasks);
+                
+                // ✅ FIXED: Safe progress calculation
+                int progress = totalTasks > 0 ? (completedTasks * 100 / totalTasks) : 0;
+                dto.put("progress", progress);
+                dto.put("progressDisplay", progress + "%");
+                dto.put("progressText", completedTasks + "/" + totalTasks + " tasks completed");
+                
+                // ✅ FIXED: Update assignedTo based on current pending task
+                String currentAssignee = findCurrentAssigneeFromTasks(workflow.getTasks());
+                if (currentAssignee != null) {
+                    dto.put("assignedTo", currentAssignee);
+                    dto.put("assignedToDisplay", currentAssignee);
+                }
+                
+            } else {
+                dto.put("tasks", new ArrayList<>());
+                dto.put("totalTasks", 0);
+                dto.put("completedTasks", 0);
+                dto.put("pendingTasks", 0);
+                dto.put("progress", 0);
+                dto.put("progressDisplay", "0%");
+                dto.put("progressText", "No tasks");
+            }
+        } catch (Exception e) {
+            log.debug("⚠️ Could not load tasks for workflow {}: {}", workflow.getId(), e.getMessage());
+            dto.put("tasks", new ArrayList<>());
+            dto.put("totalTasks", 0);
+            dto.put("completedTasks", 0);
+            dto.put("pendingTasks", 0);
+            dto.put("progress", 0);
+            dto.put("progressDisplay", "0%");
+            dto.put("progressText", "No tasks available");
+        }
+    }
+
+    /**
+     * ✅ FIXED: Better task DTO with clearer assignee handling
+     */
+    private Map<String, Object> createTaskDTOFixed(WorkflowTask task) {
+        Map<String, Object> taskDto = new HashMap<>();
+        
+        try {
+            taskDto.put("id", task.getId());
+            taskDto.put("title", task.getTitle() != null ? task.getTitle() : "Task");
+            taskDto.put("status", task.getStatus().toString());
+            taskDto.put("comments", task.getComments());
+            
+            // ✅ FIXED: Better date formatting
+            DateTimeFormatter displayFormatter = DateTimeFormatter.ofPattern("MMM dd, yyyy 'at' hh:mm a");
+            
+            taskDto.put("createdAt", task.getCreatedAt() != null ? 
+                task.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : null);
+            taskDto.put("createdAtDisplay", task.getCreatedAt() != null ? 
+                task.getCreatedAt().format(displayFormatter) : "Not set");
+                
+            taskDto.put("completedAt", task.getCompletedAt() != null ? 
+                task.getCompletedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : null);
+            taskDto.put("completedAtDisplay", task.getCompletedAt() != null ? 
+                task.getCompletedAt().format(displayFormatter) : "Not completed");
+            
+            // ✅ FIXED: Better assigned user handling
+            if (task.getAssignedTo() != null) {
+                String assignedName = task.getAssignedTo().getFullName();
+                String displayName = assignedName != null && !assignedName.trim().isEmpty() ? 
+                    assignedName : task.getAssignedTo().getUsername();
+                    
+                taskDto.put("assignedTo", displayName);
+                taskDto.put("assignedToDisplay", displayName);
+                taskDto.put("assignedToId", task.getAssignedTo().getId());
+                taskDto.put("hasAssignee", true);
+            } else {
+                taskDto.put("assignedTo", "No assignee");
+                taskDto.put("assignedToDisplay", "No assignee");
+                taskDto.put("assignedToId", null);
+                taskDto.put("hasAssignee", false);
+            }
+            
+            // ✅ FIXED: Safe step handling using workflowStep
+            if (task.getWorkflowStep() != null) {
+                taskDto.put("stepName", task.getWorkflowStep().getName());
+                taskDto.put("stepOrder", task.getWorkflowStep().getStepOrder());
+                taskDto.put("stepType", task.getWorkflowStep().getType() != null ? 
+                    task.getWorkflowStep().getType().toString() : "UNKNOWN");
+                
+                boolean canApprove = task.getWorkflowStep().getType() == StepType.APPROVAL;
+                taskDto.put("canApprove", canApprove);
+                taskDto.put("canReject", canApprove);
+                taskDto.put("isApprovalStep", canApprove);
+            } else {
+                taskDto.put("stepName", "Unknown Step");
+                taskDto.put("stepOrder", 0);
+                taskDto.put("stepType", "UNKNOWN");
+                taskDto.put("canApprove", false);
+                taskDto.put("canReject", false);
+                taskDto.put("isApprovalStep", false);
+            }
+            
+            return taskDto;
+            
+        } catch (Exception e) {
+            log.warn("Error creating enhanced task DTO for task {}: {}", task.getId(), e.getMessage());
+            
+            // Return minimal task DTO on error
+            Map<String, Object> minimal = new HashMap<>();
+            minimal.put("id", task.getId());
+            minimal.put("assignedTo", "Error loading");
+            minimal.put("assignedToDisplay", "Error loading assignee");
+            minimal.put("status", task.getStatus().toString());
+            return minimal;
+        }
+    }
+
+    /**
+     * ✅ Create detailed task DTO with all information
      */
     private Map<String, Object> createDetailedTaskDTO(WorkflowTask task) {
         Map<String, Object> taskDto = new HashMap<>();
@@ -512,12 +689,20 @@ public class WorkflowInstanceController {
             
             // Task dates
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+            DateTimeFormatter displayFormatter = DateTimeFormatter.ofPattern("MMM dd, yyyy 'at' hh:mm a");
+            
             taskDto.put("createdAt", task.getCreatedAt() != null ? 
                 task.getCreatedAt().format(formatter) : null);
+            taskDto.put("createdAtDisplay", task.getCreatedAt() != null ? 
+                task.getCreatedAt().format(displayFormatter) : "Not set");
             taskDto.put("dueDate", task.getDueDate() != null ? 
                 task.getDueDate().format(formatter) : null);
+            taskDto.put("dueDateDisplay", task.getDueDate() != null ? 
+                task.getDueDate().format(displayFormatter) : "Not set");
             taskDto.put("completedAt", task.getCompletedAt() != null ? 
                 task.getCompletedAt().format(formatter) : null);
+            taskDto.put("completedAtDisplay", task.getCompletedAt() != null ? 
+                task.getCompletedAt().format(displayFormatter) : "Not completed");
 
             // Assigned user information
             if (task.getAssignedTo() != null) {
@@ -527,7 +712,7 @@ public class WorkflowInstanceController {
                 taskDto.put("assignedToId", task.getAssignedTo().getId());
                 taskDto.put("assignedToEmail", task.getAssignedTo().getEmail());
             } else {
-                taskDto.put("assignedToName", "Unassigned");
+                taskDto.put("assignedToName", "No assignee");
                 taskDto.put("assignedToId", null);
                 taskDto.put("assignedToEmail", null);
             }
@@ -556,12 +741,47 @@ public class WorkflowInstanceController {
         } catch (Exception e) {
             log.warn("Error creating detailed task DTO for task {}: {}", task.getId(), e.getMessage());
             
-            // Return basic task DTO on error
-            return createTaskDTO(task);
+            return createTaskDTOFixed(task);
         }
     }
 
-    // ===== HELPER METHODS (keeping your existing ones) =====
+    /**
+     * ✅ FIXED: Better logic to find current assignee from tasks
+     */
+    private String findCurrentAssigneeFromTasks(List<WorkflowTask> tasks) {
+        try {
+            if (tasks == null || tasks.isEmpty()) {
+                return null;
+            }
+            
+            // First, find the first pending task and get its assignee
+            for (WorkflowTask task : tasks) {
+                if ("PENDING".equals(task.getStatus().toString()) && task.getAssignedTo() != null) {
+                    String fullName = task.getAssignedTo().getFullName();
+                    return fullName != null && !fullName.trim().isEmpty() ? 
+                        fullName : task.getAssignedTo().getUsername();
+                }
+            }
+            
+            // If no pending tasks, find the last assigned task
+            for (int i = tasks.size() - 1; i >= 0; i--) {
+                WorkflowTask task = tasks.get(i);
+                if (task.getAssignedTo() != null) {
+                    String fullName = task.getAssignedTo().getFullName();
+                    return fullName != null && !fullName.trim().isEmpty() ? 
+                        fullName : task.getAssignedTo().getUsername();
+                }
+            }
+            
+            return null; // No assignee found
+            
+        } catch (Exception e) {
+            log.debug("Error finding current assignee from tasks: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    // ===== HELPER METHODS =====
 
     private void handleTemplateInfo(WorkflowInstance workflow, Map<String, Object> dto) {
         try {
@@ -583,28 +803,6 @@ public class WorkflowInstanceController {
         }
     }
 
-    private void handleInitiatorInfo(WorkflowInstance workflow, Map<String, Object> dto) {
-        try {
-            if (workflow.getInitiatedBy() != null) {
-                String fullName = workflow.getInitiatedBy().getFullName();
-                dto.put("initiatedByName", fullName != null && !fullName.trim().isEmpty() ? 
-                    fullName : workflow.getInitiatedBy().getUsername());
-                dto.put("initiatedById", workflow.getInitiatedBy().getId());
-                dto.put("assignedTo", fullName != null && !fullName.trim().isEmpty() ? 
-                    fullName : workflow.getInitiatedBy().getUsername());
-            } else {
-                dto.put("initiatedByName", "System");
-                dto.put("initiatedById", null);
-                dto.put("assignedTo", "System");
-            }
-        } catch (Exception e) {
-            log.debug("⚠️ Could not load initiator for workflow {}: {}", workflow.getId(), e.getMessage());
-            dto.put("initiatedByName", "Unknown User");
-            dto.put("initiatedById", null);
-            dto.put("assignedTo", "Unknown User");
-        }
-    }
-
     private void handleDocumentInfo(WorkflowInstance workflow, Map<String, Object> dto) {
         try {
             if (workflow.getDocument() != null) {
@@ -623,139 +821,49 @@ public class WorkflowInstanceController {
         }
     }
 
-    private void handleTasksInfo(WorkflowInstance workflow, Map<String, Object> dto) {
-        try {
-            if (workflow.getTasks() != null && !workflow.getTasks().isEmpty()) {
-                List<Map<String, Object>> taskDTOs = new ArrayList<>();
-                
-                int totalTasks = workflow.getTasks().size();
-                int completedTasks = 0;
-                int pendingTasks = 0;
-                
-                for (WorkflowTask task : workflow.getTasks()) {
-                    Map<String, Object> taskDto = createTaskDTO(task);
-                    taskDTOs.add(taskDto);
-                    
-                    if ("COMPLETED".equals(task.getStatus().toString()) || 
-                        "APPROVED".equals(task.getStatus().toString())) {
-                        completedTasks++;
-                    } else if ("PENDING".equals(task.getStatus().toString())) {
-                        pendingTasks++;
-                    }
-                }
-                
-                dto.put("tasks", taskDTOs);
-                dto.put("totalTasks", totalTasks);
-                dto.put("completedTasks", completedTasks);
-                dto.put("pendingTasks", pendingTasks);
-                dto.put("progress", totalTasks > 0 ? (completedTasks * 100 / totalTasks) : 0);
-                
-                // Fix assignedTo based on current pending task
-                String currentAssignee = findCurrentAssignee(workflow.getTasks());
-                if (currentAssignee != null) {
-                    dto.put("assignedTo", currentAssignee);
-                }
-                
-            } else {
-                dto.put("tasks", new ArrayList<>());
-                dto.put("totalTasks", 0);
-                dto.put("completedTasks", 0);
-                dto.put("pendingTasks", 0);
-                dto.put("progress", 0);
-            }
-        } catch (Exception e) {
-            log.debug("⚠️ Could not load tasks for workflow {}: {}", workflow.getId(), e.getMessage());
-            dto.put("tasks", new ArrayList<>());
-            dto.put("totalTasks", 0);
-            dto.put("completedTasks", 0);
-            dto.put("pendingTasks", 0);
-            dto.put("progress", 0);
-        }
-    }
-
-    private Map<String, Object> createTaskDTO(WorkflowTask task) {
-        Map<String, Object> taskDto = new HashMap<>();
-        
-        try {
-            taskDto.put("id", task.getId());
-            taskDto.put("status", task.getStatus().toString());
-            taskDto.put("comments", task.getComments());
-            taskDto.put("createdAt", task.getCreatedAt() != null ? 
-                task.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : null);
-            taskDto.put("completedAt", task.getCompletedAt() != null ? 
-                task.getCompletedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : null);
-            
-            // Safe assigned user handling
-            if (task.getAssignedTo() != null) {
-                String assignedName = task.getAssignedTo().getFullName();
-                taskDto.put("assignedTo", assignedName != null && !assignedName.trim().isEmpty() ? 
-                    assignedName : task.getAssignedTo().getUsername());
-                taskDto.put("assignedToId", task.getAssignedTo().getId());
-            } else {
-                taskDto.put("assignedTo", "Unassigned");
-                taskDto.put("assignedToId", null);
-            }
-            
-            // Safe step handling - FIXED to use workflowStep
-            if (task.getWorkflowStep() != null) {
-                taskDto.put("stepName", task.getWorkflowStep().getName());
-                taskDto.put("stepOrder", task.getWorkflowStep().getStepOrder());
-                taskDto.put("stepType", task.getWorkflowStep().getType() != null ? 
-                    task.getWorkflowStep().getType().toString() : "UNKNOWN");
-                taskDto.put("canApprove", task.getWorkflowStep().getType() == StepType.APPROVAL);
-                taskDto.put("canReject", task.getWorkflowStep().getType() == StepType.APPROVAL);
-            } else {
-                taskDto.put("stepName", "Unknown Step");
-                taskDto.put("stepOrder", 0);
-                taskDto.put("stepType", "UNKNOWN");
-                taskDto.put("canApprove", false);
-                taskDto.put("canReject", false);
-            }
-            
-        } catch (Exception e) {
-            log.warn("Error creating task DTO for task {}: {}", task.getId(), e.getMessage());
-        }
-        
-        return taskDto;
-    }
-
-    private String findCurrentAssignee(List<WorkflowTask> tasks) {
-        try {
-            for (WorkflowTask task : tasks) {
-                if ("PENDING".equals(task.getStatus().toString()) && task.getAssignedTo() != null) {
-                    String fullName = task.getAssignedTo().getFullName();
-                    return fullName != null && !fullName.trim().isEmpty() ? 
-                        fullName : task.getAssignedTo().getUsername();
-                }
-            }
-        } catch (Exception e) {
-            log.debug("Error finding current assignee: {}", e.getMessage());
-        }
-        return null;
-    }
-
+    /**
+     * ✅ FIXED: Enhanced relative time calculation
+     */
     private String calculateRelativeTime(LocalDateTime dateTime) {
         try {
             LocalDateTime now = LocalDateTime.now();
             long minutes = java.time.Duration.between(dateTime, now).toMinutes();
             
-            if (minutes < 1) return "Just now";
+            if (minutes < 0) {
+                // Future date
+                long futureMinutes = -minutes;
+                if (futureMinutes < 60) return "in " + futureMinutes + " minutes";
+                long futureHours = futureMinutes / 60;
+                if (futureHours < 24) return "in " + futureHours + " hours";
+                long futureDays = futureHours / 24;
+                if (futureDays == 1) return "tomorrow";
+                return "in " + futureDays + " days";
+            }
+            
+            if (minutes < 1) return "just now";
             if (minutes < 60) return minutes + " minutes ago";
             
             long hours = minutes / 60;
-            if (hours < 24) return hours + " hours ago";
+            if (hours < 24) return hours + " hour" + (hours > 1 ? "s" : "") + " ago";
             
             long days = hours / 24;
+            if (days == 1) return "yesterday";
             if (days < 7) return days + " days ago";
             
             long weeks = days / 7;
+            if (weeks == 1) return "1 week ago";
             if (weeks < 4) return weeks + " weeks ago";
             
             long months = days / 30;
-            return months + " months ago";
+            if (months == 1) return "1 month ago";
+            if (months < 12) return months + " months ago";
+            
+            long years = days / 365;
+            return years + " year" + (years > 1 ? "s" : "") + " ago";
             
         } catch (Exception e) {
-            return "Unknown";
+            log.debug("Error calculating relative time: {}", e.getMessage());
+            return "unknown time";
         }
     }
 
@@ -889,4 +997,3 @@ public class WorkflowInstanceController {
         }
     }
 }
-
