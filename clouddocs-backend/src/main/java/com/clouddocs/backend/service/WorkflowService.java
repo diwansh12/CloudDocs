@@ -13,7 +13,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import jakarta.persistence.EntityManager;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -41,8 +40,7 @@ public class WorkflowService {
     @Autowired
     private AuditService auditService;
     
-    @Autowired
-    private EntityManager entityManager;
+
 
     private enum StepOutcome { CONTINUE, APPROVED, REJECTED }
 
@@ -61,8 +59,9 @@ public class WorkflowService {
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found"));
 
             // ✅ CRITICAL FIX: Use JOIN FETCH to load template with steps
-            WorkflowTemplate template = templateRepository.findByIdWithSteps(templateId)
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow template not found"));
+          WorkflowTemplate template = templateRepository.findByIdWithStepsAndRoles(templateId)
+    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow template not found"));
+
 
             if (!Boolean.TRUE.equals(template.getIsActive())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Template is not active");
