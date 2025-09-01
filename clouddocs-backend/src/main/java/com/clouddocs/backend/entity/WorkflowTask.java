@@ -33,18 +33,26 @@ public class WorkflowTask {
     @Column(name = "created_date")
     private LocalDateTime createdDate;
     
+    // ✅ ADD: Alternative field name for createdAt
+    @Column(name = "created_at")
+    private LocalDateTime createdAt;
+    
     @Column(name = "due_date")
     private LocalDateTime dueDate;
     
     @Column(name = "completed_date")
     private LocalDateTime completedDate;
     
+    // ✅ ADD: Alternative field name for completedAt
+    @Column(name = "completed_at")
+    private LocalDateTime completedAt;
+    
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "completed_by")
     private User completedBy;
     
     @Enumerated(EnumType.STRING)
-    private TaskAction action; // APPROVE, REJECT, REQUEST_CHANGES
+    private TaskAction action;
     
     private String comments;
     
@@ -58,6 +66,7 @@ public class WorkflowTask {
     // Constructors
     public WorkflowTask() {
         this.createdDate = LocalDateTime.now();
+        this.createdAt = LocalDateTime.now();
     }
     
     public WorkflowTask(WorkflowInstance workflowInstance, WorkflowStep workflowStep, 
@@ -70,7 +79,6 @@ public class WorkflowTask {
         this.description = "Please review and approve/reject the document: " + 
                           workflowInstance.getDocument().getOriginalFilename();
         
-        // Set due date based on step SLA
         if (workflowStep.getSlaHours() != null) {
             this.dueDate = LocalDateTime.now().plusHours(workflowStep.getSlaHours());
         }
@@ -87,19 +95,16 @@ public class WorkflowTask {
         this.comments = comments;
         this.completedBy = completedBy;
         this.completedDate = LocalDateTime.now();
+        this.completedAt = LocalDateTime.now();
         this.status = TaskStatus.COMPLETED;
     }
     
-    // ✅ ADDED: getName() method to fix the compilation error
-    /**
-     * Returns the name of the task (uses title field)
-     * This method is needed for WorkflowService compatibility
-     */
     public String getName() {
         return this.title != null ? this.title : "Unnamed Task";
     }
     
-    // Getters and Setters
+    // ===== GETTERS AND SETTERS =====
+    
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     
@@ -108,6 +113,10 @@ public class WorkflowTask {
     
     public WorkflowStep getWorkflowStep() { return workflowStep; }
     public void setWorkflowStep(WorkflowStep workflowStep) { this.workflowStep = workflowStep; }
+    
+    // ✅ ADD: Alias methods for step
+    public WorkflowStep getStep() { return this.workflowStep; }
+    public void setStep(WorkflowStep step) { this.workflowStep = step; }
     
     public User getAssignedTo() { return assignedTo; }
     public void setAssignedTo(User assignedTo) { this.assignedTo = assignedTo; }
@@ -122,13 +131,33 @@ public class WorkflowTask {
     public void setStatus(TaskStatus status) { this.status = status; }
     
     public LocalDateTime getCreatedDate() { return createdDate; }
-    public void setCreatedDate(LocalDateTime createdDate) { this.createdDate = createdDate; }
+    public void setCreatedDate(LocalDateTime createdDate) { 
+        this.createdDate = createdDate; 
+        this.createdAt = createdDate; // Keep both in sync
+    }
+    
+    // ✅ ADD: Alias methods for createdAt
+    public LocalDateTime getCreatedAt() { return this.createdAt != null ? this.createdAt : this.createdDate; }
+    public void setCreatedAt(LocalDateTime createdAt) { 
+        this.createdAt = createdAt; 
+        if (this.createdDate == null) this.createdDate = createdAt; // Keep both in sync
+    }
     
     public LocalDateTime getDueDate() { return dueDate; }
     public void setDueDate(LocalDateTime dueDate) { this.dueDate = dueDate; }
     
     public LocalDateTime getCompletedDate() { return completedDate; }
-    public void setCompletedDate(LocalDateTime completedDate) { this.completedDate = completedDate; }
+    public void setCompletedDate(LocalDateTime completedDate) { 
+        this.completedDate = completedDate; 
+        this.completedAt = completedDate; // Keep both in sync
+    }
+    
+    // ✅ ADD: Alias methods for completedAt
+    public LocalDateTime getCompletedAt() { return this.completedAt != null ? this.completedAt : this.completedDate; }
+    public void setCompletedAt(LocalDateTime completedAt) { 
+        this.completedAt = completedAt; 
+        if (this.completedDate == null) this.completedDate = completedAt; // Keep both in sync
+    }
     
     public User getCompletedBy() { return completedBy; }
     public void setCompletedBy(User completedBy) { this.completedBy = completedBy; }

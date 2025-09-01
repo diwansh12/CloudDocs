@@ -3,7 +3,10 @@ package com.clouddocs.backend.dto.workflow;
 import com.clouddocs.backend.entity.WorkflowPriority;
 import com.clouddocs.backend.entity.WorkflowStatus;
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import io.swagger.v3.oas.annotations.media.Schema;
 
+import jakarta.validation.constraints.NotNull;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -11,57 +14,123 @@ import java.util.UUID;
 /**
  * DTO for workflow instance with complete details including tasks and history
  */
+@JsonInclude(JsonInclude.Include.NON_NULL) // ✅ Exclude null fields from JSON
+@Schema(description = "Workflow instance with complete details")
 public class WorkflowInstanceDTO {
     
+    @Schema(description = "Unique workflow identifier")
     private Long id;
+    
+    @NotNull
+    @Schema(description = "Current workflow status")
     private WorkflowStatus status;
+    
+    @Schema(description = "Current step order in the workflow")
     private Integer currentStepOrder;
     
-    // ✅ ADD: Missing title and description fields
+    @Schema(description = "Workflow title", example = "Document Approval Workflow")
     private String title;
+    
+    @Schema(description = "Detailed description of the workflow")
     private String description;
     
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    @Schema(description = "When the workflow started")
     private LocalDateTime startDate;
     
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    @Schema(description = "When the workflow ended (if completed)")
     private LocalDateTime endDate;
     
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    @Schema(description = "Expected completion date")
     private LocalDateTime dueDate;
 
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    @Schema(description = "Last update timestamp")
     private LocalDateTime updatedDate;
     
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
-    private LocalDateTime createdDate; 
+    @Schema(description = "Creation timestamp")
+    private LocalDateTime createdDate;
     
+    @Schema(description = "Workflow priority level")
     private WorkflowPriority priority;
+    
+    @Schema(description = "Additional comments or notes")
     private String comments;
 
     // Document details
+    @Schema(description = "Associated document ID")
     private Long documentId;
+    
+    @Schema(description = "Associated document name")
     private String documentName;
     
     // Initiator details
+    @Schema(description = "User ID who initiated the workflow")
     private Long initiatedById;
+    
+    @Schema(description = "Full name of the user who initiated the workflow")
     private String initiatedByName;
 
-    // ✅ ADD: Template details
+    // Template details
+    @Schema(description = "Workflow template ID")
     private UUID templateId;
+    
+    @Schema(description = "Workflow template name")
     private String templateName;
     
-    // ✅ ADD: Task summary fields
+    // ✅ ENHANCED: Progress tracking fields
+    @Schema(description = "Total number of tasks in workflow")
     private int totalTasks;
+    
+    @Schema(description = "Number of completed tasks")
     private int completedTasks;
+    
+    @Schema(description = "Number of pending tasks")
+    private int pendingTasks;
+    
+    @Schema(description = "Progress percentage (0-100)")
+    private int progressPercentage;
+    
+    // ✅ ENHANCED: Current assignment info
+    @Schema(description = "Currently assigned user name")
+    private String currentAssignee;
+    
+    @Schema(description = "Current step name")
+    private String currentStepName;
+    
+    // ✅ ENHANCED: Timing information
+    @Schema(description = "Relative time since last update (e.g., '2 hours ago')")
+    private String lastUpdatedRelative;
+    
+    @Schema(description = "Whether workflow is overdue")
+    private boolean isOverdue;
 
     // Related data collections
+    @Schema(description = "List of workflow tasks")
     private List<WorkflowTaskDTO> tasks;
+    
+    @Schema(description = "Workflow history/audit trail")
     private List<WorkflowHistoryDTO> history;
+    
+    @Schema(description = "Workflow step definitions")
     private List<WorkflowStepDTO> steps;
 
-    // Constructors
+    // ✅ ENHANCED: Constructors
     public WorkflowInstanceDTO() {}
+
+    // ✅ ENHANCED: Helper methods
+    public int getProgressPercentage() {
+        if (totalTasks == 0) return 0;
+        return (completedTasks * 100) / totalTasks;
+    }
+    
+    public boolean getIsOverdue() {
+        return dueDate != null && LocalDateTime.now().isAfter(dueDate) && 
+               (status == WorkflowStatus.IN_PROGRESS || status == WorkflowStatus.PENDING);
+    }
 
     // ✅ ADD: Getters and setters for new fields
     public String getTitle() { return title; }
@@ -81,6 +150,21 @@ public class WorkflowInstanceDTO {
 
     public int getCompletedTasks() { return completedTasks; }
     public void setCompletedTasks(int completedTasks) { this.completedTasks = completedTasks; }
+
+      public int getPendingTasks() { return pendingTasks; }
+    public void setPendingTasks(int pendingTasks) { this.pendingTasks = pendingTasks; }
+    
+    public String getCurrentAssignee() { return currentAssignee; }
+    public void setCurrentAssignee(String currentAssignee) { this.currentAssignee = currentAssignee; }
+    
+    public String getCurrentStepName() { return currentStepName; }
+    public void setCurrentStepName(String currentStepName) { this.currentStepName = currentStepName; }
+    
+    public String getLastUpdatedRelative() { return lastUpdatedRelative; }
+    public void setLastUpdatedRelative(String lastUpdatedRelative) { this.lastUpdatedRelative = lastUpdatedRelative; }
+    
+    public boolean isOverdue() { return isOverdue; }
+    public void setOverdue(boolean overdue) { isOverdue = overdue; }
 
     // Your existing getters and setters remain the same...
     public Long getId() { return id; }

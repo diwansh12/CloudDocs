@@ -13,21 +13,12 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public interface WorkflowTaskRepository extends JpaRepository<WorkflowTask, Long> {
 
-    // ✅ CRITICAL FIX: Replace the problematic method with explicit @Query
-    @Query("SELECT t FROM WorkflowTask t " +
-           "LEFT JOIN t.workflowStep ws " +
-           "WHERE t.workflowInstance = :workflowInstance " +
-           "ORDER BY ws.stepOrder ASC")
-    List<WorkflowTask> findByWorkflowInstanceOrderByStepOrder(@Param("workflowInstance") WorkflowInstance workflowInstance);
-
-    // ✅ Alternative method name if you prefer method naming convention
-    // (This assumes your WorkflowTask has a 'workflowStep' field with 'stepOrder' property)
-    // List<WorkflowTask> findByWorkflowInstanceOrderByWorkflowStepStepOrder(WorkflowInstance workflowInstance);
-
-    // Basic queries
+    // ===== BASIC FINDER METHODS =====
+    
     List<WorkflowTask> findByAssignedToAndStatus(User assignedTo, TaskStatus status);
     
     Page<WorkflowTask> findByAssignedTo(User assignedTo, Pageable pageable);
@@ -38,12 +29,54 @@ public interface WorkflowTaskRepository extends JpaRepository<WorkflowTask, Long
     
     long countByAssignedToAndStatus(User assignedTo, TaskStatus status);
 
+    // ===== ENHANCED METHODS WITH JOIN FETCH =====
+
+    /**
+     * ✅ MISSING METHOD: Find tasks with workflow context
+     */
+    @Query("SELECT t FROM WorkflowTask t " +
+           "LEFT JOIN FETCH t.workflowInstance wi " +
+           "LEFT JOIN FETCH t.assignedTo " +
+           "LEFT JOIN FETCH t.workflowStep " +
+           "WHERE t.id = :id")
+    Optional<WorkflowTask> findByIdWithWorkflow(@Param("id") Long id);
+
+    /**
+     * ✅ MISSING METHOD: Find tasks by assignee and status with proper ordering
+     */
+    @Query("SELECT t FROM WorkflowTask t " +
+           "LEFT JOIN FETCH t.workflowInstance wi " +
+           "LEFT JOIN FETCH t.workflowStep " +
+           "WHERE t.assignedTo = :assignedTo AND t.status = :status " +
+           "ORDER BY t.createdDate DESC")
+    List<WorkflowTask> findByAssignedToAndStatusOrderByCreatedDateDesc(@Param("assignedTo") User assignedTo, @Param("status") TaskStatus status);
+
+    /**
+     * ✅ ALTERNATIVE METHOD: Same as above with different name
+     */
+    @Query("SELECT t FROM WorkflowTask t " +
+           "LEFT JOIN FETCH t.workflowInstance wi " +
+           "LEFT JOIN FETCH t.workflowStep " +
+           "WHERE t.assignedTo = :assignedTo AND t.status = :status " +
+           "ORDER BY t.createdDate DESC")
+    List<WorkflowTask> findByAssignedToAndStatusOrderByCreatedAtDesc(@Param("assignedTo") User assignedTo, @Param("status") TaskStatus status);
+
+    // ===== WORKFLOW INSTANCE ORDERING =====
+
+    /**
+     * ✅ CRITICAL FIX: Replace the problematic method with explicit @Query
+     */
+    @Query("SELECT t FROM WorkflowTask t " +
+           "LEFT JOIN t.workflowStep ws " +
+           "WHERE t.workflowInstance = :workflowInstance " +
+           "ORDER BY ws.stepOrder ASC")
+    List<WorkflowTask> findByWorkflowInstanceOrderByStepOrder(@Param("workflowInstance") WorkflowInstance workflowInstance);
+
     // SLA and Scheduler queries
     Page<WorkflowTask> findByStatusAndDueDateBefore(TaskStatus status, LocalDateTime dateTime, Pageable pageable);
     
     List<WorkflowTask> findByStatusAndDueDateBefore(TaskStatus status, LocalDateTime dateTime);
     
-    // More specific overdue queries
     @Query("SELECT t FROM WorkflowTask t WHERE t.status = :status AND t.dueDate < :cutoff ORDER BY t.dueDate ASC")
     Page<WorkflowTask> findOverdueTasksByStatus(@Param("status") TaskStatus status, 
                                                 @Param("cutoff") LocalDateTime cutoff, 

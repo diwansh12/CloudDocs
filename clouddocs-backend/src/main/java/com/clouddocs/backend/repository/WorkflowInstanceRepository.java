@@ -130,14 +130,6 @@ public interface WorkflowInstanceRepository extends JpaRepository<WorkflowInstan
            "WHERE w.id = :id")
     Optional<WorkflowInstance> findByIdWithBasicDetails(@Param("id") Long id);
 
-    @Query("SELECT w FROM WorkflowInstance w " +
-           "LEFT JOIN FETCH w.document " +
-           "LEFT JOIN FETCH w.initiatedBy " +
-           "LEFT JOIN FETCH w.tasks t " +
-           "LEFT JOIN FETCH t.assignedTo " +
-           "LEFT JOIN FETCH w.template " +
-           "WHERE w.id = :id")
-    Optional<WorkflowInstance> findByIdWithTasks(@Param("id") Long id);
     
     @Query("SELECT w FROM WorkflowInstance w " +
            "LEFT JOIN FETCH w.history " +
@@ -260,6 +252,58 @@ public interface WorkflowInstanceRepository extends JpaRepository<WorkflowInstan
 
     @Query("SELECT w FROM WorkflowInstance w WHERE w.startDate >= :cutoff ORDER BY w.startDate DESC")
     List<WorkflowInstance> findRecentWorkflows(@Param("cutoff") LocalDateTime cutoff);
+
+    // Add these methods to your existing WorkflowInstanceRepository.java
+
+/**
+ * ✅ MISSING METHOD: For workflow details with tasks and steps
+ */
+@Query("SELECT DISTINCT w FROM WorkflowInstance w " +
+       "LEFT JOIN FETCH w.document doc " +
+       "LEFT JOIN FETCH w.template tpl " +
+       "LEFT JOIN FETCH w.initiatedBy init " +
+       "LEFT JOIN FETCH w.tasks t " +
+       "LEFT JOIN FETCH t.assignedTo " +
+       "LEFT JOIN FETCH t.step " +
+       "WHERE w.id = :id")
+Optional<WorkflowInstance> findByIdWithTasksAndSteps(@Param("id") Long id);
+
+/**
+ * ✅ MISSING METHOD: For workflow with tasks only
+ */
+@Query("SELECT DISTINCT w FROM WorkflowInstance w " +
+       "LEFT JOIN FETCH w.tasks t " +
+       "LEFT JOIN FETCH t.assignedTo " +
+       "LEFT JOIN FETCH t.step " +
+       "WHERE w.id = :id")
+Optional<WorkflowInstance> findByIdWithTasks(@Param("id") Long id);
+
+/**
+ * ✅ MISSING METHOD: Enhanced method with proper ordering by createdDate
+ */
+@Query("SELECT DISTINCT w FROM WorkflowInstance w " +
+       "LEFT JOIN FETCH w.document doc " +
+       "LEFT JOIN FETCH w.template tpl " +
+       "LEFT JOIN FETCH w.initiatedBy init " +
+       "LEFT JOIN FETCH w.tasks tasks " +
+       "LEFT JOIN FETCH tasks.assignedTo " +
+       "WHERE init = :user " +
+       "ORDER BY w.createdDate DESC")
+Page<WorkflowInstance> findByInitiatedByWithDetailsOrderByCreatedDateDesc(@Param("user") User user, Pageable pageable);
+
+/**
+ * ✅ MISSING METHOD: Date range with proper field name
+ */
+@Query("SELECT DISTINCT w FROM WorkflowInstance w " +
+       "LEFT JOIN FETCH w.document doc " +
+       "LEFT JOIN FETCH w.template tpl " +
+       "LEFT JOIN FETCH w.initiatedBy init " +
+       "LEFT JOIN FETCH w.tasks tasks " +
+       "LEFT JOIN FETCH tasks.assignedTo " +
+       "WHERE init = :user AND w.createdDate BETWEEN :from AND :to " +
+       "ORDER BY w.createdDate DESC")
+Page<WorkflowInstance> findByInitiatedByAndCreatedDateBetweenWithDetails(@Param("user") User user, @Param("from") LocalDateTime from, @Param("to") LocalDateTime to, Pageable pageable);
+
 
     // ===== UTILITY METHODS =====
     

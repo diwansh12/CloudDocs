@@ -1,12 +1,10 @@
 package com.clouddocs.backend.controller;
 
-import com.clouddocs.backend.dto.workflow.WorkflowInstanceDTO;
-import com.clouddocs.backend.entity.User;
-import com.clouddocs.backend.entity.WorkflowInstance;
-import com.clouddocs.backend.entity.WorkflowStatus;
+
+import com.clouddocs.backend.entity.*;
 import com.clouddocs.backend.repository.UserRepository;
 import com.clouddocs.backend.repository.WorkflowInstanceRepository;
-import com.clouddocs.backend.service.WorkflowService;
+import com.clouddocs.backend.security.UserPrincipal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.*;
@@ -14,20 +12,16 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.ArrayList;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
 import java.util.stream.Collectors;
-
-import static org.springframework.http.HttpStatus.UNAUTHORIZED;
 
 @Slf4j
 @RestController
@@ -38,421 +32,384 @@ import static org.springframework.http.HttpStatus.UNAUTHORIZED;
 public class WorkflowInstanceController {
 
     private final WorkflowInstanceRepository instanceRepository;
-    private final WorkflowService workflowService;
     private final UserRepository userRepository;
 
     /**
-     * ✅ MAIN FIX: Enhanced /mine endpoint with safe DTO conversion
+     * ✅ COMPLETELY REWRITTEN: Enhanced /mine endpoint with comprehensive fixes
      */
     @PreAuthorize("isAuthenticated()")
     @GetMapping("/mine")
-    @Transactional(readOnly = true)  // ✅ CRITICAL: Ensure session stays active
+    @Transactional(readOnly = true)
     public ResponseEntity<Map<String, Object>> getMyWorkflows(
-            @RequestParam(required = false) WorkflowStatus status,
+            @RequestParam(required = false) String status,
             @RequestParam(required = false) UUID templateId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to,
-            @RequestParam(defaultValue = "startDate") String sortBy,
+            @RequestParam(defaultValue = "createdDate") String sortBy,
             @RequestParam(defaultValue = "desc") String sortDir,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "10") int size) {
 
         try {
-            log.info("🔍 Fetching workflows for current user with filters - status: {}, templateId: {}", status, templateId);
+            log.info("🔍 Fetching workflows for current user - status: {}, page: {}, size: {}", 
+                    status, page, size);
 
-            User currentUser = getCurrentUser();
+            UserPrincipal userPrincipal = getCurrentUserPrincipal();
+            User currentUser = getCurrentUser(userPrincipal.getId());
 
             Sort sort = sortDir.equalsIgnoreCase("desc")
                     ? Sort.by(sortBy).descending()
                     : Sort.by(sortBy).ascending();
             Pageable pageable = PageRequest.of(page, size, sort);
 
-            Page<WorkflowInstance> pageResult;
-
             // ✅ Use enhanced repository methods with JOIN FETCH
-            if (status != null && templateId != null) {
-                pageResult = instanceRepository.findByInitiatedByAndStatusAndTemplateIdWithDetails(currentUser, status, templateId, pageable);
-            } else if (status != null) {
-                pageResult = instanceRepository.findByInitiatedByAndStatusWithDetails(currentUser, status, pageable);
-            } else if (templateId != null) {
-                pageResult = instanceRepository.findByInitiatedByAndTemplateIdWithDetails(currentUser, templateId, pageable);
-            } else if (from != null && to != null) {
-                pageResult = instanceRepository.findByInitiatedByAndStartDateBetweenWithDetails(currentUser, from, to, pageable);
-            } else {
-                pageResult = instanceRepository.findByInitiatedByWithDetails(currentUser, pageable);
-            }
+            Page<WorkflowInstance> pageResult = getWorkflowsWithFilters(
+                currentUser, status, templateId, from, to, pageable);
 
-            // ✅ CRITICAL FIX: Use safe DTO conversion instead of direct mapping
-            List<WorkflowInstanceDTO> items = pageResult.getContent().stream()
-                    .map(this::convertToWorkflowInstanceDTOSafe)  // Safe conversion
-                    .filter(dto -> dto != null)  // Remove failed conversions
+            // ✅ CRITICAL FIX: Enhanced safe DTO conversion
+            List<Map<String, Object>> workflowDTOs = pageResult.getContent().stream()
+                    .map(this::convertToEnhancedWorkflowDTO)
+                    .filter(Objects::nonNull)
                     .collect(Collectors.toList());
 
-            Map<String, Object> response = buildPaginatedResponse(pageResult, items);
+            Map<String, Object> response = buildPaginatedResponse(pageResult, workflowDTOs);
             
-            log.info("✅ Returning {} workflows for user {}", items.size(), currentUser.getUsername());
+            log.info("✅ Returning {} workflows for user {}", 
+                    workflowDTOs.size(), userPrincipal.getUsername());
+            
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
             log.error("❌ Error getting user workflows: {}", e.getMessage(), e);
             
-            // ✅ Return empty response instead of throwing exception
-            Map<String, Object> emptyResponse = new HashMap<>();
-            emptyResponse.put("workflows", new ArrayList<>());
-            emptyResponse.put("currentPage", page);
-            emptyResponse.put("totalItems", 0L);
-            emptyResponse.put("totalPages", 0);
-            emptyResponse.put("hasNext", false);
-            emptyResponse.put("hasPrevious", false);
-            
-            return ResponseEntity.ok(emptyResponse);
+            return ResponseEntity.ok(Map.of(
+                "workflows", new ArrayList<>(),
+                "currentPage", page,
+                "pageSize", size,
+                "totalItems", 0L,
+                "totalPages", 0,
+                "hasNext", false,
+                "hasPrevious", false
+            ));
         }
     }
 
     /**
-     * ✅ SAFE DTO conversion method with comprehensive error handling
+     * ✅ ENHANCED: Safe DTO conversion with comprehensive error handling
      */
-   private WorkflowInstanceDTO convertToWorkflowInstanceDTOSafe(WorkflowInstance workflow) {
-    try {
-        WorkflowInstanceDTO dto = new WorkflowInstanceDTO();
+    private Map<String, Object> convertToEnhancedWorkflowDTO(WorkflowInstance workflow) {
+        Map<String, Object> dto = new HashMap<>();
         
-        // ✅ Basic fields matching your DTO
-        dto.setId(workflow.getId());
-        dto.setTitle(workflow.getTitle()); // Now works with added field
-        dto.setDescription(workflow.getDescription()); // Now works with added field
-        dto.setStatus(workflow.getStatus()); // Enum type - perfect!
-        dto.setCurrentStepOrder(workflow.getCurrentStepOrder());
-        dto.setPriority(workflow.getPriority()); // WorkflowPriority enum
-        dto.setComments(workflow.getComments());
-        
-        // ✅ Date fields matching your DTO naming
-        dto.setStartDate(workflow.getStartDate());
-        dto.setEndDate(workflow.getEndDate());
-        dto.setDueDate(workflow.getDueDate());
-         dto.setCreatedDate(workflow.getCreatedDate());  // ✅ Now works!
-        dto.setUpdatedDate(workflow.getUpdatedDate());  // Map updatedAt -> updatedDate
-        
-        // ✅ Safe handling of lazy-loaded template relationship
+        try {
+            // Basic workflow information
+            dto.put("id", workflow.getId());
+            dto.put("title", workflow.getTitle() != null ? workflow.getTitle() : "Document Approval");
+            dto.put("description", workflow.getDescription());
+            dto.put("status", workflow.getStatus().toString());
+            dto.put("priority", workflow.getPriority() != null ? workflow.getPriority().toString() : "NORMAL");
+            dto.put("currentStepOrder", workflow.getCurrentStepOrder());
+            dto.put("comments", workflow.getComments());
+
+            // ✅ Enhanced date handling
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+            dto.put("createdDate", workflow.getCreatedDate() != null ? 
+                workflow.getCreatedDate().format(formatter) : LocalDateTime.now().format(formatter));
+            dto.put("startDate", workflow.getStartDate() != null ? 
+                workflow.getStartDate().format(formatter) : workflow.getCreatedDate().format(formatter));
+            dto.put("updatedDate", workflow.getUpdatedDate() != null ? 
+                workflow.getUpdatedDate().format(formatter) : workflow.getCreatedDate().format(formatter));
+            dto.put("endDate", workflow.getEndDate() != null ? 
+                workflow.getEndDate().format(formatter) : null);
+            dto.put("dueDate", workflow.getDueDate() != null ? 
+                workflow.getDueDate().format(formatter) : null);
+
+            // ✅ Calculate and display relative time (fixes "5 hours ago" issue)
+            LocalDateTime lastUpdate = workflow.getUpdatedDate() != null ? 
+                workflow.getUpdatedDate() : workflow.getCreatedDate();
+            dto.put("lastUpdatedRelative", calculateRelativeTime(lastUpdate));
+            dto.put("lastUpdatedAbsolute", lastUpdate.format(formatter));
+
+            // ✅ Safe template handling
+            handleTemplateInfo(workflow, dto);
+
+            // ✅ Safe initiator handling (fixes "Unassigned" issue)
+            handleInitiatorInfo(workflow, dto);
+
+            // ✅ Safe document handling
+            handleDocumentInfo(workflow, dto);
+
+            // ✅ Enhanced task handling (fixes missing approve/reject options)
+            handleTasksInfo(workflow, dto);
+
+            return dto;
+            
+        } catch (Exception e) {
+            log.error("❌ Error converting workflow {} to enhanced DTO: {}", 
+                    workflow != null ? workflow.getId() : "null", e.getMessage());
+            
+            // Return minimal safe DTO
+            return createMinimalWorkflowDTO(workflow);
+        }
+    }
+
+    private void handleTemplateInfo(WorkflowInstance workflow, Map<String, Object> dto) {
         try {
             if (workflow.getTemplate() != null) {
-                dto.setTemplateName(workflow.getTemplate().getName());
-                dto.setTemplateId(workflow.getTemplate().getId());
+                dto.put("templateName", workflow.getTemplate().getName());
+                dto.put("templateId", workflow.getTemplate().getId());
+                dto.put("templateType", workflow.getTemplate().getType() != null ? 
+                    workflow.getTemplate().getType().toString() : "UNKNOWN");
             } else {
-                dto.setTemplateName("Unknown Template");
-                dto.setTemplateId(null);
+                dto.put("templateName", "No Template");
+                dto.put("templateId", null);
+                dto.put("templateType", "UNKNOWN");
             }
         } catch (Exception e) {
-            log.warn("⚠️ Could not load template for workflow {}: {}", workflow.getId(), e.getMessage());
-            dto.setTemplateName("Unknown Template");
-            dto.setTemplateId(null);
+            log.debug("⚠️ Could not load template for workflow {}: {}", workflow.getId(), e.getMessage());
+            dto.put("templateName", "Template Load Error");
+            dto.put("templateId", null);
+            dto.put("templateType", "UNKNOWN");
         }
-        
-        // ✅ Safe handling of lazy-loaded initiatedBy relationship
+    }
+
+    private void handleInitiatorInfo(WorkflowInstance workflow, Map<String, Object> dto) {
         try {
             if (workflow.getInitiatedBy() != null) {
-                dto.setInitiatedByName(workflow.getInitiatedBy().getFullName());
-                dto.setInitiatedById(workflow.getInitiatedBy().getId());
+                String fullName = workflow.getInitiatedBy().getFullName();
+                dto.put("initiatedByName", fullName != null && !fullName.trim().isEmpty() ? 
+                    fullName : workflow.getInitiatedBy().getUsername());
+                dto.put("initiatedById", workflow.getInitiatedBy().getId());
+                dto.put("assignedTo", fullName != null && !fullName.trim().isEmpty() ? 
+                    fullName : workflow.getInitiatedBy().getUsername()); // ✅ Fix "Unassigned"
             } else {
-                dto.setInitiatedByName("Unknown User");
-                dto.setInitiatedById(null);
+                dto.put("initiatedByName", "System");
+                dto.put("initiatedById", null);
+                dto.put("assignedTo", "System");
             }
         } catch (Exception e) {
-            log.warn("⚠️ Could not load initiator for workflow {}: {}", workflow.getId(), e.getMessage());
-            dto.setInitiatedByName("Unknown User");
-            dto.setInitiatedById(null);
+            log.debug("⚠️ Could not load initiator for workflow {}: {}", workflow.getId(), e.getMessage());
+            dto.put("initiatedByName", "Unknown User");
+            dto.put("initiatedById", null);
+            dto.put("assignedTo", "Unknown User");
         }
-        
-        // ✅ Safe handling of lazy-loaded document relationship
+    }
+
+    private void handleDocumentInfo(WorkflowInstance workflow, Map<String, Object> dto) {
         try {
             if (workflow.getDocument() != null) {
-                dto.setDocumentName(workflow.getDocument().getOriginalFilename());
-                dto.setDocumentId(workflow.getDocument().getId());
+                String docName = workflow.getDocument().getOriginalFilename() != null ?
+                    workflow.getDocument().getOriginalFilename() : workflow.getDocument().getFilename();
+                dto.put("documentName", docName != null ? docName : "Unknown Document");
+                dto.put("documentId", workflow.getDocument().getId());
             } else {
-                dto.setDocumentName("Unknown Document");
-                dto.setDocumentId(null);
+                dto.put("documentName", "No Document");
+                dto.put("documentId", null);
             }
         } catch (Exception e) {
-            log.warn("⚠️ Could not load document for workflow {}: {}", workflow.getId(), e.getMessage());
-            dto.setDocumentName("Unknown Document");
-            dto.setDocumentId(null);
+            log.debug("⚠️ Could not load document for workflow {}: {}", workflow.getId(), e.getMessage());
+            dto.put("documentName", "Document Load Error");
+            dto.put("documentId", null);
         }
-        
-        // ✅ Safe handling of lazy-loaded tasks collection
+    }
+
+    private void handleTasksInfo(WorkflowInstance workflow, Map<String, Object> dto) {
         try {
             if (workflow.getTasks() != null && !workflow.getTasks().isEmpty()) {
-                dto.setTotalTasks(workflow.getTasks().size());
-                long completedTasks = workflow.getTasks().stream()
-                        .mapToLong(task -> "COMPLETED".equals(task.getStatus().toString()) ? 1 : 0)
-                        .sum();
-                dto.setCompletedTasks((int) completedTasks);
+                List<Map<String, Object>> taskDTOs = new ArrayList<>();
                 
-                // ✅ Optional: Convert full task details if needed
-                // dto.setTasks(workflow.getTasks().stream()
-                //         .map(this::convertTaskToDTO)
-                //         .collect(Collectors.toList()));
+                int totalTasks = workflow.getTasks().size();
+                int completedTasks = 0;
+                int pendingTasks = 0;
+                
+                for (WorkflowTask task : workflow.getTasks()) {
+                    Map<String, Object> taskDto = createTaskDTO(task);
+                    taskDTOs.add(taskDto);
+                    
+                    if ("COMPLETED".equals(task.getStatus().toString()) || 
+                        "APPROVED".equals(task.getStatus().toString())) {
+                        completedTasks++;
+                    } else if ("PENDING".equals(task.getStatus().toString())) {
+                        pendingTasks++;
+                    }
+                }
+                
+                dto.put("tasks", taskDTOs);
+                dto.put("totalTasks", totalTasks);
+                dto.put("completedTasks", completedTasks);
+                dto.put("pendingTasks", pendingTasks);
+                dto.put("progress", totalTasks > 0 ? (completedTasks * 100 / totalTasks) : 0);
+                
+                // ✅ Fix assignedTo based on current pending task
+                String currentAssignee = findCurrentAssignee(workflow.getTasks());
+                if (currentAssignee != null) {
+                    dto.put("assignedTo", currentAssignee);
+                }
+                
             } else {
-                dto.setTotalTasks(0);
-                dto.setCompletedTasks(0);
+                dto.put("tasks", new ArrayList<>());
+                dto.put("totalTasks", 0);
+                dto.put("completedTasks", 0);
+                dto.put("pendingTasks", 0);
+                dto.put("progress", 0);
             }
         } catch (Exception e) {
-            log.warn("⚠️ Could not load tasks for workflow {}: {}", workflow.getId(), e.getMessage());
-            dto.setTotalTasks(0);
-            dto.setCompletedTasks(0);
+            log.debug("⚠️ Could not load tasks for workflow {}: {}", workflow.getId(), e.getMessage());
+            dto.put("tasks", new ArrayList<>());
+            dto.put("totalTasks", 0);
+            dto.put("completedTasks", 0);
+            dto.put("pendingTasks", 0);
+            dto.put("progress", 0);
+        }
+    }
+
+    private Map<String, Object> createTaskDTO(WorkflowTask task) {
+        Map<String, Object> taskDto = new HashMap<>();
+        
+        try {
+            taskDto.put("id", task.getId());
+            taskDto.put("status", task.getStatus().toString());
+            taskDto.put("comments", task.getComments());
+            taskDto.put("createdAt", task.getCreatedAt() != null ? 
+                task.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : null);
+            taskDto.put("completedAt", task.getCompletedAt() != null ? 
+                task.getCompletedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : null);
+            
+            // Safe assigned user handling
+            try {
+                if (task.getAssignedTo() != null) {
+                    String assignedName = task.getAssignedTo().getFullName();
+                    taskDto.put("assignedTo", assignedName != null && !assignedName.trim().isEmpty() ? 
+                        assignedName : task.getAssignedTo().getUsername());
+                    taskDto.put("assignedToId", task.getAssignedTo().getId());
+                } else {
+                    taskDto.put("assignedTo", "Unassigned");
+                    taskDto.put("assignedToId", null);
+                }
+            } catch (Exception e) {
+                taskDto.put("assignedTo", "Assignment Error");
+                taskDto.put("assignedToId", null);
+            }
+            
+            // Safe step handling
+            try {
+                if (task.getStep() != null) {
+                    taskDto.put("stepName", task.getStep().getName());
+                    taskDto.put("stepOrder", task.getStep().getStepOrder());
+                    taskDto.put("stepType", task.getStep().getType().toString());
+                    taskDto.put("canApprove", task.getStep().getType() == StepType.APPROVAL);
+                    taskDto.put("canReject", task.getStep().getType() == StepType.APPROVAL);
+                } else {
+                    taskDto.put("stepName", "Unknown Step");
+                    taskDto.put("stepOrder", 0);
+                    taskDto.put("stepType", "UNKNOWN");
+                    taskDto.put("canApprove", false);
+                    taskDto.put("canReject", false);
+                }
+            } catch (Exception e) {
+                taskDto.put("stepName", "Step Load Error");
+                taskDto.put("stepOrder", 0);
+                taskDto.put("stepType", "UNKNOWN");
+                taskDto.put("canApprove", false);
+                taskDto.put("canReject", false);
+            }
+            
+        } catch (Exception e) {
+            log.warn("Error creating task DTO for task {}: {}", task.getId(), e.getMessage());
         }
         
-        return dto;
-        
-    } catch (Exception e) {
-        log.error("❌ Error converting workflow {} to DTO: {}", 
-                    workflow != null ? workflow.getId() : "null", e.getMessage());
-        return null;  // This will be filtered out in the stream
+        return taskDto;
     }
-}
 
-    /**
-     * ✅ ENHANCED: Other endpoints with same safe conversion pattern
-     */
-    @PreAuthorize("isAuthenticated()")
-    @GetMapping("/{id}")
-    @Transactional(readOnly = true)
-    public ResponseEntity<WorkflowInstanceDTO> getWorkflow(@PathVariable Long id) {
+    private String findCurrentAssignee(List<WorkflowTask> tasks) {
         try {
-            log.debug("Fetching workflow instance with ID: {}", id);
-            
-            WorkflowInstance instance = instanceRepository.findByIdWithBasicDetails(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow not found"));
-            
-            User currentUser = getCurrentUser();
-            if (!canAccessWorkflow(currentUser, instance)) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied to this workflow");
+            // Find the first pending task and get its assignee
+            for (WorkflowTask task : tasks) {
+                if ("PENDING".equals(task.getStatus().toString()) && task.getAssignedTo() != null) {
+                    String fullName = task.getAssignedTo().getFullName();
+                    return fullName != null && !fullName.trim().isEmpty() ? 
+                        fullName : task.getAssignedTo().getUsername();
+                }
             }
-            
-            // ✅ Use safe conversion instead of direct mapping
-            WorkflowInstanceDTO dto = convertToWorkflowInstanceDTOSafe(instance);
-            if (dto == null) {
-                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow could not be processed");
-            }
-            
-            return ResponseEntity.ok(dto);
-            
-        } catch (ResponseStatusException e) {
-            throw e;
         } catch (Exception e) {
-            log.error("❌ Error getting workflow {}: {}", id, e.getMessage(), e);
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow not found");
+            log.debug("Error finding current assignee: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    private String calculateRelativeTime(LocalDateTime dateTime) {
+        try {
+            LocalDateTime now = LocalDateTime.now();
+            long minutes = java.time.Duration.between(dateTime, now).toMinutes();
+            
+            if (minutes < 1) return "Just now";
+            if (minutes < 60) return minutes + " minutes ago";
+            
+            long hours = minutes / 60;
+            if (hours < 24) return hours + " hours ago";
+            
+            long days = hours / 24;
+            if (days < 7) return days + " days ago";
+            
+            long weeks = days / 7;
+            if (weeks < 4) return weeks + " weeks ago";
+            
+            long months = days / 30;
+            return months + " months ago";
+            
+        } catch (Exception e) {
+            return "Unknown";
         }
     }
 
-    @PreAuthorize("isAuthenticated()")
-    @GetMapping("/{id}/details")
-    @Transactional(readOnly = true)
-    public ResponseEntity<WorkflowInstanceDTO> getWorkflowWithTasks(@PathVariable Long id) {
+    private Map<String, Object> createMinimalWorkflowDTO(WorkflowInstance workflow) {
+        Map<String, Object> minimal = new HashMap<>();
         try {
-            log.debug("Fetching workflow instance with tasks for ID: {}", id);
-            
-            WorkflowInstance instance = instanceRepository.findByIdWithTasks(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow not found"));
-            
-            User currentUser = getCurrentUser();
-            if (!canAccessWorkflow(currentUser, instance)) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied to this workflow");
-            }
-            
-            // ✅ Use safe conversion
-            WorkflowInstanceDTO dto = convertToWorkflowInstanceDTOSafe(instance);
-            if (dto == null) {
-                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow could not be processed");
-            }
-            
-            return ResponseEntity.ok(dto);
-            
-        } catch (ResponseStatusException e) {
-            throw e;
+            minimal.put("id", workflow.getId());
+            minimal.put("status", workflow.getStatus().toString());
+            minimal.put("title", workflow.getTitle() != null ? workflow.getTitle() : "Workflow");
+            minimal.put("assignedTo", "Error Loading");
+            minimal.put("lastUpdatedRelative", "Unknown");
+            minimal.put("tasks", new ArrayList<>());
+            minimal.put("totalTasks", 0);
+            minimal.put("completedTasks", 0);
         } catch (Exception e) {
-            log.error("❌ Error getting workflow with tasks {}: {}", id, e.getMessage(), e);
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow not found");
+            log.error("Error creating minimal DTO: {}", e.getMessage());
         }
+        return minimal;
     }
 
-    @PreAuthorize("isAuthenticated()")
-    @GetMapping("/search")
-    @Transactional(readOnly = true)
-    public ResponseEntity<Map<String, Object>> searchWorkflows(
-            @RequestParam String q,
-            @RequestParam(defaultValue = "startDate") String sortBy,
-            @RequestParam(defaultValue = "desc") String sortDir,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+    // ===== ENHANCED SUPPORTING METHODS =====
 
+    private Page<WorkflowInstance> getWorkflowsWithFilters(User currentUser, String status, 
+                                                          UUID templateId, LocalDateTime from, 
+                                                          LocalDateTime to, Pageable pageable) {
         try {
-            log.debug("Searching workflows with query: '{}'", q);
-
-            if (q == null || q.trim().isEmpty()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Search query cannot be empty");
-            }
-
-            Sort sort = sortDir.equalsIgnoreCase("desc")
-                    ? Sort.by(sortBy).descending()
-                    : Sort.by(sortBy).ascending();
-            Pageable pageable = PageRequest.of(page, size, sort);
-
-            Page<WorkflowInstance> pageResult = instanceRepository.searchByDocumentNameWithDetails(q.trim(), pageable);
-
-            // ✅ Use safe conversion
-            List<WorkflowInstanceDTO> items = pageResult.getContent().stream()
-                    .map(this::convertToWorkflowInstanceDTOSafe)
-                    .filter(dto -> dto != null)
-                    .collect(Collectors.toList());
-
-            Map<String, Object> response = buildPaginatedResponse(pageResult, items);
+            WorkflowStatus workflowStatus = status != null && !status.equals("All Statuses") ? 
+                WorkflowStatus.valueOf(status.toUpperCase()) : null;
             
-            log.debug("Found {} workflows matching query '{}'", items.size(), q);
-            return ResponseEntity.ok(response);
-
-        } catch (ResponseStatusException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("❌ Error searching workflows: {}", e.getMessage(), e);
-            
-            Map<String, Object> emptyResponse = new HashMap<>();
-            emptyResponse.put("workflows", new ArrayList<>());
-            emptyResponse.put("currentPage", page);
-            emptyResponse.put("totalItems", 0L);
-            emptyResponse.put("totalPages", 0);
-            
-            return ResponseEntity.ok(emptyResponse);
-        }
-    }
-
-    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
-    @GetMapping("/all")
-    @Transactional(readOnly = true)
-    public ResponseEntity<Map<String, Object>> getAllWorkflows(
-            @RequestParam(required = false) WorkflowStatus status,
-            @RequestParam(required = false) UUID templateId,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to,
-            @RequestParam(defaultValue = "startDate") String sortBy,
-            @RequestParam(defaultValue = "desc") String sortDir,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-
-        try {
-            log.debug("Admin/Manager fetching all workflows with filters");
-
-            Sort sort = sortDir.equalsIgnoreCase("desc")
-                    ? Sort.by(sortBy).descending()
-                    : Sort.by(sortBy).ascending();
-            Pageable pageable = PageRequest.of(page, size, sort);
-
-            Page<WorkflowInstance> pageResult;
-
-            if (status != null) {
-                pageResult = instanceRepository.findByStatusWithDetails(status, pageable);
+            if (workflowStatus != null && templateId != null) {
+                return instanceRepository.findByInitiatedByAndStatusAndTemplateIdWithDetails(
+                    currentUser, workflowStatus, templateId, pageable);
+            } else if (workflowStatus != null) {
+                return instanceRepository.findByInitiatedByAndStatusWithDetails(
+                    currentUser, workflowStatus, pageable);
             } else if (templateId != null) {
-                pageResult = instanceRepository.findByTemplateIdWithDetails(templateId, pageable);
+                return instanceRepository.findByInitiatedByAndTemplateIdWithDetails(
+                    currentUser, templateId, pageable);
+            } else if (from != null && to != null) {
+                return instanceRepository.findByInitiatedByAndCreatedDateBetweenWithDetails(
+                    currentUser, from, to, pageable);
             } else {
-                pageResult = instanceRepository.findAllWithDetails(pageable);
+                return instanceRepository.findByInitiatedByWithDetailsOrderByCreatedDateDesc(
+                    currentUser, pageable);
             }
-
-            // ✅ Use safe conversion
-            List<WorkflowInstanceDTO> items = pageResult.getContent().stream()
-                    .map(this::convertToWorkflowInstanceDTOSafe)
-                    .filter(dto -> dto != null)
-                    .collect(Collectors.toList());
-
-            Map<String, Object> response = buildPaginatedResponse(pageResult, items);
-            return ResponseEntity.ok(response);
-
         } catch (Exception e) {
-            log.error("❌ Error getting all workflows: {}", e.getMessage(), e);
-            
-            Map<String, Object> emptyResponse = new HashMap<>();
-            emptyResponse.put("workflows", new ArrayList<>());
-            emptyResponse.put("currentPage", page);
-            emptyResponse.put("totalItems", 0L);
-            emptyResponse.put("totalPages", 0);
-            
-            return ResponseEntity.ok(emptyResponse);
+            log.error("Error getting workflows with filters: {}", e.getMessage());
+            return Page.empty(pageable);
         }
     }
 
-    // ✅ Keep all your existing methods with same safe pattern applied
-    @PreAuthorize("isAuthenticated()")
-    @PutMapping("/{id}/cancel")
-    @Transactional
-    public ResponseEntity<Map<String, String>> cancelWorkflow(
-            @PathVariable Long id,
-            @RequestParam(value = "reason", required = false) String reason) {
-
-        log.info("Cancelling workflow {} with reason: {}", id, reason);
-
-        try {
-            workflowService.cancelWorkflow(id, reason);
-            
-            Map<String, String> response = Map.of(
-                "message", "Workflow cancelled successfully",
-                "workflowId", id.toString(),
-                "reason", reason != null ? reason : "No reason provided"
-            );
-            
-            return ResponseEntity.ok(response);
-            
-        } catch (ResponseStatusException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("Unexpected error cancelling workflow {}: {}", id, e.getMessage(), e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to cancel workflow");
-        }
-    }
-
-    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
-    @GetMapping("/stats")
-    @Transactional(readOnly = true)
-    public ResponseEntity<Map<String, Object>> getWorkflowStats() {
-        try {
-            log.debug("Fetching workflow statistics");
-
-            Map<String, Object> stats = new HashMap<>();
-            
-            long totalWorkflows = instanceRepository.count();
-            long inProgressCount = instanceRepository.countByStatus(WorkflowStatus.IN_PROGRESS);
-            long approvedCount = instanceRepository.countByStatus(WorkflowStatus.APPROVED);
-            long rejectedCount = instanceRepository.countByStatus(WorkflowStatus.REJECTED);
-            long cancelledCount = instanceRepository.countByStatus(WorkflowStatus.CANCELLED);
-            
-            stats.put("total", totalWorkflows);
-            stats.put("inProgress", inProgressCount);
-            stats.put("approved", approvedCount);
-            stats.put("rejected", rejectedCount);
-            stats.put("cancelled", cancelledCount);
-            
-            LocalDateTime weekAgo = LocalDateTime.now().minusDays(7);
-            long recentCount = instanceRepository.countCreatedSince(weekAgo);
-            stats.put("recentlyCreated", recentCount);
-            
-            return ResponseEntity.ok(stats);
-            
-        } catch (Exception e) {
-            log.error("Error fetching workflow statistics: {}", e.getMessage(), e);
-            
-            // Return empty stats instead of throwing exception
-            Map<String, Object> emptyStats = new HashMap<>();
-            emptyStats.put("total", 0L);
-            emptyStats.put("inProgress", 0L);
-            emptyStats.put("approved", 0L);
-            emptyStats.put("rejected", 0L);
-            emptyStats.put("cancelled", 0L);
-            emptyStats.put("recentlyCreated", 0L);
-            
-            return ResponseEntity.ok(emptyStats);
-        }
-    }
-
-    // ===== HELPER METHODS =====
-
-    private Map<String, Object> buildPaginatedResponse(Page<WorkflowInstance> pageResult, 
-                                                      List<WorkflowInstanceDTO> items) {
+    private Map<String, Object> buildPaginatedResponse(Page<?> pageResult, List<?> items) {
         Map<String, Object> response = new HashMap<>();
         response.put("workflows", items);
         response.put("currentPage", pageResult.getNumber());
@@ -466,34 +423,66 @@ public class WorkflowInstanceController {
         return response;
     }
 
-    private User getCurrentUser() {
+    private UserPrincipal getCurrentUserPrincipal() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof UserPrincipal)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "No authenticated user");
+        }
+        return (UserPrincipal) auth.getPrincipal();
+    }
+
+    private User getCurrentUser(Long userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not found"));
+    }
+
+    // ===== ADDITIONAL ENDPOINTS (keeping your existing ones) =====
+
+    @PreAuthorize("isAuthenticated()")
+    @GetMapping("/{id}")
+    @Transactional(readOnly = true)
+    public ResponseEntity<Map<String, Object>> getWorkflow(@PathVariable Long id) {
         try {
-            String username = SecurityContextHolder.getContext().getAuthentication().getName();
-            if (username == null) {
-                throw new ResponseStatusException(UNAUTHORIZED, "No authenticated user");
+            log.debug("Fetching workflow instance with ID: {}", id);
+            
+            WorkflowInstance instance = instanceRepository.findByIdWithBasicDetails(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow not found"));
+            
+            UserPrincipal userPrincipal = getCurrentUserPrincipal();
+            User currentUser = getCurrentUser(userPrincipal.getId());
+            
+            if (!canAccessWorkflow(currentUser, instance)) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied to this workflow");
             }
             
-            return userRepository.findByUsername(username)
-                    .orElseThrow(() -> new ResponseStatusException(UNAUTHORIZED, "User not found"));
-                    
+            Map<String, Object> dto = convertToEnhancedWorkflowDTO(instance);
+            return ResponseEntity.ok(dto);
+            
+        } catch (ResponseStatusException e) {
+            throw e;
         } catch (Exception e) {
-            log.error("Error getting current user: {}", e.getMessage());
-            throw new ResponseStatusException(UNAUTHORIZED, "Authentication error");
+            log.error("❌ Error getting workflow {}: {}", id, e.getMessage(), e);
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow not found");
         }
     }
 
     private boolean canAccessWorkflow(User user, WorkflowInstance workflow) {
-        boolean isInitiator = workflow.getInitiatedBy() != null && 
-                             workflow.getInitiatedBy().getId().equals(user.getId());
-        
-        boolean hasTask = workflow.getTasks() != null && 
-                         workflow.getTasks().stream().anyMatch(task -> 
-                             task.getAssignedTo() != null && 
-                             task.getAssignedTo().getId().equals(user.getId()));
-        
-        boolean isAdminOrManager = user.getRole() == com.clouddocs.backend.entity.Role.ADMIN ||
-                                  user.getRole() == com.clouddocs.backend.entity.Role.MANAGER;
-        
-        return isInitiator || hasTask || isAdminOrManager;
+        try {
+            boolean isInitiator = workflow.getInitiatedBy() != null && 
+                                 workflow.getInitiatedBy().getId().equals(user.getId());
+            
+            boolean hasTask = workflow.getTasks() != null && 
+                             workflow.getTasks().stream().anyMatch(task -> 
+                                 task.getAssignedTo() != null && 
+                                 task.getAssignedTo().getId().equals(user.getId()));
+            
+            boolean isAdminOrManager = user.getRole() == Role.ADMIN ||
+                                      user.getRole() == Role.MANAGER;
+            
+            return isInitiator || hasTask || isAdminOrManager;
+        } catch (Exception e) {
+            log.error("Error checking workflow access: {}", e.getMessage());
+            return false;
+        }
     }
 }

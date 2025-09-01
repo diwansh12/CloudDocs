@@ -4,42 +4,100 @@ import com.clouddocs.backend.entity.TaskAction;
 import com.clouddocs.backend.entity.TaskPriority;
 import com.clouddocs.backend.entity.TaskStatus;
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import io.swagger.v3.oas.annotations.media.Schema;
 
+import jakarta.validation.constraints.NotNull;
 import java.time.LocalDateTime;
 
 /**
  * DTO for workflow task details
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@Schema(description = "Workflow task with complete details")
 public class WorkflowTaskDTO {
     
+    @Schema(description = "Task unique identifier")
     private Long id;
+    
+    @NotNull
+    @Schema(description = "Task title", example = "Review Document")
     private String title;
+    
+    @Schema(description = "Detailed task description")
     private String description;
+    
+    @NotNull
+    @Schema(description = "Current task status")
     private TaskStatus status;
+    
+    @Schema(description = "Action taken on task")
     private TaskAction action;
+    
+    @Schema(description = "Task priority level")
     private TaskPriority priority;
     
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    @Schema(description = "Task creation timestamp")
     private LocalDateTime createdDate;
     
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    @Schema(description = "Task due date")
     private LocalDateTime dueDate;
     
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    @Schema(description = "Task completion timestamp")
     private LocalDateTime completedDate;
 
     // Assignee details
+    @Schema(description = "ID of assigned user")
     private Long assignedToId;
+    
+    @Schema(description = "Name of assigned user")
     private String assignedToName;
     
     // Step details
+    @Schema(description = "Step order in workflow")
     private Integer stepOrder;
+    
+    @Schema(description = "Step name")
     private String stepName;
+    
+    // ✅ ENHANCED: Additional useful fields
+    @Schema(description = "Task comments or notes")
+    private String comments;
+    
+    @Schema(description = "Whether task is overdue")
+    private boolean isOverdue;
+    
+    @Schema(description = "Whether current user can approve this task")
+    private boolean canApprove;
+    
+    @Schema(description = "Whether current user can reject this task")
+    private boolean canReject;
+    
+    @Schema(description = "Whether current user can edit this task")
+    private boolean canEdit;
+    
+    @Schema(description = "Time remaining until due date")
+    private String timeRemaining;
+    
+    @Schema(description = "Relative time since creation")
+    private String createdRelative;
+    
+    @Schema(description = "Workflow instance ID this task belongs to")
+    private Long workflowInstanceId;
 
     // Constructors
     public WorkflowTaskDTO() {}
 
-    // Getters and Setters
+    // ✅ ENHANCED: Helper methods
+    public boolean getIsOverdue() {
+        return dueDate != null && LocalDateTime.now().isAfter(dueDate) && 
+               status != TaskStatus.COMPLETED;
+    }
+
+    // All getters and setters
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
@@ -78,4 +136,29 @@ public class WorkflowTaskDTO {
 
     public String getStepName() { return stepName; }
     public void setStepName(String stepName) { this.stepName = stepName; }
+    
+    // ✅ NEW: Enhanced field getters/setters
+    public String getComments() { return comments; }
+    public void setComments(String comments) { this.comments = comments; }
+    
+    public boolean isOverdue() { return isOverdue; }
+    public void setOverdue(boolean overdue) { isOverdue = overdue; }
+    
+    public boolean isCanApprove() { return canApprove; }
+    public void setCanApprove(boolean canApprove) { this.canApprove = canApprove; }
+    
+    public boolean isCanReject() { return canReject; }
+    public void setCanReject(boolean canReject) { this.canReject = canReject; }
+    
+    public boolean isCanEdit() { return canEdit; }
+    public void setCanEdit(boolean canEdit) { this.canEdit = canEdit; }
+    
+    public String getTimeRemaining() { return timeRemaining; }
+    public void setTimeRemaining(String timeRemaining) { this.timeRemaining = timeRemaining; }
+    
+    public String getCreatedRelative() { return createdRelative; }
+    public void setCreatedRelative(String createdRelative) { this.createdRelative = createdRelative; }
+    
+    public Long getWorkflowInstanceId() { return workflowInstanceId; }
+    public void setWorkflowInstanceId(Long workflowInstanceId) { this.workflowInstanceId = workflowInstanceId; }
 }

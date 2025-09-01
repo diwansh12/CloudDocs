@@ -58,6 +58,15 @@ public class WorkflowStep {
     @Column(name = "step_type", nullable = false)
     private StepType stepType = StepType.APPROVAL;
 
+    // ✅ ADD: Missing assigneeRole field
+    @Enumerated(EnumType.STRING)
+    @Column(name = "assignee_role")
+    private Role assigneeRole;
+
+    // ✅ ADD: Missing isRequired field
+    @Column(name = "is_required")
+    private Boolean isRequired = true;
+
     // ===== APPROVAL CONFIGURATION =====
 
     @Enumerated(EnumType.STRING)
@@ -228,6 +237,36 @@ public class WorkflowStep {
         this.stepType = stepType;
     }
 
+    /**
+     * ✅ ALIAS: getType() method for compatibility
+     */
+    public StepType getType() {
+        return this.stepType;
+    }
+
+    // ✅ ADD: Missing assigneeRole getters and setters
+    public Role getAssigneeRole() {
+        return assigneeRole;
+    }
+
+    public void setAssigneeRole(Role assigneeRole) {
+        this.assigneeRole = assigneeRole;
+    }
+
+    // ✅ ADD: Missing isRequired getters and setters
+    public Boolean getIsRequired() {
+        return isRequired != null ? isRequired : true;
+    }
+
+    public void setIsRequired(Boolean isRequired) {
+        this.isRequired = isRequired;
+    }
+
+    // ✅ ADD: Convenience method for primitive boolean
+    public void setIsRequired(boolean isRequired) {
+        this.isRequired = isRequired;
+    }
+
     public ApprovalPolicy getApprovalPolicy() {
         return approvalPolicy;
     }
@@ -290,6 +329,8 @@ public class WorkflowStep {
                 ", stepOrder=" + stepOrder +
                 ", name='" + name + '\'' +
                 ", stepType=" + stepType +
+                ", assigneeRole=" + assigneeRole +
+                ", isRequired=" + isRequired +
                 ", approvalPolicy=" + approvalPolicy +
                 ", requiredApprovals=" + requiredApprovals +
                 '}';
