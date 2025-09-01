@@ -16,34 +16,39 @@ import java.util.UUID;
 @Repository
 public interface WorkflowTemplateRepository extends JpaRepository<WorkflowTemplate, UUID> {
 
-    // ✅ Existing methods
+    // ✅ Existing simple queries
     List<WorkflowTemplate> findByIsActiveTrue();
     Page<WorkflowTemplate> findByIsActiveTrue(Pageable pageable);
     Page<WorkflowTemplate> findByType(WorkflowType type, Pageable pageable);
     Page<WorkflowTemplate> findByIsActiveTrueAndType(WorkflowType type, Pageable pageable);
     Optional<WorkflowTemplate> findByName(String name);
 
-    // ✅ Fetch active templates with steps only
+
+
+    // ✅ Fetch only templates + steps (no roles) → avoids MultipleBagFetchException
     @Query("SELECT DISTINCT wt FROM WorkflowTemplate wt " +
            "LEFT JOIN FETCH wt.steps s " +
            "WHERE wt.isActive = true " +
            "ORDER BY wt.name")
     List<WorkflowTemplate> findActiveWithSteps();
 
-    // ✅ Fetch template with steps (no roles) – lighter
     @Query("SELECT DISTINCT wt FROM WorkflowTemplate wt " +
            "LEFT JOIN FETCH wt.steps s " +
            "WHERE wt.id = :id")
     Optional<WorkflowTemplate> findByIdWithSteps(@Param("id") UUID id);
 
-    // ✅ Fetch template with steps + roles – avoids LazyInitializationException
+    @Query("SELECT DISTINCT wt FROM WorkflowTemplate wt " +
+           "LEFT JOIN FETCH wt.steps s " +
+           "WHERE wt.name = :name")
+    Optional<WorkflowTemplate> findByNameWithSteps(@Param("name") String name);
+
+    // ✅ Separate methods for steps + roles (call only when needed)
     @Query("SELECT DISTINCT wt FROM WorkflowTemplate wt " +
            "LEFT JOIN FETCH wt.steps s " +
            "LEFT JOIN FETCH s.roles r " +
            "WHERE wt.id = :id")
     Optional<WorkflowTemplate> findByIdWithStepsAndRoles(@Param("id") UUID id);
 
-    // ✅ Fetch by name with steps + roles
     @Query("SELECT DISTINCT wt FROM WorkflowTemplate wt " +
            "LEFT JOIN FETCH wt.steps s " +
            "LEFT JOIN FETCH s.roles r " +
