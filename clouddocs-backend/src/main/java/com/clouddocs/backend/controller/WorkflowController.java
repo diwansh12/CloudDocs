@@ -50,8 +50,8 @@ public class WorkflowController {
                 throw new IllegalArgumentException("Template ID is required");
             }
             
-            // ✅ FIXED: Call service with all parameters
-            WorkflowInstance instance = workflowService.startWorkflow(
+            // ✅ FIXED: Service now returns WorkflowInstanceDTO directly
+            WorkflowInstanceDTO dto = workflowService.startWorkflow(
                 request.getDocumentId(),
                 request.getTemplateId(),
                 request.getTitle(),           // ✅ Include title
@@ -59,17 +59,15 @@ public class WorkflowController {
                 request.getPriority()         // ✅ Include priority
             );
             
-            WorkflowInstanceDTO dto = WorkflowMapper.toInstanceDTO(instance);
-            
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
             response.put("message", "Workflow created successfully");
             response.put("workflow", dto);
-            response.put("workflowId", instance.getId());
+            response.put("workflowId", dto.getId());
             response.put("timestamp", LocalDateTime.now());
             
             log.info("✅ Workflow created successfully with ID: {}, Priority: {}", 
-                    instance.getId(), request.getPriority());
+                    dto.getId(), request.getPriority());
             
             return ResponseEntity.ok(response);
             
@@ -112,8 +110,8 @@ public class WorkflowController {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             log.debug("Authenticated user: {}", auth != null ? auth.getName() : "null");
             
-            // ✅ FIXED: Call the 5-parameter method with defaults
-            WorkflowInstance instance = workflowService.startWorkflow(
+            // ✅ FIXED: Service now returns WorkflowInstanceDTO directly
+            WorkflowInstanceDTO dto = workflowService.startWorkflow(
                 documentId, 
                 templateId,
                 null,      // title
@@ -121,8 +119,7 @@ public class WorkflowController {
                 "NORMAL"   // priority
             );
             
-            WorkflowInstanceDTO dto = WorkflowMapper.toInstanceDTO(instance);
-            log.info("Workflow created successfully with ID: {}", instance.getId());
+            log.info("Workflow created successfully with ID: {}", dto.getId());
             return ResponseEntity.ok(dto);
             
         } catch (Exception e) {
@@ -140,7 +137,7 @@ public class WorkflowController {
     }
 
     /**
-     * ✅ Handle task actions (approve/reject)
+     * ✅ Handle task actions (approve/reject) with enhanced response
      * Maps to: PUT /workflows/tasks/{taskId}/action
      */
     @PreAuthorize("isAuthenticated()")
@@ -161,15 +158,20 @@ public class WorkflowController {
                 throw new IllegalArgumentException("Invalid action. Must be APPROVE or REJECT");
             }
             
-            // Process the action using service method
-            workflowService.processTaskAction(taskId, action, comments);
+            // ✅ UPDATED: Use the enhanced service method that returns detailed response
+            Map<String, Object> serviceResponse = workflowService.processTaskActionWithUser(
+                taskId, action, comments, getCurrentUserId());
             
+            // Enhanced response including workflow details
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
             response.put("message", "Task " + action.toLowerCase() + "d successfully");
             response.put("taskId", taskId);
             response.put("action", action);
             response.put("timestamp", LocalDateTime.now());
+            
+            // Add service response details
+            response.putAll(serviceResponse);
             
             log.info("✅ Task action completed successfully - TaskID: {}, Action: {}", taskId, action);
             return ResponseEntity.ok(response);
@@ -238,14 +240,15 @@ public class WorkflowController {
     }
 
     /**
-     * ✅ Get tasks assigned to current user
+     * ✅ Get tasks assigned to current user with enhanced details
      * Maps to: GET /workflows/tasks/user
      */
     @PreAuthorize("isAuthenticated()")
     @GetMapping("/tasks/user")
-    public ResponseEntity<List<WorkflowTask>> getUserTasks() {
+    public ResponseEntity<List<Map<String, Object>>> getUserTasks() {
         try {
-            List<WorkflowTask> tasks = workflowService.getMyTasks();
+            // ✅ UPDATED: Service now returns detailed task information
+            List<Map<String, Object>> tasks = workflowService.getMyTasksWithDetails(getCurrentUserId());
             return ResponseEntity.ok(tasks);
         } catch (Exception e) {
             log.error("Failed to get user tasks: {}", e.getMessage(), e);
@@ -259,12 +262,34 @@ public class WorkflowController {
      */
     @PreAuthorize("isAuthenticated()")
     @GetMapping("/user")
-    public ResponseEntity<List<WorkflowInstance>> getUserWorkflows() {
+    public ResponseEntity<List<WorkflowInstanceDTO>> getUserWorkflows() {
         try {
-            List<WorkflowInstance> workflows = workflowService.getMyWorkflows();
+            // ✅ FIXED: Service now returns List<WorkflowInstanceDTO>
+            List<WorkflowInstanceDTO> workflows = workflowService.getMyWorkflows();
             return ResponseEntity.ok(workflows);
         } catch (Exception e) {
             log.error("Failed to get user workflows: {}", e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    /**
+     * ✅ Get paginated user workflows with filtering
+     * Maps to: GET /workflows/user/paginated
+     */
+    @PreAuthorize("isAuthenticated()")
+    @GetMapping("/user/paginated")
+    public ResponseEntity<Map<String, Object>> getUserWorkflowsPaginated(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "All Statuses") String status) {
+        try {
+            // ✅ NEW: Enhanced service method for pagination
+            Map<String, Object> response = workflowService.getUserWorkflowsWithDetails(
+                getCurrentUserId(), page, size, status);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to get paginated user workflows: {}", e.getMessage(), e);
             throw e;
         }
     }
@@ -283,14 +308,18 @@ public class WorkflowController {
         try {
             log.info("Completing task {} with action {}", taskId, action);
             
-            workflowService.completeTask(taskId, action, comments);
+            // ✅ UPDATED: Use enhanced service method
+            Map<String, Object> result = workflowService.processTaskActionWithUser(
+                taskId, action.toString(), comments, getCurrentUserId());
             
-            return ResponseEntity.ok(Map.of(
-                "message", "Task completed successfully",
-                "taskId", taskId,
-                "action", action.toString(),
-                "timestamp", LocalDateTime.now()
-            ));
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", "Task completed successfully");
+            response.put("taskId", taskId);
+            response.put("action", action.toString());
+            response.put("timestamp", LocalDateTime.now());
+            response.putAll(result);
+            
+            return ResponseEntity.ok(response);
             
         } catch (Exception e) {
             log.error("Failed to complete task {}: {}", taskId, e.getMessage(), e);
@@ -305,33 +334,98 @@ public class WorkflowController {
     }
 
     /**
-     * ✅ Get workflow details by ID (put after specific paths)
+     * ✅ Get workflow details by ID with user permissions
      * Maps to: GET /workflows/{instanceId}
      */
     @PreAuthorize("isAuthenticated()")
     @GetMapping("/{instanceId}")
-    public ResponseEntity<Map<String, Object>> getWorkflowDetails(@PathVariable Long instanceId) {
+    public ResponseEntity<WorkflowInstanceDTO> getWorkflowDetails(@PathVariable Long instanceId) {
         try {
             log.info("Getting workflow details for ID: {}", instanceId);
             
-            // TODO: Implement this method in WorkflowService
-            // For now, return a meaningful response
+            // ✅ IMPLEMENTED: Use the enhanced service method
+            WorkflowInstanceDTO workflow = workflowService.getWorkflowDetailsWithTasks(
+                instanceId, getCurrentUserId());
+            
+            return ResponseEntity.ok(workflow);
+            
+        } catch (Exception e) {
+            log.error("Failed to get workflow details for {}: {}", instanceId, e.getMessage(), e);
+            throw e; // Let the global exception handler deal with it
+        }
+    }
+
+    /**
+     * ✅ Cancel workflow
+     * Maps to: PUT /workflows/{instanceId}/cancel
+     */
+    @PreAuthorize("isAuthenticated()")
+    @PutMapping("/{instanceId}/cancel")
+    public ResponseEntity<Map<String, Object>> cancelWorkflow(
+            @PathVariable Long instanceId,
+            @RequestParam(required = false) String reason) {
+        try {
+            log.info("Cancelling workflow {} with reason: {}", instanceId, reason);
+            
+            // ✅ NEW: Use enhanced service method
+            WorkflowInstanceDTO cancelledWorkflow = workflowService.cancelWorkflow(instanceId, reason);
+            
             Map<String, Object> response = new HashMap<>();
-            response.put("message", "Workflow details endpoint - implementation pending");
+            response.put("success", true);
+            response.put("message", "Workflow cancelled successfully");
+            response.put("workflow", cancelledWorkflow);
             response.put("instanceId", instanceId);
+            response.put("reason", reason);
             response.put("timestamp", LocalDateTime.now());
             
             return ResponseEntity.ok(response);
             
         } catch (Exception e) {
-            log.error("Failed to get workflow details for {}: {}", instanceId, e.getMessage(), e);
+            log.error("Failed to cancel workflow {}: {}", instanceId, e.getMessage(), e);
             
-            return ResponseEntity.status(500).body(Map.of(
-                "error", e.getMessage(),
-                "instanceId", instanceId,
-                "timestamp", LocalDateTime.now()
-            ));
+            Map<String, Object> error = new HashMap<>();
+            error.put("success", false);
+            error.put("message", "Failed to cancel workflow: " + e.getMessage());
+            error.put("instanceId", instanceId);
+            error.put("timestamp", LocalDateTime.now());
+            
+            return ResponseEntity.status(500).body(error);
+        }
+    }
+
+    /**
+     * ✅ Get workflow by ID (simple version for backward compatibility)
+     * Maps to: GET /workflows/{instanceId}/simple
+     */
+    @PreAuthorize("isAuthenticated()")
+    @GetMapping("/{instanceId}/simple")
+    public ResponseEntity<WorkflowInstanceDTO> getWorkflowById(@PathVariable Long instanceId) {
+        try {
+            // ✅ UPDATED: Service now returns WorkflowInstanceDTO
+            WorkflowInstanceDTO workflow = workflowService.getWorkflowById(instanceId);
+            return ResponseEntity.ok(workflow);
+        } catch (Exception e) {
+            log.error("Failed to get workflow {}: {}", instanceId, e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    // ===== HELPER METHODS =====
+
+    /**
+     * ✅ Get current user ID from security context
+     */
+    private Long getCurrentUserId() {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            String username = auth.getName();
+            // This assumes you have a way to get user ID from username
+            // You might need to inject UserService or UserRepository for this
+            // For now, returning a placeholder - you'll need to implement this based on your user management
+            return 1L; // TODO: Implement proper user ID retrieval
+        } catch (Exception e) {
+            log.error("Error getting current user ID: {}", e.getMessage());
+            throw new RuntimeException("Unable to get current user ID", e);
         }
     }
 }
-

@@ -1,6 +1,8 @@
 package com.clouddocs.backend.service;
 
+import com.clouddocs.backend.dto.workflow.WorkflowInstanceDTO;
 import com.clouddocs.backend.entity.*;
+import com.clouddocs.backend.mapper.WorkflowMapper;
 import com.clouddocs.backend.repository.*;
 import com.clouddocs.backend.security.AuthzUtil;
 import lombok.RequiredArgsConstructor;
@@ -22,9 +24,10 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * ✅ COMPLETE PRODUCTION-READY WorkflowService
+ * ✅ COMPLETE PRODUCTION-READY WorkflowService with integrated WorkflowMapper
  * 
  * Features:
+ * - Integrated WorkflowMapper for consistent DTO conversion
  * - Fixes "Assigned to: Unassigned" issues
  * - Proper task creation and assignment
  * - Enhanced workflow progression
@@ -61,11 +64,12 @@ public class WorkflowService {
 
     /**
      * ✅ ENHANCED: Start workflow with explicit user context (FIXES UNASSIGNED ISSUE)
+     * Now returns WorkflowInstanceDTO using the mapper
      */
     @Transactional
-    public WorkflowInstance startWorkflowWithUser(Long documentId, UUID templateId, 
-                                                 String title, String description, 
-                                                 String priority, Long userId) {
+    public WorkflowInstanceDTO startWorkflowWithUser(Long documentId, UUID templateId, 
+                                                    String title, String description, 
+                                                    String priority, Long userId) {
         log.info("🚀 Starting workflow with user context - DocumentID: {}, TemplateID: {}, UserID: {}, Priority: {}", 
                 documentId, templateId, userId, priority);
 
@@ -107,7 +111,9 @@ public class WorkflowService {
                               "Template: " + template.getName() + (title != null ? " - " + title : ""));
             
             log.info("✅ Workflow instance {} created successfully with proper assignments", instance.getId());
-            return instance;
+            
+            // ✅ Use WorkflowMapper to convert to DTO
+            return WorkflowMapper.toInstanceDTO(instance);
             
         } catch (ResponseStatusException e) {
             throw e;
@@ -120,11 +126,11 @@ public class WorkflowService {
     }
 
     /**
-     * ✅ BACKWARD COMPATIBILITY: Legacy method
+     * ✅ BACKWARD COMPATIBILITY: Legacy method now returns DTO
      */
     @Transactional
-    public WorkflowInstance startWorkflow(Long documentId, UUID templateId, 
-                                        String title, String description, String priority) {
+    public WorkflowInstanceDTO startWorkflow(Long documentId, UUID templateId, 
+                                           String title, String description, String priority) {
         User currentUser = getCurrentUserSafe();
         return startWorkflowWithUser(documentId, templateId, title, description, priority, currentUser.getId());
     }
@@ -156,8 +162,12 @@ public class WorkflowService {
             // Process workflow progression
             Map<String, Object> progressionResult = processWorkflowProgression(instance, currentUser);
 
-            // Prepare comprehensive response
+            // Prepare comprehensive response with DTO
             Map<String, Object> result = buildTaskActionResponse(task, taskAction, instance, progressionResult);
+            
+            // ✅ Add WorkflowInstanceDTO to response
+            WorkflowInstance updatedInstance = instanceRepository.findById(instance.getId()).orElse(instance);
+            result.put("workflowDetails", WorkflowMapper.toInstanceDTO(updatedInstance));
             
             log.info("✅ Task action completed successfully - TaskID: {}, Action: {}, WorkflowStatus: {}", 
                     taskId, action, instance.getStatus());
@@ -193,6 +203,7 @@ public class WorkflowService {
 
     /**
      * ✅ ENHANCED: Get user workflows with detailed pagination (FIXES DISAPPEARING WORKFLOWS)
+     * Now returns WorkflowInstanceDTO list
      */
     @Transactional(readOnly = true)
     public Map<String, Object> getUserWorkflowsWithDetails(Long userId, int page, int size, String status) {
@@ -206,9 +217,9 @@ public class WorkflowService {
             // Get workflows with proper filtering
             Page<WorkflowInstance> workflowsPage = getFilteredUserWorkflows(user, status, pageable);
 
-            // Convert to safe DTOs
-            List<Map<String, Object>> workflowDTOs = workflowsPage.getContent().stream()
-                    .map(this::convertWorkflowToSafeDTO)
+            // ✅ Convert to DTOs using WorkflowMapper
+            List<WorkflowInstanceDTO> workflowDTOs = workflowsPage.getContent().stream()
+                    .map(WorkflowMapper::toInstanceDTO)
                     .filter(Objects::nonNull)
                     .collect(Collectors.toList());
 
@@ -226,9 +237,10 @@ public class WorkflowService {
 
     /**
      * ✅ ENHANCED: Get workflow details with tasks for approval interface (FIXES MISSING STEPS)
+     * Now returns WorkflowInstanceDTO
      */
     @Transactional(readOnly = true)
-    public Map<String, Object> getWorkflowDetailsWithTasks(Long workflowId, Long userId) {
+    public WorkflowInstanceDTO getWorkflowDetailsWithTasks(Long workflowId, Long userId) {
         try {
             log.info("🔍 Getting workflow details with tasks - WorkflowID: {}, UserID: {}", workflowId, userId);
 
@@ -242,10 +254,15 @@ public class WorkflowService {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied to this workflow");
             }
 
-            Map<String, Object> details = convertWorkflowToDetailedDTO(workflow, user);
+            // ✅ Use WorkflowMapper to convert to DTO
+            WorkflowInstanceDTO dto = WorkflowMapper.toInstanceDTO(workflow);
+            
+            // Add user-specific permissions
+            Map<String, Object> userPermissions = getUserWorkflowPermissions(workflow, user);
+            dto.setUserPermissions(userPermissions);
             
             log.info("✅ Workflow details retrieved for WorkflowID: {}", workflowId);
-            return details;
+            return dto;
 
         } catch (ResponseStatusException e) {
             throw e;
@@ -257,6 +274,7 @@ public class WorkflowService {
 
     /**
      * ✅ ENHANCED: Get user tasks with detailed information
+     * Now returns properly mapped task DTOs
      */
     @Transactional(readOnly = true)
     public List<Map<String, Object>> getMyTasksWithDetails(Long userId) {
@@ -267,7 +285,13 @@ public class WorkflowService {
             List<WorkflowTask> tasks = taskRepository.findByAssignedToAndStatusOrderByCreatedAtDesc(user, TaskStatus.PENDING);
 
             List<Map<String, Object>> taskDTOs = tasks.stream()
-                    .map(this::convertTaskToDetailedDTO)
+                    .map(task -> {
+                        // ✅ Use WorkflowMapper for consistent task mapping
+                        WorkflowInstanceDTO workflowDTO = WorkflowMapper.toInstanceDTO(task.getWorkflowInstance());
+                        Map<String, Object> taskDetails = convertTaskToDetailedDTO(task);
+                        taskDetails.put("workflow", workflowDTO);
+                        return taskDetails;
+                    })
                     .filter(Objects::nonNull)
                     .collect(Collectors.toList());
 
@@ -284,9 +308,10 @@ public class WorkflowService {
 
     /**
      * ✅ ENHANCED: Cancel workflow with detailed audit trail
+     * Now returns WorkflowInstanceDTO
      */
     @Transactional
-    public void cancelWorkflow(Long instanceId, String reason) {
+    public WorkflowInstanceDTO cancelWorkflow(Long instanceId, String reason) {
         log.info("🔄 Cancelling workflow - InstanceID: {}, Reason: {}", instanceId, reason);
         
         try {
@@ -327,6 +352,9 @@ public class WorkflowService {
             // Send notifications
             sendCancellationNotifications(instance, currentUser);
             
+            // ✅ Return WorkflowInstanceDTO
+            return WorkflowMapper.toInstanceDTO(instance);
+            
         } catch (ResponseStatusException e) {
             throw e;
         } catch (Exception e) {
@@ -336,7 +364,7 @@ public class WorkflowService {
         }
     }
 
-    // ===== LEGACY QUERY METHODS =====
+    // ===== LEGACY QUERY METHODS (Updated to return DTOs) =====
 
     @Transactional(readOnly = true)
     public List<WorkflowTask> getMyTasks() {
@@ -350,10 +378,15 @@ public class WorkflowService {
     }
 
     @Transactional(readOnly = true)
-    public List<WorkflowInstance> getMyWorkflows() {
+    public List<WorkflowInstanceDTO> getMyWorkflows() {
         try {
             User currentUser = getCurrentUserSafe();
-            return instanceRepository.findByInitiatedByOrderByStartDateDesc(currentUser);
+            List<WorkflowInstance> workflows = instanceRepository.findByInitiatedByOrderByStartDateDesc(currentUser);
+            // ✅ Convert to DTOs using WorkflowMapper
+            return workflows.stream()
+                    .map(WorkflowMapper::toInstanceDTO)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
         } catch (Exception e) {
             log.error("❌ Error getting user workflows: {}", e.getMessage(), e);
             return new ArrayList<>();
@@ -361,9 +394,11 @@ public class WorkflowService {
     }
 
     @Transactional(readOnly = true)
-    public WorkflowInstance getWorkflowById(Long instanceId) {
-        return instanceRepository.findById(instanceId)
+    public WorkflowInstanceDTO getWorkflowById(Long instanceId) {
+        WorkflowInstance instance = instanceRepository.findById(instanceId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow not found"));
+        // ✅ Convert to DTO using WorkflowMapper
+        return WorkflowMapper.toInstanceDTO(instance);
     }
 
     @Transactional(readOnly = true)
@@ -1034,232 +1069,47 @@ public class WorkflowService {
         return result;
     }
 
-    // ===== DTO CONVERSION METHODS =====
+    // ===== DTO CONVERSION METHODS (Now using WorkflowMapper) =====
 
     /**
-     * ✅ SAFE: Convert workflow to safe DTO (FIXES UNASSIGNED AND DISAPPEARING ISSUES)
+     * ✅ SAFE: Convert workflow to safe DTO (DEPRECATED - using WorkflowMapper instead)
+     * Keeping for backward compatibility
      */
+    @Deprecated
     private Map<String, Object> convertWorkflowToSafeDTO(WorkflowInstance workflow) {
-        Map<String, Object> dto = new HashMap<>();
+        // ✅ Use WorkflowMapper for consistent conversion
+        WorkflowInstanceDTO dto = WorkflowMapper.toInstanceDTO(workflow);
         
-        try {
-            // Basic information
-            dto.put("id", workflow.getId());
-            dto.put("title", workflow.getTitle() != null ? workflow.getTitle() : "Workflow");
-            dto.put("description", workflow.getDescription());
-            dto.put("status", workflow.getStatus().toString());
-            dto.put("priority", workflow.getPriority() != null ? workflow.getPriority().toString() : "NORMAL");
-            dto.put("currentStepOrder", workflow.getCurrentStepOrder());
-
-            // Enhanced date information with proper formatting
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-            LocalDateTime created = workflow.getCreatedDate() != null ? workflow.getCreatedDate() : 
-                                   workflow.getStartDate() != null ? workflow.getStartDate() : LocalDateTime.now();
-            LocalDateTime updated = workflow.getUpdatedDate() != null ? workflow.getUpdatedDate() : created;
-            
-            dto.put("createdDate", created.format(formatter));
-            dto.put("updatedDate", updated.format(formatter));
-            dto.put("startDate", workflow.getStartDate() != null ? workflow.getStartDate().format(formatter) : created.format(formatter));
-            dto.put("endDate", workflow.getEndDate() != null ? workflow.getEndDate().format(formatter) : null);
-            dto.put("dueDate", workflow.getDueDate() != null ? workflow.getDueDate().format(formatter) : null);
-            
-            // ✅ FIXES "5 hours ago" issue
-            dto.put("lastUpdatedRelative", calculateRelativeTime(updated));
-            dto.put("lastUpdatedAbsolute", updated.format(formatter));
-
-            // ✅ Safe template handling
-            safeMapTemplateInfo(workflow, dto);
-            
-            // ✅ Safe initiator handling (FIXES "Unassigned" issue)
-            safeMapInitiatorInfo(workflow, dto);
-            
-            // ✅ Safe document handling
-            safeMapDocumentInfo(workflow, dto);
-            
-            // ✅ Safe task handling (FIXES missing approve/reject options)
-            safeMapTaskInfo(workflow, dto);
-
-            return dto;
-            
-        } catch (Exception e) {
-            log.error("❌ Error converting workflow {} to DTO: {}", 
-                     workflow != null ? workflow.getId() : "null", e.getMessage());
-            return createMinimalWorkflowDTO(workflow);
-        }
-    }
-
-    private void safeMapTemplateInfo(WorkflowInstance workflow, Map<String, Object> dto) {
-        try {
-            if (workflow.getTemplate() != null) {
-                dto.put("templateName", workflow.getTemplate().getName());
-                dto.put("templateId", workflow.getTemplate().getId());
-                dto.put("templateType", workflow.getTemplate().getType() != null ? 
-                    workflow.getTemplate().getType().toString() : "UNKNOWN");
-            } else {
-                dto.put("templateName", "No Template");
-                dto.put("templateId", null);
-                dto.put("templateType", "UNKNOWN");
-            }
-        } catch (Exception e) {
-            log.debug("Could not map template: {}", e.getMessage());
-            dto.put("templateName", "Template Error");
-            dto.put("templateId", null);
-            dto.put("templateType", "UNKNOWN");
-        }
-    }
-
-    private void safeMapInitiatorInfo(WorkflowInstance workflow, Map<String, Object> dto) {
-        try {
-            if (workflow.getInitiatedBy() != null) {
-                String displayName = getUserDisplayName(workflow.getInitiatedBy());
-                dto.put("initiatedByName", displayName);
-                dto.put("initiatedById", workflow.getInitiatedBy().getId());
-                dto.put("assignedTo", displayName); // ✅ FIX: Proper assignment display
-            } else {
-                dto.put("initiatedByName", "System");
-                dto.put("initiatedById", null);
-                dto.put("assignedTo", "System");
-            }
-        } catch (Exception e) {
-            log.debug("Could not map initiator: {}", e.getMessage());
-            dto.put("initiatedByName", "Unknown User");
-            dto.put("initiatedById", null);
-            dto.put("assignedTo", "Unknown User");
-        }
-    }
-
-    private void safeMapDocumentInfo(WorkflowInstance workflow, Map<String, Object> dto) {
-        try {
-            if (workflow.getDocument() != null) {
-                String docName = workflow.getDocument().getOriginalFilename() != null ?
-                    workflow.getDocument().getOriginalFilename() : workflow.getDocument().getFilename();
-                dto.put("documentName", docName != null ? docName : "Unknown Document");
-                dto.put("documentId", workflow.getDocument().getId());
-            } else {
-                dto.put("documentName", "No Document");
-                dto.put("documentId", null);
-            }
-        } catch (Exception e) {
-            log.debug("Could not map document: {}", e.getMessage());
-            dto.put("documentName", "Document Error");
-            dto.put("documentId", null);
-        }
-    }
-
-    private void safeMapTaskInfo(WorkflowInstance workflow, Map<String, Object> dto) {
-        try {
-            List<Map<String, Object>> taskDTOs = new ArrayList<>();
-            int totalTasks = 0;
-            int completedTasks = 0;
-            int pendingTasks = 0;
-            String currentAssignee = null;
-            boolean canCurrentUserApprove = false;
-
-            if (workflow.getTasks() != null && !workflow.getTasks().isEmpty()) {
-                totalTasks = workflow.getTasks().size();
-                
-                for (WorkflowTask task : workflow.getTasks()) {
-                    Map<String, Object> taskDto = convertTaskToSafeDTO(task);
-                    taskDTOs.add(taskDto);
-                    
-                    if (task.getStatus() == TaskStatus.COMPLETED) {
-                        completedTasks++;
-                    } else if (task.getStatus() == TaskStatus.PENDING) {
-                        pendingTasks++;
-                        if (currentAssignee == null && task.getAssignedTo() != null) {
-                            currentAssignee = getUserDisplayName(task.getAssignedTo());
-                        }
-                        
-                        // Check if current user can approve any pending task
-                        if (task.getStep() != null && task.getStep().getType() == StepType.APPROVAL) {
-                            canCurrentUserApprove = true;
-                        }
-                    }
-                }
-            }
-
-            dto.put("tasks", taskDTOs);
-            dto.put("totalTasks", totalTasks);
-            dto.put("completedTasks", completedTasks);
-            dto.put("pendingTasks", pendingTasks);
-            dto.put("progress", totalTasks > 0 ? (completedTasks * 100 / totalTasks) : 0);
-            dto.put("canApprove", canCurrentUserApprove);
-            dto.put("canReject", canCurrentUserApprove);
-            
-            // ✅ Override assignedTo with current task assignee if available
-            if (currentAssignee != null) {
-                dto.put("assignedTo", currentAssignee);
-            }
-            
-        } catch (Exception e) {
-            log.debug("Could not map tasks: {}", e.getMessage());
-            dto.put("tasks", new ArrayList<>());
-            dto.put("totalTasks", 0);
-            dto.put("completedTasks", 0);
-            dto.put("pendingTasks", 0);
-            dto.put("progress", 0);
-            dto.put("canApprove", false);
-            dto.put("canReject", false);
-        }
+        // Convert to Map for backward compatibility
+        Map<String, Object> result = new HashMap<>();
+        result.put("id", dto.getId());
+        result.put("title", dto.getTitle());
+        result.put("status", dto.getStatus().toString());
+        result.put("templateName", dto.getTemplateName());
+        result.put("initiatedByName", dto.getInitiatedByName());
+        result.put("documentName", dto.getDocumentName());
+        result.put("totalTasks", dto.getTotalTasks());
+        result.put("completedTasks", dto.getCompletedTasks());
+        result.put("createdDate", dto.getCreatedDate());
+        result.put("updatedDate", dto.getUpdatedDate());
+        
+        return result;
     }
 
     /**
-     * ✅ Convert workflow to detailed DTO for workflow details view
+     * ✅ Convert task to detailed DTO
      */
-    private Map<String, Object> convertWorkflowToDetailedDTO(WorkflowInstance workflow, User currentUser) {
-        Map<String, Object> dto = convertWorkflowToSafeDTO(workflow);
-        
-        try {
-            // Add detailed task information with user permissions
-            List<Map<String, Object>> detailedTasks = new ArrayList<>();
-            
-            if (workflow.getTasks() != null) {
-                for (WorkflowTask task : workflow.getTasks()) {
-                    Map<String, Object> taskDto = convertTaskToDetailedDTO(task);
-                    
-                    // Add user-specific permissions
-                    boolean canUserApprove = canUserApproveTask(task, currentUser);
-                    boolean canUserReject = canUserRejectTask(task, currentUser);
-                    
-                    taskDto.put("canApprove", canUserApprove);
-                    taskDto.put("canReject", canUserReject);
-                    taskDto.put("canEdit", canUserApprove || canUserReject);
-                    
-                    detailedTasks.add(taskDto);
-                }
-            }
-            
-            dto.put("detailedTasks", detailedTasks);
-            dto.put("canCurrentUserApprove", hasUserPendingTasks(workflow, currentUser));
-            dto.put("userPermissions", getUserWorkflowPermissions(workflow, currentUser));
-            
-            // Add workflow history if needed
-            if (workflow.getHistory() != null) {
-                List<Map<String, Object>> historyDTOs = workflow.getHistory().stream()
-                        .map(this::convertHistoryToDTO)
-                        .collect(Collectors.toList());
-                dto.put("history", historyDTOs);
-            }
-            
-        } catch (Exception e) {
-            log.error("Error creating detailed workflow DTO: {}", e.getMessage());
-        }
-        
-        return dto;
-    }
-
-    /**
-     * ✅ Convert task to safe DTO
-     */
-    private Map<String, Object> convertTaskToSafeDTO(WorkflowTask task) {
+    private Map<String, Object> convertTaskToDetailedDTO(WorkflowTask task) {
         Map<String, Object> dto = new HashMap<>();
         
         try {
             dto.put("id", task.getId());
             dto.put("title", task.getTitle() != null ? task.getTitle() : "Task");
+            dto.put("description", task.getDescription());
             dto.put("status", task.getStatus().toString());
             dto.put("comments", task.getComments());
             dto.put("action", task.getAction() != null ? task.getAction().toString() : null);
+            dto.put("priority", task.getPriority() != null ? task.getPriority().toString() : "NORMAL");
             
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
             dto.put("createdAt", task.getCreatedDate() != null ? 
@@ -1288,24 +1138,6 @@ public class WorkflowService {
                 dto.put("stepOrder", 0);
                 dto.put("stepType", "UNKNOWN");
             }
-            
-        } catch (Exception e) {
-            log.warn("Error creating task DTO: {}", e.getMessage());
-        }
-        
-        return dto;
-    }
-
-    /**
-     * ✅ Convert task to detailed DTO with approval options
-     */
-    private Map<String, Object> convertTaskToDetailedDTO(WorkflowTask task) {
-        Map<String, Object> dto = convertTaskToSafeDTO(task);
-        
-        try {
-            // Add detailed information
-            dto.put("description", task.getDescription());
-            dto.put("priority", task.getPriority() != null ? task.getPriority().toString() : "NORMAL");
             
             // Add action capabilities
             boolean isPending = task.getStatus() == TaskStatus.PENDING;
@@ -1336,31 +1168,6 @@ public class WorkflowService {
         return dto;
     }
 
-    /**
-     * ✅ Convert history to DTO
-     */
-    private Map<String, Object> convertHistoryToDTO(WorkflowHistory history) {
-        Map<String, Object> dto = new HashMap<>();
-        
-        try {
-            dto.put("id", history.getId());
-            dto.put("action", history.getAction());
-            dto.put("details", history.getDetails());
-            dto.put("actionDate", history.getActionDate() != null ? 
-                    history.getActionDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : null);
-            
-            if (history.getPerformedBy() != null) {
-                dto.put("performedByName", getUserDisplayName(history.getPerformedBy()));
-                dto.put("performedById", history.getPerformedBy().getId());
-            }
-            
-        } catch (Exception e) {
-            log.warn("Error creating history DTO: {}", e.getMessage());
-        }
-        
-        return dto;
-    }
-
     // ===== UTILITY METHODS =====
 
     /**
@@ -1370,35 +1177,6 @@ public class WorkflowService {
         if (user == null) return "Unknown";
         String fullName = user.getFullName();
         return (fullName != null && !fullName.trim().isEmpty()) ? fullName : user.getUsername();
-    }
-
-    /**
-     * ✅ Calculate relative time (FIXES "5 hours ago" issue)
-     */
-    private String calculateRelativeTime(LocalDateTime dateTime) {
-        try {
-            LocalDateTime now = LocalDateTime.now();
-            long minutes = java.time.Duration.between(dateTime, now).toMinutes();
-            
-            if (minutes < 0) return "In the future"; // Handle future dates
-            if (minutes < 1) return "Just now";
-            if (minutes < 60) return minutes + " minute" + (minutes == 1 ? "" : "s") + " ago";
-            
-            long hours = minutes / 60;
-            if (hours < 24) return hours + " hour" + (hours == 1 ? "" : "s") + " ago";
-            
-            long days = hours / 24;
-            if (days < 7) return days + " day" + (days == 1 ? "" : "s") + " ago";
-            
-            long weeks = days / 7;
-            if (weeks < 4) return weeks + " week" + (weeks == 1 ? "" : "s") + " ago";
-            
-            long months = days / 30;
-            return months + " month" + (months == 1 ? "" : "s") + " ago";
-            
-        } catch (Exception e) {
-            return "Unknown";
-        }
     }
 
     /**
@@ -1478,26 +1256,6 @@ public class WorkflowService {
             log.error("Error calculating user permissions: {}", e.getMessage());
         }
         return permissions;
-    }
-
-    /**
-     * ✅ Create minimal workflow DTO on error
-     */
-    private Map<String, Object> createMinimalWorkflowDTO(WorkflowInstance workflow) {
-        Map<String, Object> minimal = new HashMap<>();
-        try {
-            minimal.put("id", workflow.getId());
-            minimal.put("status", workflow.getStatus().toString());
-            minimal.put("title", workflow.getTitle() != null ? workflow.getTitle() : "Workflow");
-            minimal.put("assignedTo", "Error Loading");
-            minimal.put("lastUpdatedRelative", "Unknown");
-            minimal.put("tasks", new ArrayList<>());
-            minimal.put("totalTasks", 0);
-            minimal.put("completedTasks", 0);
-        } catch (Exception e) {
-            log.error("Error creating minimal DTO: {}", e.getMessage());
-        }
-        return minimal;
     }
 
     /**

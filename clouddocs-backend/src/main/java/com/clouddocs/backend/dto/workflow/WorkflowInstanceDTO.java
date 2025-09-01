@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -108,6 +109,10 @@ public class WorkflowInstanceDTO {
     @Schema(description = "Whether workflow is overdue")
     private boolean isOverdue;
 
+    // ✅ ADDED: User permissions field
+    @Schema(description = "User-specific permissions for this workflow")
+    private Map<String, Object> userPermissions;
+
     // Related data collections
     @Schema(description = "List of workflow tasks")
     private List<WorkflowTaskDTO> tasks;
@@ -151,7 +156,7 @@ public class WorkflowInstanceDTO {
     public int getCompletedTasks() { return completedTasks; }
     public void setCompletedTasks(int completedTasks) { this.completedTasks = completedTasks; }
 
-      public int getPendingTasks() { return pendingTasks; }
+    public int getPendingTasks() { return pendingTasks; }
     public void setPendingTasks(int pendingTasks) { this.pendingTasks = pendingTasks; }
     
     public String getCurrentAssignee() { return currentAssignee; }
@@ -165,6 +170,10 @@ public class WorkflowInstanceDTO {
     
     public boolean isOverdue() { return isOverdue; }
     public void setOverdue(boolean overdue) { isOverdue = overdue; }
+
+    // ✅ ADDED: User permissions getter and setter
+    public Map<String, Object> getUserPermissions() { return userPermissions; }
+    public void setUserPermissions(Map<String, Object> userPermissions) { this.userPermissions = userPermissions; }
 
     // Your existing getters and setters remain the same...
     public Long getId() { return id; }

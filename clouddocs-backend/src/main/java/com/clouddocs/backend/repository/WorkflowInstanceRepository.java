@@ -39,9 +39,17 @@ public interface WorkflowInstanceRepository extends JpaRepository<WorkflowInstan
 
     // ===== ENHANCED METHODS WITH JOIN FETCH (Critical for preventing lazy loading) =====
     
-    /**
-     * ✅ MAIN METHOD: Enhanced query for /mine endpoint - prevents LazyInitializationException
-     */
+    
+        @Query("SELECT w FROM WorkflowInstance w LEFT JOIN FETCH w.template LEFT JOIN FETCH w.initiatedBy LEFT JOIN FETCH w.document LEFT JOIN FETCH w.tasks ORDER BY w.createdDate DESC")
+    Page<WorkflowInstance> findAllWithDetailsOrderByCreatedDateDesc(Pageable pageable);
+ 
+    
+    @Query("SELECT w FROM WorkflowInstance w LEFT JOIN FETCH w.template LEFT JOIN FETCH w.initiatedBy LEFT JOIN FETCH w.document LEFT JOIN FETCH w.tasks WHERE w.status = :status AND w.template.id = :templateId ORDER BY w.createdDate DESC")
+    Page<WorkflowInstance> findByStatusAndTemplateIdWithDetails(@Param("status") WorkflowStatus status, @Param("templateId") UUID templateId, Pageable pageable);
+    
+    @Query("SELECT w FROM WorkflowInstance w LEFT JOIN FETCH w.template LEFT JOIN FETCH w.initiatedBy LEFT JOIN FETCH w.document LEFT JOIN FETCH w.tasks WHERE w.createdDate BETWEEN :from AND :to ORDER BY w.createdDate DESC")
+    Page<WorkflowInstance> findByCreatedDateBetweenWithDetails(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to, Pageable pageable);
+
     @Query("SELECT DISTINCT w FROM WorkflowInstance w " +
            "LEFT JOIN FETCH w.document doc " +
            "LEFT JOIN FETCH w.template tpl " +
