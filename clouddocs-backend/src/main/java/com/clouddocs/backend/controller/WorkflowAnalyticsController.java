@@ -44,7 +44,7 @@ public class WorkflowAnalyticsController {
         return ResponseEntity.ok(dto);
     }
 
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','USER')")
     @GetMapping("/by-template")
     public ResponseEntity<List<TemplateMetricsDTO>> byTemplate(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
@@ -53,7 +53,7 @@ public class WorkflowAnalyticsController {
         return ResponseEntity.ok(list);
     }
 
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','USER')")
     @GetMapping("/by-step")
     public ResponseEntity<List<StepMetricsDTO>> byStep(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
@@ -73,7 +73,7 @@ public class WorkflowAnalyticsController {
     }
 
 
-@PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+@PreAuthorize("hasAnyRole('ADMIN','MANAGER','USER')")
 @GetMapping(value = "/by-template/export", produces = "text/csv")
 public ResponseEntity<byte[]> exportByTemplateCsv(
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
@@ -102,7 +102,7 @@ public ResponseEntity<byte[]> exportByTemplateCsv(
     return ResponseEntity.ok().headers(headers).body(bytes);
 }
 
-@PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+@PreAuthorize("hasAnyRole('ADMIN','MANAGER','USER')")
 @GetMapping(value = "/by-step/export", produces = "text/csv")
 public ResponseEntity<byte[]> exportByStepCsv(
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
@@ -129,7 +129,7 @@ public ResponseEntity<byte[]> exportByStepCsv(
     return ResponseEntity.ok().headers(headers).body(bytes);
 }
 
-@PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+@PreAuthorize("hasAnyRole('ADMIN','MANAGER','USER')")
 @GetMapping(value = "/overview/export", produces = "text/csv")
 public ResponseEntity<byte[]> exportOverviewCsv(
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
