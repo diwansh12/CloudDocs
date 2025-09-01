@@ -24,7 +24,7 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
-@RequestMapping("/workflow-instances")  // ✅ Fixed: Removed extra hyphen
+@RequestMapping("/workflow-instances")
 @CrossOrigin(origins = {"https://cloud-docs-tan.vercel.app", "http://localhost:3000"}, 
              allowCredentials = "true", allowedHeaders = "*")
 @RequiredArgsConstructor
@@ -33,12 +33,14 @@ public class WorkflowInstanceController {
     private final WorkflowInstanceRepository instanceRepository;
     private final UserRepository userRepository;
 
+    // ===== MAIN ENDPOINTS =====
+
     /**
-     * ✅ FIXED: Enhanced /mine endpoint with comprehensive fixes
-     * Maps to: /workflow-instances/mine
+     * ✅ Get user's workflow instances with filtering and pagination
+     * Maps to: GET /workflow-instances/mine
      */
     @PreAuthorize("isAuthenticated()")
-    @GetMapping("/mine")  // ✅ Put specific paths BEFORE generic paths
+    @GetMapping("/mine")
     @Transactional(readOnly = true)
     public ResponseEntity<Map<String, Object>> getMyWorkflows(
             @RequestParam(required = false) String status,
@@ -62,11 +64,11 @@ public class WorkflowInstanceController {
                     : Sort.by(sortBy).ascending();
             Pageable pageable = PageRequest.of(page, size, sort);
 
-            // ✅ Use enhanced repository methods with JOIN FETCH
+            // Get workflows with filters
             Page<WorkflowInstance> pageResult = getWorkflowsWithFilters(
                 currentUser, status, templateId, from, to, pageable);
 
-            // ✅ CRITICAL FIX: Enhanced safe DTO conversion
+            // Convert to DTOs safely
             List<Map<String, Object>> workflowDTOs = pageResult.getContent().stream()
                     .map(this::convertToEnhancedWorkflowDTO)
                     .filter(Objects::nonNull)
@@ -95,11 +97,61 @@ public class WorkflowInstanceController {
     }
 
     /**
-     * ✅ FIXED: Get specific workflow instance by ID
-     * Maps to: /workflow-instances/{id}
+     * ✅ ADDED: Search workflow instances
+     * Maps to: GET /workflow-instances/search
      */
     @PreAuthorize("isAuthenticated()")
-    @GetMapping("/{id}")  // ✅ Put after /mine to avoid path conflicts
+    @GetMapping("/search")
+    @Transactional(readOnly = true)
+    public ResponseEntity<Map<String, Object>> searchWorkflowInstances(
+            @RequestParam String q,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        try {
+            log.debug("Searching workflow instances with query: {}", q);
+            
+            UserPrincipal userPrincipal = getCurrentUserPrincipal();
+            User currentUser = getCurrentUser(userPrincipal.getId());
+            
+            Pageable pageable = PageRequest.of(page, size, Sort.by("createdDate").descending());
+            
+            // Use existing repository method for now - you can enhance this for actual search
+            Page<WorkflowInstance> searchResults = instanceRepository.findByInitiatedByWithDetailsOrderByCreatedDateDesc(
+                currentUser, pageable);
+            
+            // Filter results by search query (basic implementation)
+            List<WorkflowInstance> filteredResults = searchResults.getContent().stream()
+                .filter(w -> matchesSearchQuery(w, q))
+                .collect(Collectors.toList());
+            
+            List<Map<String, Object>> workflowDTOs = filteredResults.stream()
+                    .map(this::convertToEnhancedWorkflowDTO)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("workflows", workflowDTOs);
+            response.put("currentPage", page);
+            response.put("pageSize", size);
+            response.put("totalItems", (long) filteredResults.size());
+            response.put("totalPages", 1);
+            response.put("hasNext", false);
+            response.put("hasPrevious", false);
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            log.error("❌ Error searching workflow instances: {}", e.getMessage(), e);
+            return ResponseEntity.ok(Map.of("workflows", new ArrayList<>(), "totalItems", 0L));
+        }
+    }
+
+    /**
+     * ✅ Get specific workflow instance by ID
+     * Maps to: GET /workflow-instances/{id}
+     */
+    @PreAuthorize("isAuthenticated()")
+    @GetMapping("/{id}")
     @Transactional(readOnly = true)
     public ResponseEntity<Map<String, Object>> getWorkflowInstance(@PathVariable Long id) {
         try {
@@ -126,10 +178,241 @@ public class WorkflowInstanceController {
         }
     }
 
+    /**
+     * ✅ ADDED: Get workflow instance with detailed task information
+     * Maps to: GET /workflow-instances/{id}/details
+     */
+    @PreAuthorize("isAuthenticated()")
+    @GetMapping("/{id}/details")
+    @Transactional(readOnly = true)
+    public ResponseEntity<Map<String, Object>> getWorkflowWithDetails(@PathVariable Long id) {
+        try {
+            log.debug("Fetching detailed workflow instance with ID: {}", id);
+            
+            // Get workflow with tasks
+            WorkflowInstance instance = instanceRepository.findByIdWithTasks(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow instance not found"));
+            
+            UserPrincipal userPrincipal = getCurrentUserPrincipal();
+            User currentUser = getCurrentUser(userPrincipal.getId());
+            
+            if (!canAccessWorkflow(currentUser, instance)) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied to this workflow instance");
+            }
+            
+            // Convert to detailed DTO
+            Map<String, Object> response = convertToDetailedWorkflowDTO(instance);
+            
+            log.debug("✅ Returning detailed workflow instance: {}", id);
+            return ResponseEntity.ok(response);
+            
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("❌ Error getting detailed workflow instance {}: {}", id, e.getMessage(), e);
+            
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("error", "Failed to load workflow details");
+            errorResponse.put("message", e.getMessage());
+            errorResponse.put("workflowId", id);
+            
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    /**
+     * ✅ ADDED: Cancel workflow instance
+     * Maps to: PUT /workflow-instances/{id}/cancel
+     */
+    @PreAuthorize("isAuthenticated()")
+    @PutMapping("/{id}/cancel")
+    @Transactional
+    public ResponseEntity<Map<String, Object>> cancelWorkflowInstance(@PathVariable Long id, 
+                                                                      @RequestParam(required = false) String reason) {
+        try {
+            log.info("Cancelling workflow instance: {}", id);
+            
+            WorkflowInstance instance = instanceRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow instance not found"));
+            
+            UserPrincipal userPrincipal = getCurrentUserPrincipal();
+            User currentUser = getCurrentUser(userPrincipal.getId());
+            
+            if (!canAccessWorkflow(currentUser, instance)) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+            }
+            
+            // Update workflow status to cancelled
+            instance.setStatus(WorkflowStatus.CANCELLED);
+            instance.setEndDate(LocalDateTime.now());
+            instance.setComments(reason != null ? reason : "Cancelled by user");
+            instance.setUpdatedDate(LocalDateTime.now());
+            
+            instanceRepository.save(instance);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Workflow instance cancelled successfully");
+            response.put("workflowId", id);
+            response.put("timestamp", LocalDateTime.now());
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("❌ Error cancelling workflow instance {}: {}", id, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to cancel workflow instance"));
+        }
+    }
+
+    /**
+     * ✅ ADDED: Get workflow instance history
+     * Maps to: GET /workflow-instances/{id}/history
+     */
+    @PreAuthorize("isAuthenticated()")
+    @GetMapping("/{id}/history")
+    @Transactional(readOnly = true)
+    public ResponseEntity<List<Map<String, Object>>> getWorkflowHistory(@PathVariable Long id) {
+        try {
+            log.debug("Fetching history for workflow instance: {}", id);
+            
+            WorkflowInstance instance = instanceRepository.findByIdWithHistory(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow instance not found"));
+            
+            UserPrincipal userPrincipal = getCurrentUserPrincipal();
+            User currentUser = getCurrentUser(userPrincipal.getId());
+            
+            if (!canAccessWorkflow(currentUser, instance)) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+            }
+            
+            List<Map<String, Object>> historyDTOs = new ArrayList<>();
+            if (instance.getHistory() != null) {
+                for (WorkflowHistory history : instance.getHistory()) {
+                    Map<String, Object> historyDto = new HashMap<>();
+                    historyDto.put("id", history.getId());
+                    historyDto.put("action", history.getAction());
+                    historyDto.put("details", history.getDetails());
+                    historyDto.put("actionDate", history.getActionDate() != null ? 
+                        history.getActionDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : null);
+                    
+                    if (history.getPerformedBy() != null) {
+                        String performerName = history.getPerformedBy().getFullName();
+                        historyDto.put("performedByName", performerName != null && !performerName.trim().isEmpty() ? 
+                            performerName : history.getPerformedBy().getUsername());
+                        historyDto.put("performedById", history.getPerformedBy().getId());
+                    } else {
+                        historyDto.put("performedByName", "System");
+                        historyDto.put("performedById", null);
+                    }
+                    
+                    historyDTOs.add(historyDto);
+                }
+            }
+            
+            return ResponseEntity.ok(historyDTOs);
+            
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("❌ Error getting workflow history {}: {}", id, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ArrayList<>());
+        }
+    }
+
+    /**
+     * ✅ ADDED: Add comment to workflow instance
+     * Maps to: POST /workflow-instances/{id}/comments
+     */
+    @PreAuthorize("isAuthenticated()")
+    @PostMapping("/{id}/comments")
+    @Transactional
+    public ResponseEntity<Map<String, Object>> addWorkflowComment(@PathVariable Long id, 
+                                                                  @RequestBody Map<String, String> request) {
+        try {
+            String comment = request.get("comment");
+            if (comment == null || comment.trim().isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Comment cannot be empty"));
+            }
+            
+            WorkflowInstance instance = instanceRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow instance not found"));
+            
+            UserPrincipal userPrincipal = getCurrentUserPrincipal();
+            User currentUser = getCurrentUser(userPrincipal.getId());
+            
+            if (!canAccessWorkflow(currentUser, instance)) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+            }
+            
+            // Add comment to existing comments
+            String existingComments = instance.getComments();
+            String newComments = existingComments != null ? 
+                existingComments + "\n" + currentUser.getUsername() + ": " + comment.trim() :
+                currentUser.getUsername() + ": " + comment.trim();
+            
+            instance.setComments(newComments);
+            instance.setUpdatedDate(LocalDateTime.now());
+            instanceRepository.save(instance);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Comment added successfully");
+            response.put("timestamp", LocalDateTime.now());
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("❌ Error adding comment to workflow {}: {}", id, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to add comment"));
+        }
+    }
+
+    /**
+     * ✅ ADDED: Get workflow instance comments
+     * Maps to: GET /workflow-instances/{id}/comments
+     */
+    @PreAuthorize("isAuthenticated()")
+    @GetMapping("/{id}/comments")
+    @Transactional(readOnly = true)
+    public ResponseEntity<List<String>> getWorkflowComments(@PathVariable Long id) {
+        try {
+            WorkflowInstance instance = instanceRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow instance not found"));
+            
+            UserPrincipal userPrincipal = getCurrentUserPrincipal();
+            User currentUser = getCurrentUser(userPrincipal.getId());
+            
+            if (!canAccessWorkflow(currentUser, instance)) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+            }
+            
+            List<String> comments = new ArrayList<>();
+            if (instance.getComments() != null && !instance.getComments().trim().isEmpty()) {
+                // Split comments by newline
+                String[] commentLines = instance.getComments().split("\n");
+                comments.addAll(Arrays.asList(commentLines));
+            }
+            
+            return ResponseEntity.ok(comments);
+            
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("❌ Error getting comments for workflow {}: {}", id, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ArrayList<>());
+        }
+    }
+
     // ===== DTO CONVERSION METHODS =====
 
     /**
-     * ✅ ENHANCED: Safe DTO conversion with comprehensive error handling
+     * ✅ Enhanced DTO conversion with comprehensive error handling
      */
     private Map<String, Object> convertToEnhancedWorkflowDTO(WorkflowInstance workflow) {
         Map<String, Object> dto = new HashMap<>();
@@ -144,7 +427,7 @@ public class WorkflowInstanceController {
             dto.put("currentStepOrder", workflow.getCurrentStepOrder());
             dto.put("comments", workflow.getComments());
 
-            // ✅ Enhanced date handling
+            // Enhanced date handling
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
             dto.put("createdDate", workflow.getCreatedDate() != null ? 
                 workflow.getCreatedDate().format(formatter) : LocalDateTime.now().format(formatter));
@@ -157,22 +440,16 @@ public class WorkflowInstanceController {
             dto.put("dueDate", workflow.getDueDate() != null ? 
                 workflow.getDueDate().format(formatter) : null);
 
-            // ✅ Calculate and display relative time (fixes "5 hours ago" issue)
+            // Calculate and display relative time
             LocalDateTime lastUpdate = workflow.getUpdatedDate() != null ? 
                 workflow.getUpdatedDate() : workflow.getCreatedDate();
             dto.put("lastUpdatedRelative", calculateRelativeTime(lastUpdate));
             dto.put("lastUpdatedAbsolute", lastUpdate.format(formatter));
 
-            // ✅ Safe template handling
+            // Safe template, initiator, document, and task handling
             handleTemplateInfo(workflow, dto);
-
-            // ✅ Safe initiator handling (fixes "Unassigned" issue)
             handleInitiatorInfo(workflow, dto);
-
-            // ✅ Safe document handling
             handleDocumentInfo(workflow, dto);
-
-            // ✅ Enhanced task handling (fixes missing approve/reject options)
             handleTasksInfo(workflow, dto);
 
             return dto;
@@ -181,10 +458,110 @@ public class WorkflowInstanceController {
             log.error("❌ Error converting workflow {} to enhanced DTO: {}", 
                     workflow != null ? workflow.getId() : "null", e.getMessage());
             
-            // Return minimal safe DTO
             return createMinimalWorkflowDTO(workflow);
         }
     }
+
+    /**
+     * ✅ ADDED: Convert workflow to detailed DTO with complete task information
+     */
+    private Map<String, Object> convertToDetailedWorkflowDTO(WorkflowInstance workflow) {
+        Map<String, Object> dto = new HashMap<>();
+        
+        try {
+            // Start with enhanced DTO
+            dto.putAll(convertToEnhancedWorkflowDTO(workflow));
+            
+            // Add detailed task information
+            List<Map<String, Object>> detailedTasks = new ArrayList<>();
+            
+            if (workflow.getTasks() != null && !workflow.getTasks().isEmpty()) {
+                for (WorkflowTask task : workflow.getTasks()) {
+                    Map<String, Object> taskDto = createDetailedTaskDTO(task);
+                    detailedTasks.add(taskDto);
+                }
+            }
+            
+            dto.put("detailedTasks", detailedTasks);
+            
+            return dto;
+            
+        } catch (Exception e) {
+            log.error("❌ Error creating detailed workflow DTO for workflow {}: {}", 
+                    workflow.getId(), e.getMessage());
+            
+            // Return basic DTO on error
+            return convertToEnhancedWorkflowDTO(workflow);
+        }
+    }
+
+    /**
+     * ✅ ADDED: Create detailed task DTO with all information
+     */
+    private Map<String, Object> createDetailedTaskDTO(WorkflowTask task) {
+        Map<String, Object> taskDto = new HashMap<>();
+        
+        try {
+            // Basic task information
+            taskDto.put("id", task.getId());
+            taskDto.put("title", task.getTitle() != null ? task.getTitle() : "Task");
+            taskDto.put("description", task.getDescription());
+            taskDto.put("status", task.getStatus().toString());
+            taskDto.put("priority", task.getPriority() != null ? task.getPriority().toString() : "NORMAL");
+            taskDto.put("comments", task.getComments());
+            
+            // Task dates
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+            taskDto.put("createdAt", task.getCreatedAt() != null ? 
+                task.getCreatedAt().format(formatter) : null);
+            taskDto.put("dueDate", task.getDueDate() != null ? 
+                task.getDueDate().format(formatter) : null);
+            taskDto.put("completedAt", task.getCompletedAt() != null ? 
+                task.getCompletedAt().format(formatter) : null);
+
+            // Assigned user information
+            if (task.getAssignedTo() != null) {
+                String assignedName = task.getAssignedTo().getFullName();
+                taskDto.put("assignedToName", assignedName != null && !assignedName.trim().isEmpty() ? 
+                    assignedName : task.getAssignedTo().getUsername());
+                taskDto.put("assignedToId", task.getAssignedTo().getId());
+                taskDto.put("assignedToEmail", task.getAssignedTo().getEmail());
+            } else {
+                taskDto.put("assignedToName", "Unassigned");
+                taskDto.put("assignedToId", null);
+                taskDto.put("assignedToEmail", null);
+            }
+
+            // Step information
+            if (task.getWorkflowStep() != null) {
+                taskDto.put("stepName", task.getWorkflowStep().getName());
+                taskDto.put("stepOrder", task.getWorkflowStep().getStepOrder());
+                taskDto.put("stepType", task.getWorkflowStep().getType() != null ? 
+                    task.getWorkflowStep().getType().toString() : "UNKNOWN");
+                
+                // Action capabilities
+                boolean canApprove = task.getWorkflowStep().getType() == StepType.APPROVAL;
+                taskDto.put("canApprove", canApprove);
+                taskDto.put("canReject", canApprove);
+            } else {
+                taskDto.put("stepName", "Unknown Step");
+                taskDto.put("stepOrder", 0);
+                taskDto.put("stepType", "UNKNOWN");
+                taskDto.put("canApprove", false);
+                taskDto.put("canReject", false);
+            }
+
+            return taskDto;
+            
+        } catch (Exception e) {
+            log.warn("Error creating detailed task DTO for task {}: {}", task.getId(), e.getMessage());
+            
+            // Return basic task DTO on error
+            return createTaskDTO(task);
+        }
+    }
+
+    // ===== HELPER METHODS (keeping your existing ones) =====
 
     private void handleTemplateInfo(WorkflowInstance workflow, Map<String, Object> dto) {
         try {
@@ -214,7 +591,7 @@ public class WorkflowInstanceController {
                     fullName : workflow.getInitiatedBy().getUsername());
                 dto.put("initiatedById", workflow.getInitiatedBy().getId());
                 dto.put("assignedTo", fullName != null && !fullName.trim().isEmpty() ? 
-                    fullName : workflow.getInitiatedBy().getUsername()); // ✅ Fix "Unassigned"
+                    fullName : workflow.getInitiatedBy().getUsername());
             } else {
                 dto.put("initiatedByName", "System");
                 dto.put("initiatedById", null);
@@ -273,7 +650,7 @@ public class WorkflowInstanceController {
                 dto.put("pendingTasks", pendingTasks);
                 dto.put("progress", totalTasks > 0 ? (completedTasks * 100 / totalTasks) : 0);
                 
-                // ✅ Fix assignedTo based on current pending task
+                // Fix assignedTo based on current pending task
                 String currentAssignee = findCurrentAssignee(workflow.getTasks());
                 if (currentAssignee != null) {
                     dto.put("assignedTo", currentAssignee);
@@ -309,38 +686,26 @@ public class WorkflowInstanceController {
                 task.getCompletedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : null);
             
             // Safe assigned user handling
-            try {
-                if (task.getAssignedTo() != null) {
-                    String assignedName = task.getAssignedTo().getFullName();
-                    taskDto.put("assignedTo", assignedName != null && !assignedName.trim().isEmpty() ? 
-                        assignedName : task.getAssignedTo().getUsername());
-                    taskDto.put("assignedToId", task.getAssignedTo().getId());
-                } else {
-                    taskDto.put("assignedTo", "Unassigned");
-                    taskDto.put("assignedToId", null);
-                }
-            } catch (Exception e) {
-                taskDto.put("assignedTo", "Assignment Error");
+            if (task.getAssignedTo() != null) {
+                String assignedName = task.getAssignedTo().getFullName();
+                taskDto.put("assignedTo", assignedName != null && !assignedName.trim().isEmpty() ? 
+                    assignedName : task.getAssignedTo().getUsername());
+                taskDto.put("assignedToId", task.getAssignedTo().getId());
+            } else {
+                taskDto.put("assignedTo", "Unassigned");
                 taskDto.put("assignedToId", null);
             }
             
-            // Safe step handling
-            try {
-                if (task.getStep() != null) {
-                    taskDto.put("stepName", task.getStep().getName());
-                    taskDto.put("stepOrder", task.getStep().getStepOrder());
-                    taskDto.put("stepType", task.getStep().getType().toString());
-                    taskDto.put("canApprove", task.getStep().getType() == StepType.APPROVAL);
-                    taskDto.put("canReject", task.getStep().getType() == StepType.APPROVAL);
-                } else {
-                    taskDto.put("stepName", "Unknown Step");
-                    taskDto.put("stepOrder", 0);
-                    taskDto.put("stepType", "UNKNOWN");
-                    taskDto.put("canApprove", false);
-                    taskDto.put("canReject", false);
-                }
-            } catch (Exception e) {
-                taskDto.put("stepName", "Step Load Error");
+            // Safe step handling - FIXED to use workflowStep
+            if (task.getWorkflowStep() != null) {
+                taskDto.put("stepName", task.getWorkflowStep().getName());
+                taskDto.put("stepOrder", task.getWorkflowStep().getStepOrder());
+                taskDto.put("stepType", task.getWorkflowStep().getType() != null ? 
+                    task.getWorkflowStep().getType().toString() : "UNKNOWN");
+                taskDto.put("canApprove", task.getWorkflowStep().getType() == StepType.APPROVAL);
+                taskDto.put("canReject", task.getWorkflowStep().getType() == StepType.APPROVAL);
+            } else {
+                taskDto.put("stepName", "Unknown Step");
                 taskDto.put("stepOrder", 0);
                 taskDto.put("stepType", "UNKNOWN");
                 taskDto.put("canApprove", false);
@@ -356,7 +721,6 @@ public class WorkflowInstanceController {
 
     private String findCurrentAssignee(List<WorkflowTask> tasks) {
         try {
-            // Find the first pending task and get its assignee
             for (WorkflowTask task : tasks) {
                 if ("PENDING".equals(task.getStatus().toString()) && task.getAssignedTo() != null) {
                     String fullName = task.getAssignedTo().getFullName();
@@ -410,6 +774,41 @@ public class WorkflowInstanceController {
             log.error("Error creating minimal DTO: {}", e.getMessage());
         }
         return minimal;
+    }
+
+    private boolean matchesSearchQuery(WorkflowInstance workflow, String query) {
+        String searchTerm = query.toLowerCase().trim();
+        
+        // Search in title
+        if (workflow.getTitle() != null && workflow.getTitle().toLowerCase().contains(searchTerm)) {
+            return true;
+        }
+        
+        // Search in document name
+        if (workflow.getDocument() != null) {
+            String docName = workflow.getDocument().getOriginalFilename() != null ?
+                workflow.getDocument().getOriginalFilename() : workflow.getDocument().getFilename();
+            if (docName != null && docName.toLowerCase().contains(searchTerm)) {
+                return true;
+            }
+        }
+        
+        // Search in template name
+        if (workflow.getTemplate() != null && workflow.getTemplate().getName() != null &&
+            workflow.getTemplate().getName().toLowerCase().contains(searchTerm)) {
+            return true;
+        }
+        
+        // Search in initiator name
+        if (workflow.getInitiatedBy() != null) {
+            String initiatorName = workflow.getInitiatedBy().getFullName() != null ?
+                workflow.getInitiatedBy().getFullName() : workflow.getInitiatedBy().getUsername();
+            if (initiatorName != null && initiatorName.toLowerCase().contains(searchTerm)) {
+                return true;
+            }
+        }
+        
+        return false;
     }
 
     // ===== SUPPORTING METHODS =====
@@ -490,3 +889,4 @@ public class WorkflowInstanceController {
         }
     }
 }
+
