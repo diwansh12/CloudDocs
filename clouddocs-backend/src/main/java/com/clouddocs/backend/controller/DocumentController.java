@@ -368,7 +368,7 @@ public class DocumentController {
      * Get pending documents for approval (Manager/Admin only)
      */
     @GetMapping("/pending")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER') or ('USER')")
     @Transactional(readOnly = true)  // ✅ ADD TRANSACTION
     public ResponseEntity<Map<String, Object>> getPendingDocuments(
             @RequestParam(defaultValue = "0") int page,

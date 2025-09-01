@@ -35,7 +35,7 @@ public class WorkflowAnalyticsController {
     private LocalDateTime defaultFrom() { return LocalDateTime.now().minusDays(90); }
     private LocalDateTime defaultTo() { return LocalDateTime.now(); }
 
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER', 'USER')")
     @GetMapping("/overview")
     public ResponseEntity<OverviewMetricsDTO> overview(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
