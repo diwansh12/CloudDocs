@@ -10,7 +10,7 @@ import org.springframework.scheduling.annotation.EnableAsync;
 @SpringBootApplication
 @EnableJpaAuditing
 @EnableAsync
-@EnableRetry
+@EnableRetry(proxyTargetClass = true) 
 @ComponentScan(basePackages = "com.clouddocs.backend")
 public class ClouddocsBackendApplication {
 		public static void main(String[] args) {

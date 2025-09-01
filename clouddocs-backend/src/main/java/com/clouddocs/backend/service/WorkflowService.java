@@ -24,7 +24,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * ✅ COMPLETE: Production-ready WorkflowService with LazyInitializationException fixes
+ * ✅ COMPLETE: Production-ready WorkflowService with all fixes applied
  */
 @Slf4j
 @Service
@@ -53,7 +53,7 @@ public class WorkflowService {
     private enum StepOutcome { CONTINUE, APPROVED, REJECTED }
 
     /**
-     * ✅ MAIN FIX: Start workflow with proper lazy loading handling
+     * ✅ MAIN METHOD: Start workflow with proper lazy loading and retry handling
      */
     @Retryable(
         value = {ObjectOptimisticLockingFailureException.class},
@@ -78,7 +78,6 @@ public class WorkflowService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Template is not active");
             }
 
-            // ✅ Log successful template loading with steps
             log.info("✅ Loaded template '{}' with {} steps", template.getName(), 
                     template.getSteps() != null ? template.getSteps().size() : 0);
 
@@ -132,7 +131,29 @@ public class WorkflowService {
     }
 
     /**
-     * ✅ NEW: Safe task generation using pre-loaded template
+     * ✅ RECOVERY METHOD: Handle startWorkflow failures
+     */
+    @Recover
+    public WorkflowInstance recoverStartWorkflow(ObjectOptimisticLockingFailureException ex, 
+                                               Long documentId, UUID templateId, 
+                                               String title, String description, String priority) {
+        log.error("❌ Failed to start workflow after {} retries due to optimistic locking conflicts", 5);
+        log.error("Parameters: documentId={}, templateId={}, title={}", documentId, templateId, title);
+        
+        User current = getCurrentUser();
+        auditService.logWorkflowActionWithStatus(
+            "Workflow Creation Failed: Concurrent update conflict after retries",
+            "Template-" + templateId,
+            current.getUsername(),
+            AuditLog.Status.FAILED
+        );
+        
+        throw new ResponseStatusException(HttpStatus.CONFLICT, 
+            "Unable to create workflow due to concurrent updates. Please try again.");
+    }
+
+    /**
+     * ✅ SAFE: Task generation using pre-loaded template
      */
     private boolean generateTasksForStepSafe(WorkflowInstance instance, WorkflowTemplate template, int stepOrder) {
         try {
@@ -193,13 +214,12 @@ public class WorkflowService {
     }
 
     /**
-     * ✅ ENHANCED: Fallback task generation method (uses repository)
+     * ✅ FALLBACK: Task generation method (uses repository)
      */
     private boolean generateTasksForStep(WorkflowInstance instance, int stepOrder) {
         try {
             log.info("🔄 Generating tasks for step {} using repository lookup", stepOrder);
             
-            // ✅ Use repository to get steps with proper loading
             List<WorkflowStep> steps = stepRepository.findByTemplateOrderByStepOrderAsc(instance.getTemplate());
             if (steps == null || steps.isEmpty()) {
                 log.warn("⚠️ No steps found for template: {}", instance.getTemplate().getId());
@@ -212,10 +232,7 @@ public class WorkflowService {
                 if (step.getStepOrder() == null || step.getStepOrder() != stepOrder) continue;
 
                 List<User> approvers = findApproversForStep(step);
-
-                if (approvers.isEmpty()) {
-                    continue;
-                }
+                if (approvers.isEmpty()) continue;
 
                 for (User user : approvers) {
                     WorkflowTask task = new WorkflowTask(instance, step, user, step.getName());
@@ -247,7 +264,7 @@ public class WorkflowService {
     }
 
     /**
-     * ✅ ENHANCED: Complete task with comprehensive retry logic
+     * ✅ TASK COMPLETION: Complete task with retry logic
      */
     @Retryable(
         value = {ObjectOptimisticLockingFailureException.class},
@@ -257,7 +274,6 @@ public class WorkflowService {
     public void completeTask(Long taskId, TaskAction action, String comments) {
         log.info("🔄 Attempting task completion - TaskID: {}, Action: {}", taskId, action);
         
-        // ✅ CRITICAL: Force refresh from database to get latest version
         entityManager.clear();
         
         WorkflowTask task = taskRepository.findById(taskId)
@@ -265,7 +281,7 @@ public class WorkflowService {
 
         User current = getCurrentUser();
 
-        // Authorization check with manager/admin override
+        // Authorization check
         boolean isAssignee = task.getAssignedTo() != null && task.getAssignedTo().getId().equals(current.getId());
         if (!isAssignee && !authz.isManagerOrAdmin()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, 
@@ -295,14 +311,12 @@ public class WorkflowService {
         // Complete the task
         task.complete(action, comments, current);
         
-        // ✅ CRITICAL: Immediate persistence with version check
         taskRepository.saveAndFlush(task);
         entityManager.detach(task);
 
         logHistory(instance, "TASK_COMPLETED", 
                   "Task completed by " + safeName(current) + " with action " + action, current);
 
-        // Log to audit trail
         String auditActivity = String.format("Task %s: %s%s", 
             action == TaskAction.APPROVE ? "Approved" : "Rejected",
             task.getTitle() != null ? task.getTitle() : "Workflow Task",
@@ -320,53 +334,37 @@ public class WorkflowService {
             log.warn("Failed to send task completion notification: {}", e.getMessage());
         }
 
-        // ✅ Evaluate step outcome with safe step loading
+        // Evaluate step outcome
         WorkflowStep currentStep = getCurrentStepSafe(instance);
         if (currentStep != null) {
             StepOutcome outcome = evaluateStepOutcome(instance, currentStep);
             log.debug("Step outcome for step {}: {}", currentStep.getStepOrder(), outcome);
             handleStepOutcome(instance, currentStep, outcome);
-        } else {
-            log.warn("Could not find current step for workflow instance {}", instance.getId());
         }
     }
 
     /**
-     * ✅ NEW: Safe method to get current step
+     * ✅ RECOVERY METHOD: Handle completeTask failures
      */
-    private WorkflowStep getCurrentStepSafe(WorkflowInstance instance) {
-        try {
-            if (instance.getCurrentStepOrder() == null) {
-                log.warn("⚠️ Workflow {} has no current step order", instance.getId());
-                return null;
-            }
-            
-            // Try to get step from loaded tasks first
-            List<WorkflowTask> tasks = taskRepository.findByWorkflowInstanceOrderByStepOrder(instance);
-            for (WorkflowTask task : tasks) {
-                if (task.getWorkflowStep() != null && 
-                    task.getWorkflowStep().getStepOrder() != null &&
-                    task.getWorkflowStep().getStepOrder().equals(instance.getCurrentStepOrder())) {
-                    return task.getWorkflowStep();
-                }
-            }
-            
-            // Fallback: load from repository
-            List<WorkflowStep> steps = stepRepository.findByTemplateOrderByStepOrderAsc(instance.getTemplate());
-            return steps.stream()
-                    .filter(s -> s.getStepOrder() != null && 
-                               s.getStepOrder().equals(instance.getCurrentStepOrder()))
-                    .findFirst()
-                    .orElse(null);
-                    
-        } catch (Exception e) {
-            log.error("❌ Error getting current step for workflow {}: {}", instance.getId(), e.getMessage());
-            return null;
-        }
+    @Recover
+    public void recoverCompleteTask(ObjectOptimisticLockingFailureException ex, 
+                                  Long taskId, TaskAction action, String comments) {
+        log.error("❌ Failed to complete task {} after retries due to optimistic locking conflicts", taskId);
+        
+        User current = getCurrentUser();
+        auditService.logWorkflowActionWithStatus(
+            "Task Completion Failed: Concurrent update conflict after retries",
+            "Task-" + taskId,
+            current.getUsername(),
+            AuditLog.Status.FAILED
+        );
+        
+        throw new ResponseStatusException(HttpStatus.CONFLICT, 
+            "Unable to complete task due to concurrent updates. Please refresh the page and try again.");
     }
 
     /**
-     * ✅ ENHANCED: Cancel workflow with retry
+     * ✅ WORKFLOW CANCELLATION: Cancel workflow with retry
      */
     @Retryable(
         value = {ObjectOptimisticLockingFailureException.class},
@@ -376,21 +374,19 @@ public class WorkflowService {
     public void cancelWorkflow(Long instanceId, String reason) {
         log.info("🔄 Attempting to cancel workflow - InstanceID: {}, Reason: {}", instanceId, reason);
         
-        // ✅ CRITICAL: Force refresh from database
         entityManager.clear();
         
         WorkflowInstance instance = instanceRepository.findById(instanceId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow not found"));
 
-        // Authorization: initiator or manager/admin
         if (!authz.isInitiatorOrManager(instance)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not authorized to cancel workflow");
         }
 
-        // Business rule: cannot cancel finalized workflow
         if (instance.getStatus() == WorkflowStatus.APPROVED || instance.getStatus() == WorkflowStatus.REJECTED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Cannot cancel a finalized workflow");
         }
+        
         if (instance.getStatus() == WorkflowStatus.CANCELLED) {
             return; // Idempotent cancel
         }
@@ -399,12 +395,10 @@ public class WorkflowService {
         instance.setStatus(WorkflowStatus.CANCELLED);
         instance.setEndDate(LocalDateTime.now());
         
-        // ✅ CRITICAL: Immediate persistence with version check
         instance = instanceRepository.saveAndFlush(instance);
         entityManager.detach(instance);
         
-        log.info("✅ Workflow {} status updated: {} -> CANCELLED at {}", 
-                instanceId, oldStatus, instance.getEndDate());
+        log.info("✅ Workflow {} status updated: {} -> CANCELLED", instanceId, oldStatus);
 
         logHistory(instance, "WORKFLOW_CANCELLED", 
                   (reason == null || reason.isBlank()) ? "Cancelled" : reason, getCurrentUser());
@@ -426,43 +420,11 @@ public class WorkflowService {
     }
 
     /**
-     * ✅ STRING-BASED INTERFACE: Process task action with retry
+     * ✅ RECOVERY METHOD: Handle cancelWorkflow failures
      */
-    @Retryable(
-        value = {ObjectOptimisticLockingFailureException.class},
-        maxAttempts = 5,
-        backoff = @Backoff(delay = 200, multiplier = 1.5, maxDelay = 2000)
-    )
-    public void processTaskAction(Long taskId, String action, String comments) {
-        try {
-            TaskAction taskAction = TaskAction.valueOf(action.toUpperCase());
-            completeTask(taskId, taskAction, comments);
-        } catch (IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, 
-                "Invalid action: " + action + ". Must be APPROVE or REJECT");
-        }
-    }
-
-    // ===== RECOVERY METHODS FOR RETRY LOGIC =====
-    
     @Recover
-    public void recoverCompleteTask(ObjectOptimisticLockingFailureException ex, Long taskId, TaskAction action, String comments) {
-        log.error("❌ Failed to complete task {} after retries due to optimistic locking conflicts", taskId);
-        
-        User current = getCurrentUser();
-        auditService.logWorkflowActionWithStatus(
-            "Task Completion Failed: Concurrent update conflict after retries",
-            "Task-" + taskId,
-            current.getUsername(),
-            AuditLog.Status.FAILED
-        );
-        
-        throw new ResponseStatusException(HttpStatus.CONFLICT, 
-            "Unable to complete task due to concurrent updates. Please refresh the page and try again.");
-    }
-
-    @Recover
-    public void recoverCancelWorkflow(ObjectOptimisticLockingFailureException ex, Long instanceId, String reason) {
+    public void recoverCancelWorkflow(ObjectOptimisticLockingFailureException ex, 
+                                    Long instanceId, String reason) {
         log.error("❌ Failed to cancel workflow {} after retries due to optimistic locking conflicts", instanceId);
         
         auditService.logWorkflowActionWithStatus(
@@ -476,22 +438,20 @@ public class WorkflowService {
             "Unable to cancel workflow due to concurrent updates. Please refresh the page and try again.");
     }
 
-    @Recover
-    public void recoverProcessTaskAction(ObjectOptimisticLockingFailureException ex, Long taskId, String action, String comments) {
-        log.error("❌ Failed to process task action {} for task {} after retries", action, taskId);
-        
-        auditService.logWorkflowActionWithStatus(
-            "Task Action Failed: " + action + " - Concurrent update conflict",
-            "Task-" + taskId,
-            getCurrentUser().getUsername(),
-            AuditLog.Status.FAILED
-        );
-        
-        throw new ResponseStatusException(HttpStatus.CONFLICT, 
-            "Unable to process task action due to concurrent updates. Please refresh the page and try again.");
+    /**
+     * ✅ STRING-BASED INTERFACE: Process task action
+     */
+    public void processTaskAction(Long taskId, String action, String comments) {
+        try {
+            TaskAction taskAction = TaskAction.valueOf(action.toUpperCase());
+            completeTask(taskId, taskAction, comments);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, 
+                "Invalid action: " + action + ". Must be APPROVE or REJECT");
+        }
     }
 
-    // ===== QUERY METHODS WITH SAFE LOADING =====
+    // ===== QUERY METHODS =====
     
     @Transactional(readOnly = true)
     public List<WorkflowTask> getMyTasks() {
@@ -514,40 +474,48 @@ public class WorkflowService {
     }
 
     @Transactional(readOnly = true)
-    public WorkflowTask getTaskById(Long taskId) {
-        return taskRepository.findById(taskId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Task not found with ID: " + taskId));
-    }
-
-    @Transactional(readOnly = true)
     public WorkflowInstance getWorkflowById(Long instanceId) {
         return instanceRepository.findById(instanceId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow not found with ID: " + instanceId));
     }
 
-    /**
-     * ✅ Force refresh workflow from database (bypasses all caches)
-     */
-    public WorkflowInstance refreshWorkflow(Long instanceId) {
-        log.info("🔄 Force refreshing workflow {} from database", instanceId);
-        entityManager.clear();
-        WorkflowInstance fresh = getWorkflowById(instanceId);
-        log.info("✅ Workflow {} refreshed successfully", instanceId);
-        return fresh;
+    @Transactional(readOnly = true)
+    public WorkflowTask getTaskById(Long taskId) {
+        return taskRepository.findById(taskId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Task not found with ID: " + taskId));
     }
 
-    /**
-     * ✅ Force refresh task from database
-     */
-    public WorkflowTask refreshTask(Long taskId) {
-        log.info("🔄 Force refreshing task {} from database", taskId);
-        entityManager.clear();
-        WorkflowTask fresh = getTaskById(taskId);
-        log.info("✅ Task {} refreshed successfully", taskId);
-        return fresh;
+    // ===== SAFE STEP RESOLUTION =====
+    
+    private WorkflowStep getCurrentStepSafe(WorkflowInstance instance) {
+        try {
+            if (instance.getCurrentStepOrder() == null) {
+                return null;
+            }
+            
+            List<WorkflowTask> tasks = taskRepository.findByWorkflowInstanceOrderByStepOrder(instance);
+            for (WorkflowTask task : tasks) {
+                if (task.getWorkflowStep() != null && 
+                    task.getWorkflowStep().getStepOrder() != null &&
+                    task.getWorkflowStep().getStepOrder().equals(instance.getCurrentStepOrder())) {
+                    return task.getWorkflowStep();
+                }
+            }
+            
+            List<WorkflowStep> steps = stepRepository.findByTemplateOrderByStepOrderAsc(instance.getTemplate());
+            return steps.stream()
+                    .filter(s -> s.getStepOrder() != null && 
+                               s.getStepOrder().equals(instance.getCurrentStepOrder()))
+                    .findFirst()
+                    .orElse(null);
+                    
+        } catch (Exception e) {
+            log.error("❌ Error getting current step for workflow {}: {}", instance.getId(), e.getMessage());
+            return null;
+        }
     }
 
-    // ===== STEP EVALUATION AND WORKFLOW PROGRESSION =====
+    // ===== STEP EVALUATION =====
     
     private StepOutcome evaluateStepOutcome(WorkflowInstance instance, WorkflowStep step) {
         List<WorkflowTask> stepTasks = getStepTasks(instance, step);
@@ -605,14 +573,6 @@ public class WorkflowService {
                t.getWorkflowStep().getId().equals(step.getId());
     }
 
-    /**
-     * ✅ ENHANCED: Handle step outcome with retry-aware persistence
-     */
-    @Retryable(
-        value = {ObjectOptimisticLockingFailureException.class},
-        maxAttempts = 3,
-        backoff = @Backoff(delay = 100, multiplier = 2)
-    )
     private void handleStepOutcome(WorkflowInstance instance, WorkflowStep step, StepOutcome outcome) {
         log.info("🔄 Handling step outcome for workflow {} step {}: {}", 
                 instance.getId(), step.getStepOrder(), outcome);
@@ -621,31 +581,11 @@ public class WorkflowService {
             case REJECTED:
                 cancelRemainingTasks(instance, step, "Step rejected");
                 progressToNextStep(instance, TaskAction.REJECT);
-                
-                auditService.logWorkflowAction(
-                    "Workflow Rejected at Step " + step.getStepOrder(),
-                    instance.getId().toString(),
-                    getCurrentUser().getUsername()
-                );
                 break;
                 
             case APPROVED:
                 cancelRemainingTasks(instance, step, "Quorum reached - step approved");
                 progressToNextStep(instance, TaskAction.APPROVE);
-                
-                if (instance.getStatus() == WorkflowStatus.APPROVED) {
-                    auditService.logWorkflowAction(
-                        "Workflow Approved: All steps completed",
-                        instance.getId().toString(),
-                        getCurrentUser().getUsername()
-                    );
-                } else {
-                    auditService.logWorkflowAction(
-                        "Step " + step.getStepOrder() + " Approved: Moving to next step",
-                        instance.getId().toString(),
-                        getCurrentUser().getUsername()
-                    );
-                }
                 break;
                 
             case CONTINUE:
@@ -682,31 +622,19 @@ public class WorkflowService {
         }
     }
 
-    /**
-     * ✅ ENHANCED: Progress to next step with retry capability
-     */
-    @Retryable(
-        value = {ObjectOptimisticLockingFailureException.class},
-        maxAttempts = 3,
-        backoff = @Backoff(delay = 100, multiplier = 2)
-    )
     private void progressToNextStep(WorkflowInstance instance, TaskAction lastAction) {
         log.info("🔄 Progressing workflow {} to next step, last action: {}", instance.getId(), lastAction);
         
-        // Force refresh to get latest version
         entityManager.refresh(instance);
         
         if (lastAction == TaskAction.REJECT) {
             log.info("❌ Rejecting workflow {}", instance.getId());
             
-            WorkflowStatus oldStatus = instance.getStatus();
             instance.setStatus(WorkflowStatus.REJECTED);
             instance.setEndDate(LocalDateTime.now());
             
             instance = instanceRepository.saveAndFlush(instance);
             entityManager.detach(instance);
-            
-            log.info("✅ Workflow {} status updated: {} -> REJECTED", instance.getId(), oldStatus);
 
             tryUpdateDocumentOnRejection(instance);
             logHistory(instance, "WORKFLOW_REJECTED", "Workflow rejected", getCurrentUser());
@@ -729,14 +657,11 @@ public class WorkflowService {
         if (instance.getCurrentStepOrder() >= totalSteps) {
             log.info("✅ Approving workflow {} - all steps completed", instance.getId());
             
-            WorkflowStatus oldStatus = instance.getStatus();
             instance.setStatus(WorkflowStatus.APPROVED);
             instance.setEndDate(LocalDateTime.now());
             
             instance = instanceRepository.saveAndFlush(instance);
             entityManager.detach(instance);
-            
-            log.info("✅ Workflow {} status updated: {} -> APPROVED", instance.getId(), oldStatus);
 
             tryUpdateDocumentOnApproval(instance);
             logHistory(instance, "WORKFLOW_APPROVED", "Workflow approved", getCurrentUser());
