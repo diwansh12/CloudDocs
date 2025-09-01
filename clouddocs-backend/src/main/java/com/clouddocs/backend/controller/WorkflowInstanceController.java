@@ -25,7 +25,7 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
-@RequestMapping("/workflows")
+@RequestMapping("/workflows-instances")
 @CrossOrigin(origins = {"https://cloud-docs-tan.vercel.app", "http://localhost:3000"}, 
              allowCredentials = "true", allowedHeaders = "*")
 @RequiredArgsConstructor

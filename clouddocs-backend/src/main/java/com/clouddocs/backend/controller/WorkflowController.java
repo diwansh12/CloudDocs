@@ -5,49 +5,38 @@ import com.clouddocs.backend.dto.workflow.WorkflowInstanceDTO;
 import com.clouddocs.backend.entity.*;
 import com.clouddocs.backend.mapper.WorkflowMapper;
 import com.clouddocs.backend.repository.WorkflowTemplateRepository;
-import com.clouddocs.backend.repository.UserRepository;
-import com.clouddocs.backend.security.UserPrincipal;
 import com.clouddocs.backend.service.WorkflowService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.Authentication;
 
+import java.util.Map;
 import java.time.LocalDateTime;
-import java.util.*;
+import java.util.HashMap;  // ← ADD THIS IMPORT
+import java.util.List;
+import java.util.UUID;
 
 @Slf4j
 @RestController
 @RequestMapping("/workflows")
-@CrossOrigin(origins = {"https://cloud-docs-tan.vercel.app", "http://localhost:3000"}, 
-             allowCredentials = "true", allowedHeaders = "*")
+@CrossOrigin(origins = {"https://cloud-docs-tan.vercel.app", "http://localhost:3000"})
 @RequiredArgsConstructor
 public class WorkflowController {
 
     private final WorkflowService workflowService;
     private final WorkflowTemplateRepository templateRepository;
-    private final UserRepository userRepository;
 
-    /**
-     * ✅ ENHANCED: Create workflow with proper user assignment
-     */
-    @PostMapping
-    @Transactional
+      @PostMapping  // ✅ This handles POST /api/workflows
     public ResponseEntity<Map<String, Object>> createWorkflow(@RequestBody CreateWorkflowRequest request) {
         try {
             log.info("🚀 Creating workflow with request: {}", request);
             
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            if (auth == null || auth.getPrincipal() == null) {
-                throw new IllegalStateException("No authenticated user found");
-            }
-            
-            UserPrincipal userPrincipal = (UserPrincipal) auth.getPrincipal();
-            log.debug("Authenticated user: {} (ID: {})", userPrincipal.getUsername(), userPrincipal.getId());
+            log.debug("Authenticated user: {}", auth != null ? auth.getName() : "null");
             
             // Validate required fields
             if (request.getDocumentId() == null) {
@@ -57,14 +46,13 @@ public class WorkflowController {
                 throw new IllegalArgumentException("Template ID is required");
             }
             
-            // ✅ FIXED: Create workflow with proper user context
-            WorkflowInstance instance = workflowService.startWorkflowWithUser(
+            // ✅ FIXED: Call service with all parameters
+            WorkflowInstance instance = workflowService.startWorkflow(
                 request.getDocumentId(),
                 request.getTemplateId(),
-                request.getTitle() != null ? request.getTitle() : "Document Approval Workflow",
-                request.getDescription(),
-                request.getPriority() != null ? request.getPriority() : "NORMAL",
-                userPrincipal.getId() // ✅ Pass user ID explicitly
+                request.getTitle(),           // ✅ Include title
+                request.getDescription(),     // ✅ Include description  
+                request.getPriority()         // ✅ Include priority
             );
             
             WorkflowInstanceDTO dto = WorkflowMapper.toInstanceDTO(instance);
@@ -74,221 +62,69 @@ public class WorkflowController {
             response.put("message", "Workflow created successfully");
             response.put("workflow", dto);
             response.put("workflowId", instance.getId());
-            response.put("assignedTo", instance.getInitiatedBy() != null ? 
-                instance.getInitiatedBy().getFullName() : "System");
             response.put("timestamp", LocalDateTime.now());
             
-            log.info("✅ Workflow created successfully with ID: {}, Assigned to: {}", 
-                    instance.getId(), 
-                    instance.getInitiatedBy() != null ? instance.getInitiatedBy().getFullName() : "System");
+            log.info("✅ Workflow created successfully with ID: {}, Priority: {}", 
+                    instance.getId(), request.getPriority());
             
             return ResponseEntity.ok(response);
             
         } catch (IllegalArgumentException e) {
             log.error("❌ Invalid request: {}", e.getMessage());
-            return ResponseEntity.badRequest().body(Map.of(
-                "success", false,
-                "message", e.getMessage(),
-                "timestamp", LocalDateTime.now()
-            ));
+            
+            Map<String, Object> error = new HashMap<>();
+            error.put("success", false);
+            error.put("message", e.getMessage());
+            error.put("timestamp", LocalDateTime.now());
+            
+            return ResponseEntity.badRequest().body(error);
             
         } catch (Exception e) {
             log.error("❌ Error creating workflow: {}", e.getMessage(), e);
-            return ResponseEntity.status(500).body(Map.of(
-                "success", false,
-                "message", "Failed to create workflow: " + e.getMessage(),
-                "type", e.getClass().getSimpleName(),
-                "timestamp", LocalDateTime.now()
-            ));
+            
+            Map<String, Object> error = new HashMap<>();
+            error.put("success", false);
+            error.put("message", "Failed to create workflow: " + e.getMessage());
+            error.put("type", e.getClass().getSimpleName());
+            error.put("timestamp", LocalDateTime.now());
+            
+            return ResponseEntity.status(500).body(error);
         }
     }
 
     /**
-     * ✅ ENHANCED: Get user workflows with safe DTO conversion
-     */
-    @PreAuthorize("isAuthenticated()")
-    @GetMapping("/mine")
-    @Transactional(readOnly = true)
-    public ResponseEntity<Map<String, Object>> getUserWorkflows(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size,
-            @RequestParam(required = false) String status) {
-        
-        try {
-            log.info("🔍 Getting workflows for current user - page: {}, size: {}, status: {}", 
-                    page, size, status);
-            
-            UserPrincipal userPrincipal = getCurrentUserPrincipal();
-            Long userId = userPrincipal.getId();
-            
-            // Get workflows using service method
-            Map<String, Object> workflows = workflowService.getUserWorkflowsWithDetails(userId, page, size, status);
-            
-            log.info("✅ Retrieved {} workflows for user {}", 
-                    ((List<?>) workflows.get("workflows")).size(), userPrincipal.getUsername());
-            
-            return ResponseEntity.ok(workflows);
-            
-        } catch (Exception e) {
-            log.error("❌ Error getting user workflows: {}", e.getMessage(), e);
-            return ResponseEntity.ok(Map.of(
-                "workflows", new ArrayList<>(),
-                "totalItems", 0,
-                "totalPages", 0,
-                "currentPage", page,
-                "pageSize", size,
-                "hasNext", false,
-                "hasPrevious", false
-            ));
-        }
-    }
-
-    /**
-     * ✅ ENHANCED: Handle task actions with proper validation
-     */
-    @PreAuthorize("isAuthenticated()")
-    @PutMapping("/tasks/{taskId}/action")
-    @Transactional
-    public ResponseEntity<Map<String, Object>> handleTaskAction(
-            @PathVariable Long taskId,
-            @RequestParam String action,
-            @RequestParam(required = false) String comments) {
-        
-        try {
-            log.info("🔄 Processing task action - TaskID: {}, Action: {}", taskId, action);
-            
-            UserPrincipal userPrincipal = getCurrentUserPrincipal();
-            
-            // Validate action parameter
-            if (!action.equalsIgnoreCase("APPROVE") && !action.equalsIgnoreCase("REJECT")) {
-                throw new IllegalArgumentException("Invalid action. Must be APPROVE or REJECT");
-            }
-            
-            // Process the action using service method with user context
-            Map<String, Object> result = workflowService.processTaskActionWithUser(
-                taskId, action, comments, userPrincipal.getId());
-            
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("message", "Task " + action.toLowerCase() + "d successfully");
-            response.put("taskId", taskId);
-            response.put("action", action);
-            response.put("workflowStatus", result.get("workflowStatus"));
-            response.put("nextStep", result.get("nextStep"));
-            response.put("timestamp", LocalDateTime.now());
-            
-            log.info("✅ Task action completed successfully - TaskID: {}, Action: {}", taskId, action);
-            return ResponseEntity.ok(response);
-            
-        } catch (IllegalArgumentException e) {
-            log.error("❌ Invalid request for task {}: {}", taskId, e.getMessage());
-            return ResponseEntity.badRequest().body(Map.of(
-                "success", false,
-                "message", e.getMessage(),
-                "taskId", taskId
-            ));
-            
-        } catch (Exception e) {
-            log.error("❌ Unexpected error processing task {}: {}", taskId, e.getMessage(), e);
-            return ResponseEntity.status(500).body(Map.of(
-                "success", false,
-                "message", "Failed to process task action: " + e.getMessage(),
-                "taskId", taskId,
-                "action", action
-            ));
-        }
-    }
-
-    /**
-     * ✅ ENHANCED: Get workflow details with tasks and steps
-     */
-    @PreAuthorize("isAuthenticated()")
-    @GetMapping("/{workflowId}/details")
-    @Transactional(readOnly = true)
-    public ResponseEntity<Map<String, Object>> getWorkflowDetails(@PathVariable Long workflowId) {
-        try {
-            log.info("🔍 Getting workflow details for ID: {}", workflowId);
-            
-            UserPrincipal userPrincipal = getCurrentUserPrincipal();
-            
-            Map<String, Object> details = workflowService.getWorkflowDetailsWithTasks(workflowId, userPrincipal.getId());
-            
-            log.info("✅ Workflow details retrieved for ID: {}", workflowId);
-            return ResponseEntity.ok(details);
-            
-        } catch (Exception e) {
-            log.error("❌ Error getting workflow details for ID {}: {}", workflowId, e.getMessage(), e);
-            return ResponseEntity.status(404).body(Map.of(
-                "success", false,
-                "message", "Workflow not found or access denied",
-                "workflowId", workflowId
-            ));
-        }
-    }
-
-    /**
-     * ✅ ENHANCED: Get tasks assigned to current user
-     */
-    @PreAuthorize("isAuthenticated()")
-    @GetMapping("/tasks/my")
-    @Transactional(readOnly = true)
-    public ResponseEntity<List<Map<String, Object>>> getMyTasks() {
-        try {
-            log.info("🔍 Getting tasks for current user");
-            
-            UserPrincipal userPrincipal = getCurrentUserPrincipal();
-            List<Map<String, Object>> tasks = workflowService.getMyTasksWithDetails(userPrincipal.getId());
-            
-            log.info("✅ Retrieved {} tasks for user {}", tasks.size(), userPrincipal.getUsername());
-            return ResponseEntity.ok(tasks);
-            
-        } catch (Exception e) {
-            log.error("❌ Error getting user tasks: {}", e.getMessage(), e);
-            return ResponseEntity.ok(new ArrayList<>());
-        }
-    }
-
-    /**
-     * ✅ ENHANCED: Legacy endpoint compatibility
+     * Start a workflow for a given document using a template
      */
     @PostMapping("/start")
-    @Transactional
-    public ResponseEntity<Map<String, Object>> startWorkflow(
+    public ResponseEntity<?> startWorkflow(
             @RequestParam Long documentId,
             @RequestParam UUID templateId) {
         
         try {
-            log.info("🚀 Starting workflow (legacy endpoint) for document {} with template {}", 
+            log.info("Starting workflow (legacy endpoint) for document {} with template {}", 
                     documentId, templateId);
             
-            UserPrincipal userPrincipal = getCurrentUserPrincipal();
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            log.debug("Authenticated user: {}", auth != null ? auth.getName() : "null");
             
-            WorkflowInstance instance = workflowService.startWorkflowWithUser(
+            // ✅ FIXED: Call the 5-parameter method with defaults
+            WorkflowInstance instance = workflowService.startWorkflow(
                 documentId, 
                 templateId,
-                "Document Approval Workflow", // Default title
+                null,      // title
                 null,      // description
-                "NORMAL",   // priority
-                userPrincipal.getId()
+                "NORMAL"   // priority
             );
             
             WorkflowInstanceDTO dto = WorkflowMapper.toInstanceDTO(instance);
-            
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("workflow", dto);
-            response.put("workflowId", instance.getId());
-            response.put("message", "Workflow created successfully");
-            
-            log.info("✅ Legacy workflow created successfully with ID: {}", instance.getId());
-            return ResponseEntity.ok(response);
+            log.info("Workflow created successfully with ID: {}", instance.getId());
+            return ResponseEntity.ok(dto);
             
         } catch (Exception e) {
-            log.error("❌ Error creating workflow for document {} with template {}: {}", 
+            log.error("Error creating workflow for document {} with template {}: {}", 
                      documentId, templateId, e.getMessage(), e);
             
             return ResponseEntity.status(500).body(Map.of(
-                "success", false,
                 "error", e.getMessage(),
                 "type", e.getClass().getSimpleName(),
                 "timestamp", LocalDateTime.now(),
@@ -297,76 +133,183 @@ public class WorkflowController {
             ));
         }
     }
+    /**
+     * ✅ Handle task actions (approve/reject) - ADDED MISSING ENDPOINT
+     */
+    @PreAuthorize("isAuthenticated()")
+    @PutMapping("/tasks/{taskId}/action")
+    public ResponseEntity<Map<String, Object>> handleTaskAction(
+            @PathVariable Long taskId,
+            @RequestParam String action,
+            @RequestParam(required = false) String comments) {
+        
+        try {
+            log.info("🔄 Processing task action - TaskID: {}, Action: {}", taskId, action);
+            
+            String username = SecurityContextHolder.getContext().getAuthentication().getName();
+            log.debug("Current user: {}", username);
+            
+            // Validate action parameter
+            if (!action.equalsIgnoreCase("APPROVE") && !action.equalsIgnoreCase("REJECT")) {
+                throw new IllegalArgumentException("Invalid action. Must be APPROVE or REJECT");
+            }
+            
+            // Process the action using service method
+            workflowService.processTaskAction(taskId, action, comments);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Task " + action.toLowerCase() + "d successfully");
+            response.put("taskId", taskId);
+            response.put("action", action);
+            response.put("timestamp", LocalDateTime.now());
+            
+            log.info("✅ Task action completed successfully - TaskID: {}, Action: {}", taskId, action);
+            return ResponseEntity.ok(response);
+            
+        } catch (IllegalArgumentException e) {
+            log.error("❌ Invalid request for task {}: {}", taskId, e.getMessage());
+            
+            Map<String, Object> error = new HashMap<>();
+            error.put("success", false);
+            error.put("message", e.getMessage());
+            error.put("taskId", taskId);
+            
+            return ResponseEntity.badRequest().body(error);
+            
+        } catch (Exception e) {
+            log.error("❌ Unexpected error processing task {}: {}", taskId, e.getMessage(), e);
+            
+            Map<String, Object> error = new HashMap<>();
+            error.put("success", false);
+            error.put("message", "Failed to process task action: " + e.getMessage());
+            error.put("taskId", taskId);
+            error.put("action", action);
+            
+            return ResponseEntity.status(500).body(error);
+        }
+    }
 
     /**
-     * ✅ ENHANCED: Create sample template for testing
+     * Create a sample workflow template for testing
      */
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/templates/create-sample")
-    @Transactional
-    public ResponseEntity<Map<String, Object>> createSampleTemplate() {
+    public ResponseEntity<WorkflowTemplate> createSampleTemplate() {
         try {
-            log.info("🔧 Creating sample workflow template");
-            
-            UserPrincipal userPrincipal = getCurrentUserPrincipal();
-            User creator = userRepository.findById(userPrincipal.getId())
-                .orElseThrow(() -> new RuntimeException("Creator not found"));
-            
             WorkflowTemplate template = new WorkflowTemplate(
-                    "Sample Document Approval",
-                    "Manager then Admin approval workflow",
+                    "Simple Document Approval",
+                    "Manager then Admin approval",
                     WorkflowType.DOCUMENT_APPROVAL
             );
             template.setIsActive(true);
             template.setDefaultSlaHours(48);
-            template.setCreatedBy(creator);
-            template.setCreatedAt(LocalDateTime.now());
 
             // Step 1: Manager approval
-            WorkflowStep step1 = new WorkflowStep("Manager Review", 1, StepType.APPROVAL);
+            WorkflowStep step1 = new WorkflowStep("Manager Approval", 1, StepType.APPROVAL);
             step1.setTemplate(template);
-            step1.setAssigneeRole(Role.MANAGER);
-            step1.setIsRequired(true);
-            step1.setSlaHours(24);
+            step1.addRole(Role.MANAGER);
 
             // Step 2: Admin approval
-            WorkflowStep step2 = new WorkflowStep("Admin Final Approval", 2, StepType.APPROVAL);
+            WorkflowStep step2 = new WorkflowStep("Admin Approval", 2, StepType.APPROVAL);
             step2.setTemplate(template);
-            step2.setAssigneeRole(Role.ADMIN);
-            step2.setIsRequired(true);
-            step2.setSlaHours(24);
+            step2.addRole(Role.ADMIN);
 
             // Add steps to template
             template.getSteps().add(step1);
             template.getSteps().add(step2);
 
             WorkflowTemplate saved = templateRepository.save(template);
+            log.info("Created sample template with ID: {}", saved.getId());
             
-            log.info("✅ Created sample template with ID: {}", saved.getId());
+            return ResponseEntity.ok(saved);
+        } catch (Exception e) {
+            log.error("Failed to create sample template: {}", e.getMessage(), e);
+            return ResponseEntity.status(500).body(null);
+        }
+    }
+
+    /**
+     * Get tasks assigned to current logged in user
+     */
+    @PreAuthorize("isAuthenticated()")
+    @GetMapping("/tasks/user")
+    public ResponseEntity<List<WorkflowTask>> getMyTasks() {
+        try {
+            List<WorkflowTask> tasks = workflowService.getMyTasks();
+            return ResponseEntity.ok(tasks);
+        } catch (Exception e) {
+            log.error("Failed to get user tasks: {}", e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    /**
+     * Get workflows initiated by current user
+     */
+    @PreAuthorize("isAuthenticated()")
+    @GetMapping("/user")
+    public ResponseEntity<List<WorkflowInstance>> getMyWorkflows() {
+        try {
+            List<WorkflowInstance> workflows = workflowService.getMyWorkflows();
+            return ResponseEntity.ok(workflows);
+        } catch (Exception e) {
+            log.error("Failed to get user workflows: {}", e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    /**
+     * Complete a workflow task
+     */
+    @PreAuthorize("isAuthenticated()")
+    @PutMapping("/tasks/{taskId}/complete")
+    public ResponseEntity<Map<String, Object>> completeTask(
+            @PathVariable Long taskId,
+            @RequestParam TaskAction action,
+            @RequestParam(required = false) String comments) {
+        
+        try {
+            log.info("Completing task {} with action {}", taskId, action);
+            
+            workflowService.completeTask(taskId, action, comments);
             
             return ResponseEntity.ok(Map.of(
-                "success", true,
-                "template", saved,
-                "templateId", saved.getId(),
-                "message", "Sample template created successfully"
+                "message", "Task completed successfully",
+                "taskId", taskId,
+                "action", action.toString(),
+                "timestamp", LocalDateTime.now()
             ));
             
         } catch (Exception e) {
-            log.error("❌ Failed to create sample template: {}", e.getMessage(), e);
+            log.error("Failed to complete task {}: {}", taskId, e.getMessage(), e);
+            
             return ResponseEntity.status(500).body(Map.of(
-                "success", false,
-                "message", "Failed to create sample template: " + e.getMessage()
+                "error", e.getMessage(),
+                "taskId", taskId,
+                "action", action.toString(),
+                "timestamp", LocalDateTime.now()
             ));
         }
     }
 
-    // ===== HELPER METHODS =====
-
-    private UserPrincipal getCurrentUserPrincipal() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !(auth.getPrincipal() instanceof UserPrincipal)) {
-            throw new RuntimeException("No authenticated user found");
+    /**
+     * Get workflow instance details
+     */
+    @PreAuthorize("isAuthenticated()")
+    @GetMapping("/{instanceId}")
+    public ResponseEntity<WorkflowInstance> getWorkflow(@PathVariable Long instanceId) {
+        try {
+            // You'll need to add this method to WorkflowService
+            // WorkflowInstance workflow = workflowService.getWorkflowById(instanceId);
+            // return ResponseEntity.ok(workflow);
+            
+            // For now, return a placeholder response
+            return ResponseEntity.status(501).body(null); // Not implemented yet
+        } catch (Exception e) {
+            log.error("Failed to get workflow {}: {}", instanceId, e.getMessage(), e);
+            throw e;
         }
-        return (UserPrincipal) auth.getPrincipal();
     }
 }
+
