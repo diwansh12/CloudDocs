@@ -16,13 +16,13 @@ import org.springframework.security.core.Authentication;
 
 import java.util.Map;
 import java.time.LocalDateTime;
-import java.util.HashMap;  // ← ADD THIS IMPORT
+import java.util.HashMap;
 import java.util.List;
 import java.util.UUID;
 
 @Slf4j
 @RestController
-@RequestMapping("/workflows")
+@RequestMapping("/workflows")  // ✅ Base path for general workflow operations
 @CrossOrigin(origins = {"https://cloud-docs-tan.vercel.app", "http://localhost:3000"})
 @RequiredArgsConstructor
 public class WorkflowController {
@@ -30,7 +30,11 @@ public class WorkflowController {
     private final WorkflowService workflowService;
     private final WorkflowTemplateRepository templateRepository;
 
-      @PostMapping  // ✅ This handles POST /api/workflows
+    /**
+     * ✅ Create workflow endpoint
+     * Maps to: POST /workflows
+     */
+    @PostMapping
     public ResponseEntity<Map<String, Object>> createWorkflow(@RequestBody CreateWorkflowRequest request) {
         try {
             log.info("🚀 Creating workflow with request: {}", request);
@@ -93,7 +97,8 @@ public class WorkflowController {
     }
 
     /**
-     * Start a workflow for a given document using a template
+     * ✅ Start workflow (legacy endpoint)
+     * Maps to: POST /workflows/start
      */
     @PostMapping("/start")
     public ResponseEntity<?> startWorkflow(
@@ -133,8 +138,10 @@ public class WorkflowController {
             ));
         }
     }
+
     /**
-     * ✅ Handle task actions (approve/reject) - ADDED MISSING ENDPOINT
+     * ✅ Handle task actions (approve/reject)
+     * Maps to: PUT /workflows/tasks/{taskId}/action
      */
     @PreAuthorize("isAuthenticated()")
     @PutMapping("/tasks/{taskId}/action")
@@ -191,7 +198,8 @@ public class WorkflowController {
     }
 
     /**
-     * Create a sample workflow template for testing
+     * ✅ Create sample template (Admin only)
+     * Maps to: POST /workflows/templates/create-sample
      */
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/templates/create-sample")
@@ -230,11 +238,12 @@ public class WorkflowController {
     }
 
     /**
-     * Get tasks assigned to current logged in user
+     * ✅ Get tasks assigned to current user
+     * Maps to: GET /workflows/tasks/user
      */
     @PreAuthorize("isAuthenticated()")
     @GetMapping("/tasks/user")
-    public ResponseEntity<List<WorkflowTask>> getMyTasks() {
+    public ResponseEntity<List<WorkflowTask>> getUserTasks() {
         try {
             List<WorkflowTask> tasks = workflowService.getMyTasks();
             return ResponseEntity.ok(tasks);
@@ -245,11 +254,12 @@ public class WorkflowController {
     }
 
     /**
-     * Get workflows initiated by current user
+     * ✅ Get workflows initiated by current user
+     * Maps to: GET /workflows/user
      */
     @PreAuthorize("isAuthenticated()")
     @GetMapping("/user")
-    public ResponseEntity<List<WorkflowInstance>> getMyWorkflows() {
+    public ResponseEntity<List<WorkflowInstance>> getUserWorkflows() {
         try {
             List<WorkflowInstance> workflows = workflowService.getMyWorkflows();
             return ResponseEntity.ok(workflows);
@@ -260,7 +270,8 @@ public class WorkflowController {
     }
 
     /**
-     * Complete a workflow task
+     * ✅ Complete a workflow task
+     * Maps to: PUT /workflows/tasks/{taskId}/complete
      */
     @PreAuthorize("isAuthenticated()")
     @PutMapping("/tasks/{taskId}/complete")
@@ -294,21 +305,32 @@ public class WorkflowController {
     }
 
     /**
-     * Get workflow instance details
+     * ✅ Get workflow details by ID (put after specific paths)
+     * Maps to: GET /workflows/{instanceId}
      */
     @PreAuthorize("isAuthenticated()")
     @GetMapping("/{instanceId}")
-    public ResponseEntity<WorkflowInstance> getWorkflow(@PathVariable Long instanceId) {
+    public ResponseEntity<Map<String, Object>> getWorkflowDetails(@PathVariable Long instanceId) {
         try {
-            // You'll need to add this method to WorkflowService
-            // WorkflowInstance workflow = workflowService.getWorkflowById(instanceId);
-            // return ResponseEntity.ok(workflow);
+            log.info("Getting workflow details for ID: {}", instanceId);
             
-            // For now, return a placeholder response
-            return ResponseEntity.status(501).body(null); // Not implemented yet
+            // TODO: Implement this method in WorkflowService
+            // For now, return a meaningful response
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", "Workflow details endpoint - implementation pending");
+            response.put("instanceId", instanceId);
+            response.put("timestamp", LocalDateTime.now());
+            
+            return ResponseEntity.ok(response);
+            
         } catch (Exception e) {
-            log.error("Failed to get workflow {}: {}", instanceId, e.getMessage(), e);
-            throw e;
+            log.error("Failed to get workflow details for {}: {}", instanceId, e.getMessage(), e);
+            
+            return ResponseEntity.status(500).body(Map.of(
+                "error", e.getMessage(),
+                "instanceId", instanceId,
+                "timestamp", LocalDateTime.now()
+            ));
         }
     }
 }

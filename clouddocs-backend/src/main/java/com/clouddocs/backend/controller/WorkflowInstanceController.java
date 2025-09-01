@@ -1,6 +1,5 @@
 package com.clouddocs.backend.controller;
 
-
 import com.clouddocs.backend.entity.*;
 import com.clouddocs.backend.repository.UserRepository;
 import com.clouddocs.backend.repository.WorkflowInstanceRepository;
@@ -25,7 +24,7 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
-@RequestMapping("/workflows-instances")
+@RequestMapping("/workflow-instances")  // ✅ Fixed: Removed extra hyphen
 @CrossOrigin(origins = {"https://cloud-docs-tan.vercel.app", "http://localhost:3000"}, 
              allowCredentials = "true", allowedHeaders = "*")
 @RequiredArgsConstructor
@@ -35,10 +34,11 @@ public class WorkflowInstanceController {
     private final UserRepository userRepository;
 
     /**
-     * ✅ COMPLETELY REWRITTEN: Enhanced /mine endpoint with comprehensive fixes
+     * ✅ FIXED: Enhanced /mine endpoint with comprehensive fixes
+     * Maps to: /workflow-instances/mine
      */
     @PreAuthorize("isAuthenticated()")
-    @GetMapping("/mine")
+    @GetMapping("/mine")  // ✅ Put specific paths BEFORE generic paths
     @Transactional(readOnly = true)
     public ResponseEntity<Map<String, Object>> getMyWorkflows(
             @RequestParam(required = false) String status,
@@ -51,7 +51,7 @@ public class WorkflowInstanceController {
             @RequestParam(defaultValue = "10") int size) {
 
         try {
-            log.info("🔍 Fetching workflows for current user - status: {}, page: {}, size: {}", 
+            log.info("🔍 Fetching workflow instances for current user - status: {}, page: {}, size: {}", 
                     status, page, size);
 
             UserPrincipal userPrincipal = getCurrentUserPrincipal();
@@ -74,13 +74,13 @@ public class WorkflowInstanceController {
 
             Map<String, Object> response = buildPaginatedResponse(pageResult, workflowDTOs);
             
-            log.info("✅ Returning {} workflows for user {}", 
+            log.info("✅ Returning {} workflow instances for user {}", 
                     workflowDTOs.size(), userPrincipal.getUsername());
             
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            log.error("❌ Error getting user workflows: {}", e.getMessage(), e);
+            log.error("❌ Error getting user workflow instances: {}", e.getMessage(), e);
             
             return ResponseEntity.ok(Map.of(
                 "workflows", new ArrayList<>(),
@@ -93,6 +93,40 @@ public class WorkflowInstanceController {
             ));
         }
     }
+
+    /**
+     * ✅ FIXED: Get specific workflow instance by ID
+     * Maps to: /workflow-instances/{id}
+     */
+    @PreAuthorize("isAuthenticated()")
+    @GetMapping("/{id}")  // ✅ Put after /mine to avoid path conflicts
+    @Transactional(readOnly = true)
+    public ResponseEntity<Map<String, Object>> getWorkflowInstance(@PathVariable Long id) {
+        try {
+            log.debug("Fetching workflow instance with ID: {}", id);
+            
+            WorkflowInstance instance = instanceRepository.findByIdWithBasicDetails(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow instance not found"));
+            
+            UserPrincipal userPrincipal = getCurrentUserPrincipal();
+            User currentUser = getCurrentUser(userPrincipal.getId());
+            
+            if (!canAccessWorkflow(currentUser, instance)) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied to this workflow instance");
+            }
+            
+            Map<String, Object> dto = convertToEnhancedWorkflowDTO(instance);
+            return ResponseEntity.ok(dto);
+            
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("❌ Error getting workflow instance {}: {}", id, e.getMessage(), e);
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow instance not found");
+        }
+    }
+
+    // ===== DTO CONVERSION METHODS =====
 
     /**
      * ✅ ENHANCED: Safe DTO conversion with comprehensive error handling
@@ -378,7 +412,7 @@ public class WorkflowInstanceController {
         return minimal;
     }
 
-    // ===== ENHANCED SUPPORTING METHODS =====
+    // ===== SUPPORTING METHODS =====
 
     private Page<WorkflowInstance> getWorkflowsWithFilters(User currentUser, String status, 
                                                           UUID templateId, LocalDateTime from, 
@@ -404,7 +438,7 @@ public class WorkflowInstanceController {
                     currentUser, pageable);
             }
         } catch (Exception e) {
-            log.error("Error getting workflows with filters: {}", e.getMessage());
+            log.error("Error getting workflow instances with filters: {}", e.getMessage());
             return Page.empty(pageable);
         }
     }
@@ -434,36 +468,6 @@ public class WorkflowInstanceController {
     private User getCurrentUser(Long userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not found"));
-    }
-
-    // ===== ADDITIONAL ENDPOINTS (keeping your existing ones) =====
-
-    @PreAuthorize("isAuthenticated()")
-    @GetMapping("/{id}")
-    @Transactional(readOnly = true)
-    public ResponseEntity<Map<String, Object>> getWorkflow(@PathVariable Long id) {
-        try {
-            log.debug("Fetching workflow instance with ID: {}", id);
-            
-            WorkflowInstance instance = instanceRepository.findByIdWithBasicDetails(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow not found"));
-            
-            UserPrincipal userPrincipal = getCurrentUserPrincipal();
-            User currentUser = getCurrentUser(userPrincipal.getId());
-            
-            if (!canAccessWorkflow(currentUser, instance)) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied to this workflow");
-            }
-            
-            Map<String, Object> dto = convertToEnhancedWorkflowDTO(instance);
-            return ResponseEntity.ok(dto);
-            
-        } catch (ResponseStatusException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("❌ Error getting workflow {}: {}", id, e.getMessage(), e);
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow not found");
-        }
     }
 
     private boolean canAccessWorkflow(User user, WorkflowInstance workflow) {
