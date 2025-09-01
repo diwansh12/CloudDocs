@@ -59,9 +59,13 @@ public class WorkflowService {
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found"));
 
             // ✅ CRITICAL FIX: Use JOIN FETCH to load template with steps
-          WorkflowTemplate template = templateRepository.findByIdWithStepsAndRoles(templateId)
-    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow template not found"));
+          // ✅ First query: load template with steps (without roles)
+        WorkflowTemplate template = templateRepository.findByIdWithSteps(templateId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow template not found"));
 
+        // ✅ Second query: load roles for those steps
+        List<WorkflowStep> stepsWithRoles = stepRepository.findStepsWithRoles(templateId);
+        template.setSteps(new ArrayList<>(stepsWithRoles));
 
             if (!Boolean.TRUE.equals(template.getIsActive())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Template is not active");
