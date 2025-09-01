@@ -6,30 +6,24 @@ import com.clouddocs.backend.dto.ChangePasswordRequest;
 import com.clouddocs.backend.service.UserService;
 import com.clouddocs.backend.service.FileStorageService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.cache.CacheManager;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.cache.Cache;
 
-import jakarta.persistence.EntityManager;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
 
 /**
  * REST Controller for User Profile Management
@@ -46,181 +40,11 @@ public class UserController {
     @Autowired
     private FileStorageService fileStorageService;
 
-    @Autowired
-private JdbcTemplate jdbcTemplate;
-
-@Autowired
-private EntityManager entityManager;
-
-@Autowired(required = false)
-private CacheManager cacheManager;
-
     /**
      * Get current authenticated user's profile
      */
 
-     @GetMapping("/db-status")
-@PreAuthorize("hasRole('ADMIN')")
-public ResponseEntity<?> getDatabaseStatus() {
-    Map<String, Object> status = new HashMap<>();
-    
-    try {
-        // Check database connection
-        String dbTime = jdbcTemplate.queryForObject("SELECT NOW()", String.class);
-        status.put("databaseTime", dbTime);
-        status.put("connectionStatus", "CONNECTED");
-        
-        // Check current database name
-        String dbName = jdbcTemplate.queryForObject(
-            "SELECT current_database()", String.class);
-        status.put("databaseName", dbName);
-        
-        // Count users in database
-        Long userCount = jdbcTemplate.queryForObject(
-            "SELECT COUNT(*) FROM users", Long.class);
-        status.put("totalUsersInDatabase", userCount);
-        
-        // Get actual user data from database (direct SQL)
-        List<Map<String, Object>> users = jdbcTemplate.queryForList(
-            "SELECT id, username, email, role, enabled, active FROM users ORDER BY id LIMIT 10"
-        );
-        status.put("actualUsersInDatabase", users);
-        
-        // Check what Spring repository returns
-        List<UserProfileDTO> springUsers = userService.getAllUsers(0, 10);
-        status.put("springRepositoryUserCount", springUsers.size());
-        status.put("springRepositoryUsers", springUsers);
-        
-        // Get current authenticated user details
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getPrincipal() instanceof UserDetails) {
-            UserDetails userDetails = (UserDetails) auth.getPrincipal();
-            status.put("currentUsername", userDetails.getUsername());
-            status.put("currentAuthorities", userDetails.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .collect(java.util.stream.Collectors.toList()));
-        }
-        
-        return ResponseEntity.ok(status);
-        
-    } catch (Exception e) {
-        status.put("error", e.getMessage());
-        status.put("connectionStatus", "FAILED");
-        return ResponseEntity.status(500).body(status);
-    }
-}
-
-/**
- * ✅ PRODUCTION CACHE CLEARING: Clear all caches safely
- */
-@PostMapping("/clear-caches")
-@PreAuthorize("hasRole('ADMIN')")
-public ResponseEntity<?> clearProductionCaches() {
-    Map<String, Object> result = new HashMap<>();
-    
-    try {
-        // Clear JPA/Hibernate first-level cache
-        entityManager.clear();
-        result.put("jpaCache", "cleared");
-        
-        // Clear Spring caches if present
-        if (cacheManager != null) {
-            cacheManager.getCacheNames().forEach(cacheName -> {
-                Cache cache = cacheManager.getCache(cacheName);
-                if (cache != null) {
-                    cache.clear();
-                }
-            });
-            result.put("springCaches", "cleared");
-        } else {
-            result.put("springCaches", "not configured");
-        }
-        
-        // Clear security context
-        SecurityContextHolder.clearContext();
-        result.put("securityContext", "cleared");
-        
-        result.put("status", "success");
-        result.put("message", "All caches cleared successfully");
-        return ResponseEntity.ok(result);
-        
-    } catch (Exception e) {
-        result.put("error", e.getMessage());
-        result.put("status", "failed");
-        return ResponseEntity.status(500).body(result);
-    }
-}
-
-/**
- * ✅ CURRENT USER DEBUG: Check what Spring Security sees for current user
- */
-@GetMapping("/debug-current-user")
-@PreAuthorize("isAuthenticated()")
-public ResponseEntity<?> debugCurrentUser(@AuthenticationPrincipal UserDetails userDetails) {
-    Map<String, Object> debug = new HashMap<>();
-    
-    try {
-        // Current authentication info
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        debug.put("authenticationClass", auth.getClass().getSimpleName());
-        debug.put("principalClass", auth.getPrincipal().getClass().getSimpleName());
-        debug.put("authoritiesFromAuth", auth.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .collect(java.util.stream.Collectors.toList()));
-        
-        // UserDetails info
-        debug.put("userDetailsUsername", userDetails.getUsername());
-        debug.put("userDetailsAuthorities", userDetails.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .collect(java.util.stream.Collectors.toList()));
-        
-        // Fresh database data
-        try {
-            UserProfileDTO dbUser = userService.getProfileByUsername(userDetails.getUsername());
-            debug.put("dbUserRole", dbUser.getRole());
-            debug.put("dbUserEmail", dbUser.getEmail());
-            debug.put("dbUserActive", dbUser.isActive());
-        } catch (Exception e) {
-            debug.put("dbError", e.getMessage());
-        }
-        
-        return ResponseEntity.ok(debug);
-        
-    } catch (Exception e) {
-        debug.put("error", e.getMessage());
-        return ResponseEntity.status(500).body(debug);
-    }
-}
-
-/**
- * ✅ FORCE REFRESH: Force reload user from database
- */
-@PostMapping("/force-refresh")
-@PreAuthorize("isAuthenticated()")
-public ResponseEntity<?> forceRefreshUserData(@AuthenticationPrincipal UserDetails userDetails) {
-    Map<String, Object> result = new HashMap<>();
-    
-    try {
-        // Clear entity manager to force fresh database query
-        entityManager.clear();
-        
-        // Get fresh user data
-        UserProfileDTO freshProfile = userService.getProfileByUsername(userDetails.getUsername());
-        
-        result.put("message", "User data refreshed successfully");
-        result.put("freshUserData", freshProfile);
-        result.put("currentAuthorities", userDetails.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .collect(java.util.stream.Collectors.toList()));
-        
-        return ResponseEntity.ok(result);
-        
-    } catch (Exception e) {
-        result.put("error", e.getMessage());
-        return ResponseEntity.status(500).body(result);
-    }
-}
-
+     
     @GetMapping("/profile")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> getCurrentUserProfile(@AuthenticationPrincipal UserDetails userDetails) {
