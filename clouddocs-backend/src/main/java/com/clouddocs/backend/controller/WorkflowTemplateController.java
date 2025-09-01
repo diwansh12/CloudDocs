@@ -40,7 +40,7 @@ public class WorkflowTemplateController {
     /**
      * ✅ MAIN FIX: Active templates endpoint with proper error handling
      */
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','USER')")
     @GetMapping("/active")
     @Transactional(readOnly = true)
     public ResponseEntity<List<WorkflowTemplateDto>> getActiveTemplates() {
@@ -75,7 +75,7 @@ public class WorkflowTemplateController {
     /**
      * List templates with optional filtering
      */
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','USER')")
     @GetMapping
     @Transactional(readOnly = true)
     public ResponseEntity<List<WorkflowTemplateDto>> listTemplates(
@@ -124,7 +124,7 @@ public class WorkflowTemplateController {
     /**
      * List templates with pagination and filtering
      */
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','USER')")
     @GetMapping("/paged")
     @Transactional(readOnly = true)
     public ResponseEntity<Page<WorkflowTemplateDto>> listTemplatesPaged(
@@ -182,7 +182,7 @@ public class WorkflowTemplateController {
     /**
      * Get template by ID
      */
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','USER')")
     @GetMapping("/{id}")
     @Transactional(readOnly = true)
     public ResponseEntity<WorkflowTemplateDto> getTemplate(@PathVariable UUID id) {
@@ -211,7 +211,7 @@ public class WorkflowTemplateController {
     /**
      * Get template by name
      */
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','USER')")
     @GetMapping("/by-name/{name}")
     @Transactional(readOnly = true)
     public ResponseEntity<WorkflowTemplateDto> getTemplateByName(@PathVariable String name) {
