@@ -3,12 +3,16 @@ package com.clouddocs.backend.entity;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+
+import com.clouddocs.backend.entity.listeners.WorkflowInstanceListener;
+
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
 @Entity
 @Table(name = "workflow_instances")
+@EntityListeners(WorkflowInstanceListener.class) 
 public class WorkflowInstance {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

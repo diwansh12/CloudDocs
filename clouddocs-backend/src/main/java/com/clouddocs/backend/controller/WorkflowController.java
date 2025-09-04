@@ -3,15 +3,18 @@ package com.clouddocs.backend.controller;
 import com.clouddocs.backend.dto.CreateWorkflowRequest;
 import com.clouddocs.backend.dto.workflow.WorkflowInstanceDTO;
 import com.clouddocs.backend.entity.*;
-import com.clouddocs.backend.mapper.WorkflowMapper;
+import com.clouddocs.backend.repository.UserRepository;
 import com.clouddocs.backend.repository.WorkflowTemplateRepository;
 import com.clouddocs.backend.service.WorkflowService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.security.core.Authentication;
 
 import java.util.Map;
@@ -29,7 +32,7 @@ public class WorkflowController {
 
     private final WorkflowService workflowService;
     private final WorkflowTemplateRepository templateRepository;
-
+     private final UserRepository userRepository;
     /**
      * ✅ Create workflow endpoint
      * Maps to: POST /workflows
@@ -419,13 +422,16 @@ public class WorkflowController {
         try {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             String username = auth.getName();
-            // This assumes you have a way to get user ID from username
-            // You might need to inject UserService or UserRepository for this
-            // For now, returning a placeholder - you'll need to implement this based on your user management
-            return 1L; // TODO: Implement proper user ID retrieval
+            
+            // ✅ FIXED: Proper user ID retrieval
+            User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not found"));
+            
+            return user.getId();
+            
         } catch (Exception e) {
             log.error("Error getting current user ID: {}", e.getMessage());
-            throw new RuntimeException("Unable to get current user ID", e);
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unable to get current user ID");
         }
     }
 }
