@@ -5,9 +5,6 @@ import com.clouddocs.backend.entity.*;
 import com.clouddocs.backend.mapper.WorkflowMapper;
 import com.clouddocs.backend.repository.*;
 import com.clouddocs.backend.security.AuthzUtil;
-
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -57,9 +54,6 @@ public class WorkflowService {
 
     @Autowired
     private AuditService auditService;
-
-     @PersistenceContext
-    private EntityManager entityManager;
 
     // ===== ENUMS =====
     private enum StepOutcome { CONTINUE, APPROVED, REJECTED }
@@ -544,7 +538,7 @@ public Map<String, Object> getWorkflowAnalyticsDebug() {
     /**
      * ✅ CRITICAL FIX: Update workflow timestamp with detailed logging
      */
-   private void updateWorkflowTimestamp(WorkflowInstance workflow, String reason) {
+    private void updateWorkflowTimestamp(WorkflowInstance workflow, String reason) {
         try {
             LocalDateTime oldTimestamp = workflow.getUpdatedDate();
             LocalDateTime newTimestamp = LocalDateTime.now();
@@ -552,14 +546,11 @@ public Map<String, Object> getWorkflowAnalyticsDebug() {
             workflow.setUpdatedDate(newTimestamp);
             WorkflowInstance saved = instanceRepository.saveAndFlush(workflow);
             
-            // ✅ CRITICAL: Clear persistence context to force fresh reads
-            entityManager.clear();
-            
             log.info("🔧 TIMESTAMP UPDATE: Workflow {} - Reason: '{}' - Old: {} - New: {}", 
                     workflow.getId(), reason, oldTimestamp, saved.getUpdatedDate());
             
         } catch (Exception e) {
-            log.error("❌ Failed to update workflow timestamp: {}", e.getMessage(), e);
+            log.error("❌ Failed to update workflow timestamp for workflow {}: {}", workflow.getId(), e.getMessage(), e);
         }
     }
 
