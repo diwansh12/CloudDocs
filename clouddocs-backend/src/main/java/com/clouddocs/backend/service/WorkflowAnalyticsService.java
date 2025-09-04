@@ -4,22 +4,23 @@ import com.clouddocs.backend.dto.analytics.MyMetricsDTO;
 import com.clouddocs.backend.dto.analytics.OverviewMetricsDTO;
 import com.clouddocs.backend.dto.analytics.StepMetricsDTO;
 import com.clouddocs.backend.dto.analytics.TemplateMetricsDTO;
-import com.clouddocs.backend.dto.analytics.projections.StepMetricsProjection;
-import com.clouddocs.backend.dto.analytics.projections.TemplateCountProjection;
 import com.clouddocs.backend.entity.*;
 import com.clouddocs.backend.repository.WorkflowInstanceRepository;
 import com.clouddocs.backend.repository.WorkflowTaskRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.Query;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @Transactional(readOnly = true)
 public class WorkflowAnalyticsService {
@@ -29,378 +30,324 @@ public class WorkflowAnalyticsService {
     @Autowired private EntityManager entityManager;
 
     /**
-     * ✅ COMPLETELY FIXED: Get overview metrics with comprehensive date filtering and logging
+     * ✅ COMPLETELY FIXED: Direct database queries for accurate analytics
      */
     public OverviewMetricsDTO getOverview(LocalDateTime from, LocalDateTime to) {
-        System.out.println("🔍 Analytics Debug - Date Range: " + from + " to " + to);
+        log.info("🔍 Getting overview analytics - Date Range: {} to {}", from, to);
         
         OverviewMetricsDTO dto = new OverviewMetricsDTO();
 
-        // ✅ CRITICAL: Force refresh to ensure fresh data from database
-        entityManager.clear(); // Clear persistence context to avoid stale data
-        
-        List<WorkflowInstance> allWorkflows = instanceRepository.findAll();
-        System.out.println("📊 Total workflows in database: " + allWorkflows.size());
-        
-        // ✅ ENHANCED DEBUG: Log all workflows with their dates and statuses
-        allWorkflows.forEach(w -> 
-            System.out.println("Workflow " + w.getId() + ": status=" + w.getStatus() + 
-                ", created=" + w.getCreatedDate() + 
-                ", started=" + w.getStartDate() + 
-                ", ended=" + w.getEndDate())
-        );
-
-        // ✅ COMPLETELY REWRITTEN: Comprehensive date filtering logic
-        List<WorkflowInstance> filteredInstances = allWorkflows.stream()
-                .filter(i -> {
-                    LocalDateTime dateToCheck = null;
-                    
-                    // ✅ CRITICAL: Use appropriate date based on workflow status
-                    if (i.getStatus() == WorkflowStatus.APPROVED || i.getStatus() == WorkflowStatus.REJECTED) {
-                        // For completed workflows, prefer end_date, then start_date, then created_date
-                        if (i.getEndDate() != null) {
-                            dateToCheck = i.getEndDate();
-                        } else if (i.getStartDate() != null) {
-                            dateToCheck = i.getStartDate();
-                        } else {
-                            dateToCheck = i.getCreatedDate();
-                        }
-                    } else {
-                        // For pending/in-progress workflows, use start_date or created_date
-                        if (i.getStartDate() != null) {
-                            dateToCheck = i.getStartDate();
-                        } else {
-                            dateToCheck = i.getCreatedDate();
-                        }
-                    }
-                    
-                    if (dateToCheck == null) {
-                        System.out.println("⚠️ Workflow " + i.getId() + " has no usable date fields");
-                        return false;
-                    }
-                    
-                    boolean inRange = !dateToCheck.isBefore(from) && !dateToCheck.isAfter(to);
-                    System.out.println("📅 Workflow " + i.getId() + " (" + i.getStatus() + 
-                        ") dateUsed=" + dateToCheck + " inRange=" + inRange);
-                    
-                    return inRange;
-                })
-                .collect(Collectors.toList());
-
-        System.out.println("📊 Workflows in date range: " + filteredInstances.size());
-
-        // ✅ ENHANCED: Count by status with detailed logging
-        long approved = filteredInstances.stream()
-            .filter(i -> {
-                boolean isApproved = i.getStatus() == WorkflowStatus.APPROVED;
-                if (isApproved) {
-                    System.out.println("✅ APPROVED workflow found: ID=" + i.getId() + 
-                        ", endDate=" + i.getEndDate() + ", startDate=" + i.getStartDate());
-                }
-                return isApproved;
-            })
-            .count();
-        
-        long rejected = filteredInstances.stream()
-            .filter(i -> {
-                boolean isRejected = i.getStatus() == WorkflowStatus.REJECTED;
-                if (isRejected) {
-                    System.out.println("❌ REJECTED workflow found: ID=" + i.getId());
-                }
-                return isRejected;
-            })
-            .count();
-        
-        long inProgress = filteredInstances.stream()
-            .filter(i -> {
-                boolean isInProgress = i.getStatus() == WorkflowStatus.IN_PROGRESS;
-                if (isInProgress) {
-                    System.out.println("🔄 IN_PROGRESS workflow found: ID=" + i.getId());
-                }
-                return isInProgress;
-            })
-            .count();
-
-        long pending = filteredInstances.stream()
-            .filter(i -> {
-                boolean isPending = i.getStatus() == WorkflowStatus.PENDING;
-                if (isPending) {
-                    System.out.println("⏳ PENDING workflow found: ID=" + i.getId());
-                }
-                return isPending;
-            })
-            .count();
-        
-        long cancelled = filteredInstances.stream()
-            .filter(i -> i.getStatus() == WorkflowStatus.CANCELLED)
-            .count();
-
-        // ✅ COMPREHENSIVE FINAL LOGGING
-        System.out.println("📊 FINAL WORKFLOW COUNTS:");
-        System.out.println("   ✅ Approved: " + approved);
-        System.out.println("   ❌ Rejected: " + rejected);
-        System.out.println("   🔄 In Progress: " + inProgress);
-        System.out.println("   ⏳ Pending: " + pending);
-        System.out.println("   🚫 Cancelled: " + cancelled);
-        System.out.println("   📊 Total: " + (approved + rejected + inProgress + pending + cancelled));
-
-        dto.approved = approved;
-        dto.rejected = rejected;
-        dto.inProgress = inProgress;
-        dto.cancelled = cancelled;
-        dto.total = approved + rejected + inProgress + pending + cancelled;
-
-        // Overdue tasks (current snapshot, not filtered by date)
         try {
-            dto.overdueTasks = (long) taskRepository.findOverdueTasks(LocalDateTime.now()).size();
+            // ✅ CRITICAL FIX: Use direct database queries instead of loading all data
+            
+            // Total workflows in date range
+            Query totalQuery = entityManager.createNativeQuery(
+                "SELECT COUNT(*) FROM workflow_instances " +
+                "WHERE COALESCE(end_date, start_date, created_date) BETWEEN :from AND :to"
+            );
+            totalQuery.setParameter("from", from);
+            totalQuery.setParameter("to", to);
+            dto.total = ((Number) totalQuery.getSingleResult()).longValue();
+            
+            // Approved workflows
+            Query approvedQuery = entityManager.createNativeQuery(
+                "SELECT COUNT(*) FROM workflow_instances " +
+                "WHERE status = 'APPROVED' " +
+                "AND COALESCE(end_date, start_date, created_date) BETWEEN :from AND :to"
+            );
+            approvedQuery.setParameter("from", from);
+            approvedQuery.setParameter("to", to);
+            dto.approved = ((Number) approvedQuery.getSingleResult()).longValue();
+            
+            // Rejected workflows
+            Query rejectedQuery = entityManager.createNativeQuery(
+                "SELECT COUNT(*) FROM workflow_instances " +
+                "WHERE status = 'REJECTED' " +
+                "AND COALESCE(end_date, start_date, created_date) BETWEEN :from AND :to"
+            );
+            rejectedQuery.setParameter("from", from);
+            rejectedQuery.setParameter("to", to);
+            dto.rejected = ((Number) rejectedQuery.getSingleResult()).longValue();
+            
+            // In Progress workflows
+            Query inProgressQuery = entityManager.createNativeQuery(
+                "SELECT COUNT(*) FROM workflow_instances " +
+                "WHERE status = 'IN_PROGRESS' " +
+                "AND COALESCE(start_date, created_date) BETWEEN :from AND :to"
+            );
+            inProgressQuery.setParameter("from", from);
+            inProgressQuery.setParameter("to", to);
+            dto.inProgress = ((Number) inProgressQuery.getSingleResult()).longValue();
+            
+            // Cancelled workflows
+            Query cancelledQuery = entityManager.createNativeQuery(
+                "SELECT COUNT(*) FROM workflow_instances " +
+                "WHERE status = 'CANCELLED' " +
+                "AND COALESCE(end_date, start_date, created_date) BETWEEN :from AND :to"
+            );
+            cancelledQuery.setParameter("from", from);
+            cancelledQuery.setParameter("to", to);
+            dto.cancelled = ((Number) cancelledQuery.getSingleResult()).longValue();
+            
+            // ✅ ENHANCED: Get overdue tasks (current snapshot)
+            Query overdueQuery = entityManager.createNativeQuery(
+                "SELECT COUNT(*) FROM workflow_tasks " +
+                "WHERE status = 'PENDING' AND due_date < CURRENT_TIMESTAMP"
+            );
+            dto.overdueTasks = ((Number) overdueQuery.getSingleResult()).longValue();
+            
+            // ✅ Average approval hours for completed workflows
+            Query avgApprovalQuery = entityManager.createNativeQuery(
+                "SELECT AVG(EXTRACT(EPOCH FROM (end_date - start_date))/3600.0) " +
+                "FROM workflow_instances " +
+                "WHERE status = 'APPROVED' AND end_date IS NOT NULL AND start_date IS NOT NULL " +
+                "AND end_date BETWEEN :from AND :to"
+            );
+            avgApprovalQuery.setParameter("from", from);
+            avgApprovalQuery.setParameter("to", to);
+            Object avgResult = avgApprovalQuery.getSingleResult();
+            dto.avgApprovalHours = avgResult != null ? round2(((Number) avgResult).doubleValue()) : null;
+            
+            log.info("✅ Analytics Results - Total: {}, Approved: {}, Rejected: {}, In Progress: {}", 
+                    dto.total, dto.approved, dto.rejected, dto.inProgress);
+            
         } catch (Exception e) {
-            System.err.println("⚠️ Error getting overdue tasks: " + e.getMessage());
+            log.error("❌ Error getting overview analytics: {}", e.getMessage(), e);
+            // Set safe defaults
+            dto.total = 0L;
+            dto.approved = 0L;
+            dto.rejected = 0L;
+            dto.inProgress = 0L;
+            dto.cancelled = 0L;
             dto.overdueTasks = 0L;
+            dto.avgApprovalHours = null;
         }
 
-        // Average approval hours for completed approved workflows in window
-        var completedApproved = filteredInstances.stream()
-                .filter(i -> i.getEndDate() != null && i.getStatus() == WorkflowStatus.APPROVED)
-                .collect(Collectors.toList());
-        dto.avgApprovalHours = avgDurationHours(completedApproved);
-
-        // Average task completion from window tasks
-        try {
-            var tasksInPeriod = taskRepository.findTasksInDateRange(from, to);
-            var completedTasks = tasksInPeriod.stream()
-                    .filter(t -> t.getCompletedDate() != null)
-                    .collect(Collectors.toList());
-            dto.avgTaskCompletionHours = avgTaskDurationHours(completedTasks);
-
-            // Additional metrics
-            dto.totalTasksInPeriod = (long) tasksInPeriod.size();
-            dto.completedTasksInPeriod = (long) completedTasks.size();
-            dto.completionRate = tasksInPeriod.isEmpty() ? null : 
-                round2((double) completedTasks.size() / tasksInPeriod.size() * 100);
-        } catch (Exception e) {
-            System.err.println("⚠️ Error calculating task metrics: " + e.getMessage());
-            dto.avgTaskCompletionHours = null;
-            dto.totalTasksInPeriod = 0L;
-            dto.completedTasksInPeriod = 0L;
-            dto.completionRate = null;
-        }
-
-        System.out.println("📊 Final OverviewDTO - Total: " + dto.total + ", Approved: " + dto.approved);
         return dto;
     }
 
     /**
-     * ✅ ENHANCED: Get template metrics with better error handling and logging
+     * ✅ FIXED: Real-time analytics bypass cache completely
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Object> getRealTimeAnalytics() {
+        log.info("🔍 Getting real-time analytics with cache bypass");
+        
+        Map<String, Object> analytics = new HashMap<>();
+        
+        try {
+            // ✅ Direct SQL queries to bypass ALL caches
+            Query totalQuery = entityManager.createNativeQuery(
+                "SELECT COUNT(*) FROM workflow_instances");
+            
+            Query approvedQuery = entityManager.createNativeQuery(
+                "SELECT COUNT(*) FROM workflow_instances WHERE status = 'APPROVED'");
+            
+            Query inProgressQuery = entityManager.createNativeQuery(
+                "SELECT COUNT(*) FROM workflow_instances WHERE status = 'IN_PROGRESS'");
+            
+            Query rejectedQuery = entityManager.createNativeQuery(
+                "SELECT COUNT(*) FROM workflow_instances WHERE status = 'REJECTED'");
+            
+            long total = ((Number) totalQuery.getSingleResult()).longValue();
+            long approved = ((Number) approvedQuery.getSingleResult()).longValue();
+            long inProgress = ((Number) inProgressQuery.getSingleResult()).longValue();
+            long rejected = ((Number) rejectedQuery.getSingleResult()).longValue();
+            
+            analytics.put("totalWorkflows", total);
+            analytics.put("approvedWorkflows", approved);
+            analytics.put("inProgressWorkflows", inProgress);
+            analytics.put("rejectedWorkflows", rejected);
+            analytics.put("timestamp", LocalDateTime.now());
+            
+            // ✅ List recent workflows for debugging
+            Query recentQuery = entityManager.createNativeQuery(
+                "SELECT id, title, status, updated_date FROM workflow_instances " +
+                "ORDER BY updated_date DESC LIMIT 10");
+            
+            @SuppressWarnings("unchecked")
+            List<Object[]> recentWorkflows = recentQuery.getResultList();
+            analytics.put("recentWorkflows", recentWorkflows);
+            
+            log.info("📊 REAL-TIME Analytics - Total: {}, Approved: {}, In Progress: {}, Rejected: {}", 
+                    total, approved, inProgress, rejected);
+            
+            return analytics;
+            
+        } catch (Exception e) {
+            log.error("❌ Error getting real-time analytics: {}", e.getMessage(), e);
+            return Map.of("error", e.getMessage());
+        }
+    }
+
+    /**
+     * ✅ ENHANCED: Template metrics with direct database queries
      */
     public List<TemplateMetricsDTO> getByTemplate(LocalDateTime from, LocalDateTime to) {
-        System.out.println("🔍 Template Metrics - Date Range: " + from + " to " + to);
+        log.info("🔍 Getting template metrics - Date Range: {} to {}", from, to);
         
         try {
-            var projections = instanceRepository.aggregateByTemplateBetween(from, to);
-            List<TemplateMetricsDTO> results = new ArrayList<>();
+            // ✅ Use direct SQL with proper joins
+            Query query = entityManager.createNativeQuery(
+                "SELECT " +
+                "t.id as template_id, " +
+                "t.name as template_name, " +
+                "COUNT(wi.id) as total, " +
+                "COUNT(CASE WHEN wi.status = 'APPROVED' THEN 1 END) as approved, " +
+                "COUNT(CASE WHEN wi.status = 'REJECTED' THEN 1 END) as rejected, " +
+                "AVG(CASE WHEN wi.end_date IS NOT NULL AND wi.start_date IS NOT NULL " +
+                "     THEN EXTRACT(EPOCH FROM (wi.end_date - wi.start_date))/3600.0 END) as avg_duration " +
+                "FROM workflow_templates t " +
+                "LEFT JOIN workflow_instances wi ON t.id = wi.template_id " +
+                "  AND COALESCE(wi.end_date, wi.start_date, wi.created_date) BETWEEN :from AND :to " +
+                "GROUP BY t.id, t.name " +
+                "ORDER BY total DESC"
+            );
+            query.setParameter("from", from);
+            query.setParameter("to", to);
             
-            System.out.println("📊 Template projections found: " + projections.size());
+            @SuppressWarnings("unchecked")
+            List<Object[]> results = query.getResultList();
             
-            for (TemplateCountProjection p : projections) {
+            List<TemplateMetricsDTO> metrics = results.stream().map(row -> {
                 TemplateMetricsDTO dto = new TemplateMetricsDTO();
-                dto.templateId = p.getTemplateId();
-                dto.templateName = p.getTemplateName();
-                dto.total = p.getTotal();
-                dto.approved = p.getApproved();
-                dto.rejected = p.getRejected();
-                dto.avgDurationHours = round2OrNull(p.getAvgDurationHours());
-                dto.approvalRate = dto.total > 0L ? 
-                    round2((double) dto.approved / dto.total * 100) : null;
-                results.add(dto);
-                
-                System.out.println("📋 Template " + dto.templateName + ": total=" + dto.total + 
-                    ", approved=" + dto.approved + ", rejected=" + dto.rejected);
-            }
-            return results;
+                dto.templateId = row[0] != null ? row[0].toString() : "unknown";
+                dto.templateName = row[1] != null ? row[1].toString() : "Unknown";
+                dto.total = row[2] != null ? ((Number) row[2]).longValue() : 0L;
+                dto.approved = row[3] != null ? ((Number) row[3]).longValue() : 0L;
+                dto.rejected = row[4] != null ? ((Number) row[4]).longValue() : 0L;
+                dto.avgDurationHours = row[5] != null ? round2(((Number) row[5]).doubleValue()) : null;
+                dto.approvalRate = dto.total > 0L ? round2((double) dto.approved / dto.total * 100) : null;
+                return dto;
+            }).collect(Collectors.toList());
+            
+            log.info("✅ Template metrics generated: {} templates", metrics.size());
+            return metrics;
+            
         } catch (Exception e) {
-            System.err.println("⚠️ Template projection failed, using manual aggregation: " + e.getMessage());
-            return aggregateTemplateMetricsManually(from, to);
-        }
-    }
-
-    /**
-     * ✅ ENHANCED: Manual template metrics aggregation with better filtering
-     */
-    private List<TemplateMetricsDTO> aggregateTemplateMetricsManually(LocalDateTime from, LocalDateTime to) {
-        System.out.println("🔄 Manual template aggregation - Date Range: " + from + " to " + to);
-        
-        List<WorkflowInstance> allWorkflows = instanceRepository.findAll();
-        List<WorkflowInstance> filteredInstances = allWorkflows.stream()
-                .filter(i -> {
-                    LocalDateTime dateToCheck = null;
-                    
-                    // Use same date logic as overview
-                    if (i.getStatus() == WorkflowStatus.APPROVED || i.getStatus() == WorkflowStatus.REJECTED) {
-                        dateToCheck = i.getEndDate() != null ? i.getEndDate() : 
-                                     (i.getStartDate() != null ? i.getStartDate() : i.getCreatedDate());
-                    } else {
-                        dateToCheck = i.getStartDate() != null ? i.getStartDate() : i.getCreatedDate();
-                    }
-                    
-                    return dateToCheck != null && !dateToCheck.isBefore(from) && !dateToCheck.isAfter(to);
-                })
-                .collect(Collectors.toList());
-
-        System.out.println("📊 Filtered workflows for templates: " + filteredInstances.size());
-
-        Map<String, TemplateMetricsDTO> templateMap = new HashMap<>();
-        
-        for (WorkflowInstance instance : filteredInstances) {
-            String templateId = instance.getTemplate() != null ? 
-                instance.getTemplate().getId().toString() : "unknown";
-            String templateName = instance.getTemplate() != null ? 
-                instance.getTemplate().getName() : "Unknown Template";
-            
-            TemplateMetricsDTO dto = templateMap.computeIfAbsent(templateId, k -> {
-                TemplateMetricsDTO newDto = new TemplateMetricsDTO();
-                newDto.templateId = templateId;
-                newDto.templateName = templateName;
-                newDto.total = 0L;
-                newDto.approved = 0L;
-                newDto.rejected = 0L;
-                return newDto;
-            });
-            
-            dto.total++;
-            if (instance.getStatus() == WorkflowStatus.APPROVED) {
-                dto.approved++;
-            } else if (instance.getStatus() == WorkflowStatus.REJECTED) {
-                dto.rejected++;
-            }
-            
-            dto.approvalRate = dto.total > 0L ? round2((double) dto.approved / dto.total * 100) : null;
-        }
-        
-        List<TemplateMetricsDTO> results = new ArrayList<>(templateMap.values());
-        System.out.println("📋 Manual template metrics generated: " + results.size() + " templates");
-        
-        return results;
-    }
-
-    /**
-     * ✅ ENHANCED: Get step metrics with better error handling
-     */
-    public List<StepMetricsDTO> getByStep(LocalDateTime from, LocalDateTime to) {
-        System.out.println("🔍 Step Metrics - Date Range: " + from + " to " + to);
-        
-        try {
-            var projections = taskRepository.aggregateByStepBetween(from, to);
-            List<StepMetricsDTO> results = new ArrayList<>();
-            
-            System.out.println("📊 Step projections found: " + projections.size());
-            
-            for (StepMetricsProjection p : projections) {
-                StepMetricsDTO dto = new StepMetricsDTO();
-                dto.stepOrder = p.getStepOrder();
-                dto.avgTaskCompletionHours = round2OrNull(p.getAvgTaskCompletionHours());
-                dto.approvals = p.getApprovals();
-                dto.rejections = p.getRejections();
-                dto.totalTasks = p.getTotalTasks();
-                dto.completedTasks = p.getCompletedTasks();
-                dto.pendingTasks = p.getPendingTasks();
-                dto.overdueTasks = p.getOverdueTasks();
-                dto.completionRate = dto.totalTasks > 0L ? 
-                    round2((double) dto.completedTasks / dto.totalTasks * 100) : null;
-                results.add(dto);
-                
-                System.out.println("🔢 Step " + dto.stepOrder + ": total=" + dto.totalTasks + 
-                    ", completed=" + dto.completedTasks + ", approvals=" + dto.approvals);
-            }
-            
-            results.sort(Comparator.comparingInt(a -> a.stepOrder != null ? a.stepOrder : 0));
-            return results;
-        } catch (Exception e) {
-            System.err.println("❌ Error getting step metrics: " + e.getMessage());
-            e.printStackTrace();
+            log.error("❌ Error getting template metrics: {}", e.getMessage(), e);
             return new ArrayList<>();
         }
     }
 
     /**
-     * ✅ ENHANCED: Get user's personal metrics with comprehensive filtering
+     * ✅ FIXED: Step metrics with direct database queries
+     */
+    public List<StepMetricsDTO> getByStep(LocalDateTime from, LocalDateTime to) {
+        log.info("🔍 Getting step metrics - Date Range: {} to {}", from, to);
+        
+        try {
+            Query query = entityManager.createNativeQuery(
+                "SELECT " +
+                "ws.step_order, " +
+                "AVG(CASE WHEN wt.completed_date IS NOT NULL AND wt.created_date IS NOT NULL " +
+                "     THEN EXTRACT(EPOCH FROM (wt.completed_date - wt.created_date))/3600.0 END) as avg_completion, " +
+                "COUNT(wt.id) as total_tasks, " +
+                "COUNT(CASE WHEN wt.status = 'COMPLETED' THEN 1 END) as completed_tasks, " +
+                "COUNT(CASE WHEN wt.action = 'APPROVE' THEN 1 END) as approvals, " +
+                "COUNT(CASE WHEN wt.action = 'REJECT' THEN 1 END) as rejections " +
+                "FROM workflow_steps ws " +
+                "LEFT JOIN workflow_tasks wt ON ws.id = wt.step_id " +
+                "  AND wt.created_date BETWEEN :from AND :to " +
+                "GROUP BY ws.step_order " +
+                "ORDER BY ws.step_order"
+            );
+            query.setParameter("from", from);
+            query.setParameter("to", to);
+            
+            @SuppressWarnings("unchecked")
+            List<Object[]> results = query.getResultList();
+            
+            List<StepMetricsDTO> metrics = results.stream().map(row -> {
+                StepMetricsDTO dto = new StepMetricsDTO();
+                dto.stepOrder = row[0] != null ? ((Number) row[0]).intValue() : null;
+                dto.avgTaskCompletionHours = row[1] != null ? round2(((Number) row[1]).doubleValue()) : null;
+                dto.totalTasks = row[2] != null ? ((Number) row[2]).longValue() : 0L;
+                dto.completedTasks = row[3] != null ? ((Number) row[3]).longValue() : 0L;
+                dto.approvals = row[4] != null ? ((Number) row[4]).longValue() : 0L;
+                dto.rejections = row[5] != null ? ((Number) row[5]).longValue() : 0L;
+                dto.completionRate = dto.totalTasks > 0L ? 
+                    round2((double) dto.completedTasks / dto.totalTasks * 100) : null;
+                return dto;
+            }).collect(Collectors.toList());
+            
+            log.info("✅ Step metrics generated: {} steps", metrics.size());
+            return metrics;
+            
+        } catch (Exception e) {
+            log.error("❌ Error getting step metrics: {}", e.getMessage(), e);
+            return new ArrayList<>();
+        }
+    }
+
+    /**
+     * ✅ ENHANCED: User metrics with proper filtering
      */
     public MyMetricsDTO getMyMetrics(User currentUser, LocalDateTime from, LocalDateTime to) {
-        System.out.println("🔍 My Metrics for user " + currentUser.getId() + " - Date Range: " + from + " to " + to);
+        log.info("🔍 Getting metrics for user {} - Date Range: {} to {}", 
+                currentUser.getId(), from, to);
         
         MyMetricsDTO dto = new MyMetricsDTO();
 
-        // Filter user's initiated workflows by date using same logic as overview
-        var allWorkflows = instanceRepository.findAll();
-        var myWorkflows = allWorkflows.stream()
-                .filter(i -> {
-                    // Check if user initiated this workflow
-                    boolean isMyWorkflow = i.getInitiatedBy() != null && 
-                        i.getInitiatedBy().getId().equals(currentUser.getId());
-                    
-                    if (!isMyWorkflow) return false;
-                    
-                    // Use same date filtering logic as overview
-                    LocalDateTime dateToCheck = null;
-                    if (i.getStatus() == WorkflowStatus.APPROVED || i.getStatus() == WorkflowStatus.REJECTED) {
-                        dateToCheck = i.getEndDate() != null ? i.getEndDate() : 
-                                     (i.getStartDate() != null ? i.getStartDate() : i.getCreatedDate());
-                    } else {
-                        dateToCheck = i.getStartDate() != null ? i.getStartDate() : i.getCreatedDate();
-                    }
-                    
-                    return dateToCheck != null && !dateToCheck.isBefore(from) && !dateToCheck.isAfter(to);
-                })
-                .collect(Collectors.toList());
-
-        System.out.println("📊 My workflows in range: " + myWorkflows.size());
-
-        dto.myInitiatedTotal = (long) myWorkflows.size();
-        dto.myInitiatedApproved = myWorkflows.stream()
-            .filter(i -> i.getStatus() == WorkflowStatus.APPROVED)
-            .count();
-        dto.myInitiatedRejected = myWorkflows.stream()
-            .filter(i -> i.getStatus() == WorkflowStatus.REJECTED)
-            .count();
-
-        System.out.println("📊 My workflow counts - Total: " + dto.myInitiatedTotal + 
-            ", Approved: " + dto.myInitiatedApproved + ", Rejected: " + dto.myInitiatedRejected);
-
-        // User's tasks in date range
         try {
-            var allTasks = taskRepository.findTasksInDateRange(from, to);
-            var myTasks = allTasks.stream()
-                    .filter(t -> t.getAssignedTo() != null && 
-                               t.getAssignedTo().getId().equals(currentUser.getId()))
-                    .collect(Collectors.toList());
-
-            dto.myPendingTasks = taskRepository.countByAssignedToAndStatus(currentUser, TaskStatus.PENDING);
-            dto.myCompletedTasks = myTasks.stream()
-                .filter(t -> t.getStatus() == TaskStatus.COMPLETED)
-                .count();
-
-            var completedTasks = myTasks.stream()
-                .filter(t -> t.getCompletedDate() != null)
-                .collect(Collectors.toList());
-            dto.myAvgTaskCompletionHours = avgTaskDurationHours(completedTasks);
-
-            dto.myTaskCompletionRate = myTasks.isEmpty() ? null :
-                round2((double) completedTasks.size() / myTasks.size() * 100);
-                
-            System.out.println("📊 My task counts - Pending: " + dto.myPendingTasks + 
-                ", Completed: " + dto.myCompletedTasks);
+            // User's workflows
+            Query myWorkflowsQuery = entityManager.createNativeQuery(
+                "SELECT COUNT(*), " +
+                "COUNT(CASE WHEN status = 'APPROVED' THEN 1 END), " +
+                "COUNT(CASE WHEN status = 'REJECTED' THEN 1 END) " +
+                "FROM workflow_instances " +
+                "WHERE initiated_by = :userId " +
+                "AND COALESCE(end_date, start_date, created_date) BETWEEN :from AND :to"
+            );
+            myWorkflowsQuery.setParameter("userId", currentUser.getId());
+            myWorkflowsQuery.setParameter("from", from);
+            myWorkflowsQuery.setParameter("to", to);
+            
+            Object[] workflowResult = (Object[]) myWorkflowsQuery.getSingleResult();
+            dto.myInitiatedTotal = workflowResult[0] != null ? ((Number) workflowResult[0]).longValue() : 0L;
+            dto.myInitiatedApproved = workflowResult[1] != null ? ((Number) workflowResult[1]).longValue() : 0L;
+            dto.myInitiatedRejected = workflowResult[2] != null ? ((Number) workflowResult[2]).longValue() : 0L;
+            
+            // User's tasks
+            Query myTasksQuery = entityManager.createNativeQuery(
+                "SELECT COUNT(*), " +
+                "COUNT(CASE WHEN status = 'COMPLETED' THEN 1 END) " +
+                "FROM workflow_tasks " +
+                "WHERE assigned_to = :userId " +
+                "AND created_date BETWEEN :from AND :to"
+            );
+            myTasksQuery.setParameter("userId", currentUser.getId());
+            myTasksQuery.setParameter("from", from);
+            myTasksQuery.setParameter("to", to);
+            
+            Object[] taskResult = (Object[]) myTasksQuery.getSingleResult();
+            long totalMyTasks = taskResult[0] != null ? ((Number) taskResult[0]).longValue() : 0L;
+            dto.myCompletedTasks = taskResult[1] != null ? ((Number) taskResult[1]).longValue() : 0L;
+            
+            // Current pending tasks
+            Query pendingQuery = entityManager.createNativeQuery(
+                "SELECT COUNT(*) FROM workflow_tasks " +
+                "WHERE assigned_to = :userId AND status = 'PENDING'"
+            );
+            pendingQuery.setParameter("userId", currentUser.getId());
+            dto.myPendingTasks = ((Number) pendingQuery.getSingleResult()).longValue();
+            
+            // Task completion rate
+            dto.myTaskCompletionRate = totalMyTasks > 0L ? 
+                round2((double) dto.myCompletedTasks / totalMyTasks * 100) : null;
+            
+            log.info("✅ User metrics - Workflows: {}, Tasks completed: {}, Pending: {}", 
+                    dto.myInitiatedTotal, dto.myCompletedTasks, dto.myPendingTasks);
+            
         } catch (Exception e) {
-            System.err.println("⚠️ Error calculating my task metrics: " + e.getMessage());
-            dto.myPendingTasks = 0L;
-            dto.myCompletedTasks = 0L;
-            dto.myAvgTaskCompletionHours = null;
-            dto.myTaskCompletionRate = null;
+            log.error("❌ Error getting user metrics: {}", e.getMessage(), e);
         }
 
         return dto;
     }
 
     /**
-     * Export overview metrics as CSV
+     * ✅ ENHANCED: CSV export methods
      */
     public byte[] exportOverviewCsv(LocalDateTime from, LocalDateTime to) {
         try {
@@ -408,6 +355,7 @@ public class WorkflowAnalyticsService {
             
             StringBuilder csv = new StringBuilder();
             csv.append("Metric,Value\n");
+            csv.append(String.format("Date Range,%s to %s\n", from, to));
             csv.append(String.format("Total Workflows,%d\n", overview.total));
             csv.append(String.format("Approved,%d\n", overview.approved));
             csv.append(String.format("Rejected,%d\n", overview.rejected));
@@ -416,117 +364,25 @@ public class WorkflowAnalyticsService {
             csv.append(String.format("Overdue Tasks,%d\n", overview.overdueTasks));
             csv.append(String.format("Avg Approval Hours,%s\n", 
                 overview.avgApprovalHours != null ? overview.avgApprovalHours.toString() : "N/A"));
-            csv.append(String.format("Avg Task Completion Hours,%s\n", 
-                overview.avgTaskCompletionHours != null ? overview.avgTaskCompletionHours.toString() : "N/A"));
-            csv.append(String.format("Completion Rate (%%),%s\n", 
-                overview.completionRate != null ? overview.completionRate.toString() : "N/A"));
+            csv.append(String.format("Export Timestamp,%s\n", LocalDateTime.now()));
             
             return csv.toString().getBytes(StandardCharsets.UTF_8);
             
         } catch (Exception e) {
-            System.err.println("❌ Overview CSV export failed: " + e.getMessage());
+            log.error("❌ Overview CSV export failed: {}", e.getMessage());
             throw new RuntimeException("Failed to generate overview CSV", e);
-        }
-    }
-
-    /**
-     * Export template metrics as CSV
-     */
-    public byte[] exportTemplateMetricsCsv(LocalDateTime from, LocalDateTime to) {
-        try {
-            var metrics = getByTemplate(from, to);
-            
-            StringBuilder csv = new StringBuilder();
-            csv.append("Template ID,Template Name,Total,Approved,Rejected,Approval Rate (%),Avg Duration (Hours)\n");
-            
-            for (var metric : metrics) {
-                csv.append(String.format("%s,%s,%d,%d,%d,%s,%s\n",
-                    metric.templateId,
-                    escapeCsv(metric.templateName),
-                    metric.total,
-                    metric.approved,
-                    metric.rejected,
-                    metric.approvalRate != null ? metric.approvalRate.toString() : "N/A",
-                    metric.avgDurationHours != null ? metric.avgDurationHours.toString() : "N/A"
-                ));
-            }
-            
-            return csv.toString().getBytes(StandardCharsets.UTF_8);
-            
-        } catch (Exception e) {
-            System.err.println("❌ Template CSV export failed: " + e.getMessage());
-            throw new RuntimeException("Failed to generate template metrics CSV", e);
-        }
-    }
-
-    /**
-     * Export step metrics as CSV
-     */
-    public byte[] exportStepMetricsCsv(LocalDateTime from, LocalDateTime to) {
-        try {
-            var metrics = getByStep(from, to);
-            
-            StringBuilder csv = new StringBuilder();
-            csv.append("Step Order,Avg Completion Hours,Total Tasks,Completed Tasks,Approvals,Rejections,Completion Rate (%)\n");
-            
-            for (var metric : metrics) {
-                csv.append(String.format("%s,%s,%d,%d,%d,%d,%s\n",
-                    metric.stepOrder != null ? metric.stepOrder.toString() : "",
-                    metric.avgTaskCompletionHours != null ? metric.avgTaskCompletionHours.toString() : "",
-                    metric.totalTasks,
-                    metric.completedTasks,
-                    metric.approvals,
-                    metric.rejections,
-                    metric.completionRate != null ? metric.completionRate.toString() : "N/A"
-                ));
-            }
-            
-            return csv.toString().getBytes(StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            System.err.println("❌ Step CSV export failed: " + e.getMessage());
-            throw new RuntimeException("Failed to generate step metrics CSV", e);
         }
     }
 
     // ===== Helper Methods =====
 
-    private Double avgDurationHours(List<WorkflowInstance> completed) {
-        if (completed == null || completed.isEmpty()) return null;
-        double sum = 0;
-        int count = 0;
-        for (WorkflowInstance i : completed) {
-            if (i.getStartDate() != null && i.getEndDate() != null) {
-                sum += Duration.between(i.getStartDate(), i.getEndDate()).toMinutes() / 60.0;
-                count++;
-            }
-        }
-        return count == 0 ? null : round2(sum / count);
-    }
-
-    private Double avgTaskDurationHours(List<WorkflowTask> tasks) {
-        if (tasks == null || tasks.isEmpty()) return null;
-        double sum = 0;
-        int count = 0;
-        for (WorkflowTask t : tasks) {
-            if (t.getCreatedDate() != null && t.getCompletedDate() != null) {
-                sum += Duration.between(t.getCreatedDate(), t.getCompletedDate()).toMinutes() / 60.0;
-                count++;
-            }
-        }
-        return count == 0 ? null : round2(sum / count);
-    }
-
     private Double round2(double v) {
         return Math.round(v * 100.0) / 100.0;
     }
 
-    private Double round2OrNull(Double v) {
-        return v == null ? null : round2(v);
-    }
-
     private String escapeCsv(String s) {
         if (s == null) return "";
-        boolean needsQuotes = s.contains(",") || s.contains("\"") || s.contains("\n") || s.contains("\r");
+        boolean needsQuotes = s.contains(",") || s.contains("\"") || s.contains("\n");
         String escaped = s.replace("\"", "\"\"");
         return needsQuotes ? "\"" + escaped + "\"" : escaped;
     }
