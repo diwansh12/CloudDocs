@@ -56,7 +56,9 @@ public class WorkflowService {
     private AuditService auditService;
 
     // ===== ENUMS =====
-    private enum StepOutcome { CONTINUE, APPROVED, REJECTED }
+    private enum StepOutcome {
+        CONTINUE, APPROVED, REJECTED
+    }
 
     // ===== MAIN WORKFLOW CREATION METHODS =====
 
@@ -64,10 +66,10 @@ public class WorkflowService {
      * ✅ FIXED: Start workflow with proper timestamp handling
      */
     @Transactional
-    public WorkflowInstanceDTO startWorkflowWithUser(Long documentId, UUID templateId, 
-                                                    String title, String description, 
-                                                    String priority, Long userId) {
-        log.info("🚀 Starting workflow - DocumentID: {}, TemplateID: {}, UserID: {}, Priority: {}", 
+    public WorkflowInstanceDTO startWorkflowWithUser(Long documentId, UUID templateId,
+            String title, String description,
+            String priority, Long userId) {
+        log.info("🚀 Starting workflow - DocumentID: {}, TemplateID: {}, UserID: {}, Priority: {}",
                 documentId, templateId, userId, priority);
 
         try {
@@ -78,20 +80,17 @@ public class WorkflowService {
 
             validateTemplateActive(template);
 
-            log.info("✅ Loaded template '{}' with {} steps for user '{}'", 
-                    template.getName(), 
+            log.info("✅ Loaded template '{}' with {} steps for user '{}'",
+                    template.getName(),
                     template.getSteps() != null ? template.getSteps().size() : 0,
                     initiator.getUsername());
 
             // Create workflow instance with proper user assignment
-            WorkflowInstance instance = createWorkflowInstance(template, document, initiator, title, description, priority);
-            
-            // ✅ CRITICAL FIX: Set initial timestamps
-            LocalDateTime now = LocalDateTime.now();
-            instance.setCreatedDate(now);
-            instance.setUpdatedDate(now);
-            instance.setStartDate(now);
-            
+            WorkflowInstance instance = createWorkflowInstance(template, document, initiator, title, description,
+                    priority);
+
+            // ✅ Timestamps are now set in createWorkflowInstance() - no need to set again
+
             // Save workflow instance first
             instance = instanceRepository.saveAndFlush(instance);
             log.info("✅ Saved workflow instance with ID: {} at {}", instance.getId(), instance.getCreatedDate());
@@ -99,35 +98,35 @@ public class WorkflowService {
             // Update document status
             updateDocumentStatus(document, DocumentStatus.PENDING);
 
-            // ✅ CRITICAL FIX: Generate tasks with proper user assignments
+            // ✅ CRITICAL FIX: Generate tasks (this will update the workflow timestamp)
             boolean tasksCreated = generateInitialTasks(instance, template);
             if (!tasksCreated) {
-                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, 
-                    "No approvers found for initial workflow step");
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "No approvers found for initial workflow step");
             }
 
-            // ✅ CRITICAL FIX: Update timestamp after task creation
-            updateWorkflowTimestamp(instance, "Initial tasks created");
+            // ✅ The workflow timestamp is already updated in generateInitialTasks()
+            // No need for additional timestamp updates here
 
             // Log workflow creation
-            logWorkflowHistory(instance, "WORKFLOW_STARTED", 
-                             "Workflow started by " + getUserDisplayName(initiator), initiator);
-            
-            auditWorkflowAction(instance, "Workflow Started", initiator, 
-                              "Template: " + template.getName() + (title != null ? " - " + title : ""));
-            
-            log.info("✅ Workflow instance {} created successfully with proper assignments", instance.getId());
-            
+            logWorkflowHistory(instance, "WORKFLOW_STARTED",
+                    "Workflow started by " + getUserDisplayName(initiator), initiator);
+
+            auditWorkflowAction(instance, "Workflow Started", initiator,
+                    "Template: " + template.getName() + (title != null ? " - " + title : ""));
+
+            log.info("✅ Workflow instance {} created successfully with proper timestamps", instance.getId());
+
             // ✅ Use WorkflowMapper to convert to DTO
             return WorkflowMapper.toInstanceDTO(instance);
-            
+
         } catch (ResponseStatusException e) {
             throw e;
         } catch (Exception e) {
             log.error("❌ Error starting workflow: {}", e.getMessage(), e);
             handleWorkflowCreationFailure(templateId, userId, e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, 
-                "Failed to create workflow: " + e.getMessage());
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Failed to create workflow: " + e.getMessage());
         }
     }
 
@@ -135,8 +134,8 @@ public class WorkflowService {
      * ✅ BACKWARD COMPATIBILITY: Legacy method now returns DTO
      */
     @Transactional
-    public WorkflowInstanceDTO startWorkflow(Long documentId, UUID templateId, 
-                                           String title, String description, String priority) {
+    public WorkflowInstanceDTO startWorkflow(Long documentId, UUID templateId,
+            String title, String description, String priority) {
         User currentUser = getCurrentUserSafe();
         return startWorkflowWithUser(documentId, templateId, title, description, priority, currentUser.getId());
     }
@@ -147,10 +146,10 @@ public class WorkflowService {
      * ✅ FIXED: Process task action with proper timestamp updates
      */
     @Transactional
-    public Map<String, Object> processTaskActionWithUser(Long taskId, String action, 
-                                                        String comments, Long userId) {
+    public Map<String, Object> processTaskActionWithUser(Long taskId, String action,
+            String comments, Long userId) {
         log.info("🔄 Processing task action - TaskID: {}, Action: {}, UserID: {}", taskId, action, userId);
-        
+
         try {
             // Validate and load entities
             TaskAction taskAction = validateTaskAction(action);
@@ -173,27 +172,28 @@ public class WorkflowService {
 
             // ✅ CRITICAL FIX: Reload and update timestamp after progression
             WorkflowInstance updatedInstance = instanceRepository.findById(instance.getId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow not found"));
-            
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow not found"));
+
             updateWorkflowTimestamp(updatedInstance, "Task action processing completed");
 
             // Prepare comprehensive response with DTO
             Map<String, Object> result = buildTaskActionResponse(task, taskAction, updatedInstance, progressionResult);
-            
+
             // ✅ Add WorkflowInstanceDTO to response
             result.put("workflowDetails", WorkflowMapper.toInstanceDTO(updatedInstance));
-            
-            log.info("✅ Task action completed successfully - TaskID: {}, Action: {}, WorkflowStatus: {}, LastUpdated: {}", 
+
+            log.info(
+                    "✅ Task action completed successfully - TaskID: {}, Action: {}, WorkflowStatus: {}, LastUpdated: {}",
                     taskId, action, updatedInstance.getStatus(), updatedInstance.getUpdatedDate());
-            
+
             return result;
-            
+
         } catch (ResponseStatusException e) {
             throw e;
         } catch (Exception e) {
             log.error("❌ Error processing task action - TaskID: {}: {}", taskId, e.getMessage(), e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, 
-                "Failed to process task action: " + e.getMessage());
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Failed to process task action: " + e.getMessage());
         }
     }
 
@@ -222,22 +222,23 @@ public class WorkflowService {
     public long getApprovedWorkflowsCount() {
         try {
             long count = instanceRepository.countByStatus(WorkflowStatus.APPROVED);
-            
+
             // ✅ Double-check with manual count for debugging
             List<WorkflowInstance> approved = instanceRepository.findAll().stream()
-                .filter(w -> w.getStatus() == WorkflowStatus.APPROVED)
-                .collect(Collectors.toList());
+                    .filter(w -> w.getStatus() == WorkflowStatus.APPROVED)
+                    .collect(Collectors.toList());
             long manualCount = approved.size();
-            
+
             if (count != manualCount) {
                 log.warn("⚠️ Analytics count mismatch - Repository: {}, Manual: {}", count, manualCount);
-                log.info("📋 Approved workflows: {}", 
-                    approved.stream().map(w -> "ID:" + w.getId() + ",Title:" + w.getTitle()).collect(Collectors.joining("; ")));
+                log.info("📋 Approved workflows: {}",
+                        approved.stream().map(w -> "ID:" + w.getId() + ",Title:" + w.getTitle())
+                                .collect(Collectors.joining("; ")));
             }
-            
+
             log.info("📊 Approved workflows count: {} (verified: {})", count, manualCount);
             return count;
-            
+
         } catch (Exception e) {
             log.error("❌ Error getting approved workflows count: {}", e.getMessage(), e);
             return 0;
@@ -248,54 +249,54 @@ public class WorkflowService {
      * ✅ FIXED: Complete analytics breakdown for dashboard
      */
     @Transactional(readOnly = true)
-public Map<String, Object> getWorkflowAnalyticsDebug() {
-    try {
-        List<WorkflowInstance> allWorkflows = instanceRepository.findAll();
-        
-        Map<String, Object> analytics = new HashMap<>();
-        
-        // Count by status
-        Map<WorkflowStatus, Long> statusCounts = allWorkflows.stream()
-                .collect(Collectors.groupingBy(
-                    WorkflowInstance::getStatus,
-                    Collectors.counting()
-                ));
-        
-        analytics.put("totalWorkflows", allWorkflows.size());
-        analytics.put("statusBreakdown", statusCounts);
-        
-        // ✅ FIXED: List approved workflows with manual map construction
-        List<Map<String, Object>> approvedWorkflows = new ArrayList<>();
-        for (WorkflowInstance w : allWorkflows.stream()
-                .filter(workflow -> workflow.getStatus() == WorkflowStatus.APPROVED)
-                .collect(Collectors.toList())) {
-            
-            Map<String, Object> workflowData = new HashMap<>();
-            workflowData.put("id", w.getId());
-            workflowData.put("title", w.getTitle() != null ? w.getTitle() : "Untitled");
-            workflowData.put("status", w.getStatus().toString());
-            workflowData.put("endDate", w.getEndDate() != null ? w.getEndDate().toString() : "null");
-            workflowData.put("updatedDate", w.getUpdatedDate() != null ? w.getUpdatedDate().toString() : "null");
-            workflowData.put("initiatedBy", w.getInitiatedBy() != null ? w.getInitiatedBy().getUsername() : "unknown");
-            
-            approvedWorkflows.add(workflowData);
+    public Map<String, Object> getWorkflowAnalyticsDebug() {
+        try {
+            List<WorkflowInstance> allWorkflows = instanceRepository.findAll();
+
+            Map<String, Object> analytics = new HashMap<>();
+
+            // Count by status
+            Map<WorkflowStatus, Long> statusCounts = allWorkflows.stream()
+                    .collect(Collectors.groupingBy(
+                            WorkflowInstance::getStatus,
+                            Collectors.counting()));
+
+            analytics.put("totalWorkflows", allWorkflows.size());
+            analytics.put("statusBreakdown", statusCounts);
+
+            // ✅ FIXED: List approved workflows with manual map construction
+            List<Map<String, Object>> approvedWorkflows = new ArrayList<>();
+            for (WorkflowInstance w : allWorkflows.stream()
+                    .filter(workflow -> workflow.getStatus() == WorkflowStatus.APPROVED)
+                    .collect(Collectors.toList())) {
+
+                Map<String, Object> workflowData = new HashMap<>();
+                workflowData.put("id", w.getId());
+                workflowData.put("title", w.getTitle() != null ? w.getTitle() : "Untitled");
+                workflowData.put("status", w.getStatus().toString());
+                workflowData.put("endDate", w.getEndDate() != null ? w.getEndDate().toString() : "null");
+                workflowData.put("updatedDate", w.getUpdatedDate() != null ? w.getUpdatedDate().toString() : "null");
+                workflowData.put("initiatedBy",
+                        w.getInitiatedBy() != null ? w.getInitiatedBy().getUsername() : "unknown");
+
+                approvedWorkflows.add(workflowData);
+            }
+
+            analytics.put("approvedWorkflowDetails", approvedWorkflows);
+
+            log.info("📊 Analytics Debug - Total: {}, Approved: {}, In Progress: {}, Rejected: {}",
+                    allWorkflows.size(),
+                    statusCounts.getOrDefault(WorkflowStatus.APPROVED, 0L),
+                    statusCounts.getOrDefault(WorkflowStatus.IN_PROGRESS, 0L),
+                    statusCounts.getOrDefault(WorkflowStatus.REJECTED, 0L));
+
+            return analytics;
+
+        } catch (Exception e) {
+            log.error("❌ Error getting analytics debug info: {}", e.getMessage(), e);
+            return Map.of("error", e.getMessage());
         }
-        
-        analytics.put("approvedWorkflowDetails", approvedWorkflows);
-        
-        log.info("📊 Analytics Debug - Total: {}, Approved: {}, In Progress: {}, Rejected: {}", 
-                allWorkflows.size(), 
-                statusCounts.getOrDefault(WorkflowStatus.APPROVED, 0L),
-                statusCounts.getOrDefault(WorkflowStatus.IN_PROGRESS, 0L),
-                statusCounts.getOrDefault(WorkflowStatus.REJECTED, 0L));
-        
-        return analytics;
-        
-    } catch (Exception e) {
-        log.error("❌ Error getting analytics debug info: {}", e.getMessage(), e);
-        return Map.of("error", e.getMessage());
     }
-}
 
     /**
      * ✅ Get workflow status breakdown for dashboard
@@ -304,21 +305,19 @@ public Map<String, Object> getWorkflowAnalyticsDebug() {
     public Map<String, Long> getWorkflowStatusBreakdown() {
         try {
             List<WorkflowInstance> allWorkflows = instanceRepository.findAll();
-            
+
             Map<WorkflowStatus, Long> statusCounts = allWorkflows.stream()
-                .collect(Collectors.groupingBy(
-                    WorkflowInstance::getStatus,
-                    Collectors.counting()
-                ));
-            
+                    .collect(Collectors.groupingBy(
+                            WorkflowInstance::getStatus,
+                            Collectors.counting()));
+
             // Convert to String keys for JSON serialization
             Map<String, Long> result = new HashMap<>();
-            statusCounts.forEach((status, count) -> 
-                result.put(status.toString(), count));
-            
+            statusCounts.forEach((status, count) -> result.put(status.toString(), count));
+
             log.info("📊 Status breakdown: {}", result);
             return result;
-            
+
         } catch (Exception e) {
             log.error("❌ Error getting status breakdown: {}", e.getMessage(), e);
             return new HashMap<>();
@@ -328,18 +327,20 @@ public Map<String, Object> getWorkflowAnalyticsDebug() {
     // ===== ENHANCED QUERY METHODS =====
 
     /**
-     * ✅ ENHANCED: Get user workflows with detailed pagination (FIXES DISAPPEARING WORKFLOWS)
+     * ✅ ENHANCED: Get user workflows with detailed pagination (FIXES DISAPPEARING
+     * WORKFLOWS)
      * Now returns WorkflowInstanceDTO list
      */
     @Transactional(readOnly = true)
     public Map<String, Object> getUserWorkflowsWithDetails(Long userId, int page, int size, String status) {
         try {
-            log.info("📋 Getting workflows for user {} - page: {}, size: {}, status: {}", 
+            log.info("📋 Getting workflows for user {} - page: {}, size: {}, status: {}",
                     userId, page, size, status);
 
             User user = loadAndValidateUser(userId);
-            Pageable pageable = PageRequest.of(page, size, Sort.by("updatedDate").descending()); // ✅ Sort by updatedDate
-            
+            Pageable pageable = PageRequest.of(page, size, Sort.by("updatedDate").descending()); // ✅ Sort by
+                                                                                                 // updatedDate
+
             // Get workflows with proper filtering
             Page<WorkflowInstance> workflowsPage = getFilteredUserWorkflows(user, status, pageable);
 
@@ -362,7 +363,8 @@ public Map<String, Object> getWorkflowAnalyticsDebug() {
     }
 
     /**
-     * ✅ ENHANCED: Get workflow details with tasks for approval interface (FIXES MISSING STEPS)
+     * ✅ ENHANCED: Get workflow details with tasks for approval interface (FIXES
+     * MISSING STEPS)
      * Now returns WorkflowInstanceDTO
      */
     @Transactional(readOnly = true)
@@ -382,11 +384,11 @@ public Map<String, Object> getWorkflowAnalyticsDebug() {
 
             // ✅ Use WorkflowMapper to convert to DTO
             WorkflowInstanceDTO dto = WorkflowMapper.toInstanceDTO(workflow);
-            
+
             // Add user-specific permissions
             Map<String, Object> userPermissions = getUserWorkflowPermissions(workflow, user);
             dto.setUserPermissions(userPermissions);
-            
+
             log.info("✅ Workflow details retrieved for WorkflowID: {}", workflowId);
             return dto;
 
@@ -408,7 +410,8 @@ public Map<String, Object> getWorkflowAnalyticsDebug() {
             log.info("📋 Getting tasks for user {}", userId);
 
             User user = loadAndValidateUser(userId);
-            List<WorkflowTask> tasks = taskRepository.findByAssignedToAndStatusOrderByCreatedAtDesc(user, TaskStatus.PENDING);
+            List<WorkflowTask> tasks = taskRepository.findByAssignedToAndStatusOrderByCreatedAtDesc(user,
+                    TaskStatus.PENDING);
 
             List<Map<String, Object>> taskDTOs = tasks.stream()
                     .map(task -> {
@@ -438,7 +441,7 @@ public Map<String, Object> getWorkflowAnalyticsDebug() {
     @Transactional
     public WorkflowInstanceDTO cancelWorkflow(Long instanceId, String reason) {
         log.info("🔄 Cancelling workflow - InstanceID: {}, Reason: {}", instanceId, reason);
-        
+
         try {
             WorkflowInstance instance = instanceRepository.findById(instanceId)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow not found"));
@@ -453,40 +456,40 @@ public Map<String, Object> getWorkflowAnalyticsDebug() {
             WorkflowStatus oldStatus = instance.getStatus();
             instance.setStatus(WorkflowStatus.CANCELLED);
             instance.setEndDate(LocalDateTime.now());
-            
+
             // ✅ CRITICAL FIX: Update timestamp on cancellation
             updateWorkflowTimestamp(instance, "Workflow cancelled: " + (reason != null ? reason : "No reason"));
-            
+
             // Cancel pending tasks
             cancelPendingTasks(instance, reason, currentUser);
-            
+
             // Update document status
             if (instance.getDocument() != null) {
                 updateDocumentStatus(instance.getDocument(), DocumentStatus.DRAFT);
             }
-            
-            log.info("✅ Workflow {} cancelled: {} -> CANCELLED at {}", 
+
+            log.info("✅ Workflow {} cancelled: {} -> CANCELLED at {}",
                     instanceId, oldStatus, instance.getUpdatedDate());
 
             // Log and audit
-            logWorkflowHistory(instance, "WORKFLOW_CANCELLED", 
-                             reason != null && !reason.isBlank() ? reason : "Workflow cancelled", currentUser);
+            logWorkflowHistory(instance, "WORKFLOW_CANCELLED",
+                    reason != null && !reason.isBlank() ? reason : "Workflow cancelled", currentUser);
 
-            auditWorkflowAction(instance, "Workflow Cancelled", currentUser, 
-                              reason != null && !reason.isBlank() ? reason : "No reason provided");
+            auditWorkflowAction(instance, "Workflow Cancelled", currentUser,
+                    reason != null && !reason.isBlank() ? reason : "No reason provided");
 
             // Send notifications
             sendCancellationNotifications(instance, currentUser);
-            
+
             // ✅ Return WorkflowInstanceDTO
             return WorkflowMapper.toInstanceDTO(instance);
-            
+
         } catch (ResponseStatusException e) {
             throw e;
         } catch (Exception e) {
             log.error("❌ Error cancelling workflow {}: {}", instanceId, e.getMessage(), e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, 
-                "Failed to cancel workflow: " + e.getMessage());
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Failed to cancel workflow: " + e.getMessage());
         }
     }
 
@@ -536,26 +539,32 @@ public Map<String, Object> getWorkflowAnalyticsDebug() {
     // ===== CRITICAL TIMESTAMP UPDATE METHODS =====
 
     /**
-     * ✅ CRITICAL FIX: Update workflow timestamp with detailed logging
+     * ✅ CRITICAL FIX: Update workflow timestamp with better transaction handling
      */
-    private void updateWorkflowTimestamp(WorkflowInstance workflow, String reason) {
+    private WorkflowInstance updateWorkflowTimestamp(WorkflowInstance workflow, String reason) {
         try {
             LocalDateTime oldTimestamp = workflow.getUpdatedDate();
             LocalDateTime newTimestamp = LocalDateTime.now();
-            
+
             workflow.setUpdatedDate(newTimestamp);
-            WorkflowInstance saved = instanceRepository.saveAndFlush(workflow);
-            
-            log.info("🔧 TIMESTAMP UPDATE: Workflow {} - Reason: '{}' - Old: {} - New: {}", 
-                    workflow.getId(), reason, oldTimestamp, saved.getUpdatedDate());
-            
+
+            // Don't save here - let the calling method handle the save
+            // This prevents double-save issues
+
+            log.info("🔧 TIMESTAMP PREPARED: Workflow {} - Reason: '{}' - Old: {} - New: {}",
+                    workflow.getId(), reason, oldTimestamp, newTimestamp);
+
+            return workflow;
+
         } catch (Exception e) {
-            log.error("❌ Failed to update workflow timestamp for workflow {}: {}", workflow.getId(), e.getMessage(), e);
+            log.error("❌ Failed to update workflow timestamp for workflow {}: {}",
+                    workflow.getId(), e.getMessage(), e);
+            return workflow;
         }
     }
 
     /**
-     * ✅ FIXED: Complete task with workflow timestamp update
+     * ✅ FIXED: Complete task with proper timestamp handling
      */
     private void completeTaskWithDetails(WorkflowTask task, TaskAction action, String comments, User currentUser) {
         task.setStatus(TaskStatus.COMPLETED);
@@ -565,110 +574,88 @@ public Map<String, Object> getWorkflowAnalyticsDebug() {
         LocalDateTime completedTime = LocalDateTime.now();
         task.setCompletedDate(completedTime);
         task.setCompletedAt(completedTime);
-        
+
         taskRepository.saveAndFlush(task);
 
-        // ✅ CRITICAL FIX: Update workflow timestamp
+        // ✅ CRITICAL FIX: Update workflow timestamp and save once
         WorkflowInstance workflow = task.getWorkflowInstance();
         updateWorkflowTimestamp(workflow, "Task completed: " + action + " by " + currentUser.getUsername());
+        instanceRepository.saveAndFlush(workflow); // Single save after timestamp update
 
-        // Log task completion
-        logWorkflowHistory(workflow, "TASK_COMPLETED", 
-                          "Task completed by " + getUserDisplayName(currentUser) + " with action " + action, 
-                          currentUser);
+        // Log and audit...
+        logWorkflowHistory(workflow, "TASK_COMPLETED",
+                "Task completed by " + getUserDisplayName(currentUser) + " with action " + action,
+                currentUser);
 
-        // Audit task completion
-        String auditMessage = String.format("Task %s: %s%s", 
-            action == TaskAction.APPROVE ? "Approved" : "Rejected",
-            task.getTitle() != null ? task.getTitle() : "Workflow Task",
-            comments != null && !comments.isEmpty() ? " - " + comments : ""
-        );
-        
-        auditWorkflowAction(workflow, auditMessage, currentUser, comments);
+        auditWorkflowAction(workflow,
+                String.format("Task %s: %s%s",
+                        action == TaskAction.APPROVE ? "Approved" : "Rejected",
+                        task.getTitle() != null ? task.getTitle() : "Workflow Task",
+                        comments != null && !comments.isEmpty() ? " - " + comments : ""),
+                currentUser, comments);
 
-        // Send notification
         sendTaskCompletionNotification(currentUser, task, action);
     }
 
-  /**
- * ✅ FIXED: Handle workflow rejection with proper timestamps
- */
-private void handleWorkflowRejection(WorkflowInstance instance, WorkflowStep step, User currentUser) {
-    // Cancel remaining tasks
-    cancelRemainingStepTasks(instance, step, "Step rejected", currentUser);
+    private boolean handleStepApproval(WorkflowInstance instance, WorkflowStep step, User currentUser) {
+        cancelRemainingStepTasks(instance, step, "Step approved - quorum reached", currentUser);
 
-    // Update workflow status
-    instance.setStatus(WorkflowStatus.REJECTED);
-    instance.setEndDate(LocalDateTime.now());
+        int totalSteps = getTotalStepsInTemplate(instance.getTemplate());
 
-    // ✅ CRITICAL FIX: Force updateDate refresh
-    instance.setUpdatedDate(LocalDateTime.now());
-    instanceRepository.save(instance);
+        if (instance.getCurrentStepOrder() >= totalSteps) {
+            // Workflow completed
+            instance.setStatus(WorkflowStatus.APPROVED);
+            instance.setEndDate(LocalDateTime.now());
 
-    // ✅ CRITICAL FIX: Update timestamp on rejection (history/audit helper)
-    updateWorkflowTimestamp(instance, "Workflow rejected at step " + step.getStepOrder());
+            // ✅ CRITICAL FIX: Update timestamp and save once
+            updateWorkflowTimestamp(instance, "Workflow approved - all steps completed");
+            instanceRepository.saveAndFlush(instance); // Single save
 
-    // Update document status
-    updateDocumentOnRejection(instance);
+            updateDocumentOnApproval(instance);
+            logWorkflowHistory(instance, "WORKFLOW_APPROVED", "Workflow approved", currentUser);
+            auditWorkflowAction(instance, "Workflow Approved", currentUser, "All steps completed");
+            sendWorkflowApprovalNotification(instance);
 
-    // Log and audit
-    logWorkflowHistory(instance, "WORKFLOW_REJECTED", "Workflow rejected", currentUser);
-    auditWorkflowAction(instance, "Workflow Rejected", currentUser, "Step " + step.getStepOrder() + " rejected");
+            return true; // Completed
+        } else {
+            // Move to next step
+            int nextStep = instance.getCurrentStepOrder() + 1;
+            instance.setCurrentStepOrder(nextStep);
 
-    // Send notification
-    sendWorkflowRejectionNotification(instance);
-}
+            updateWorkflowTimestamp(instance, "Advanced to step " + nextStep);
 
-  private boolean handleStepApproval(WorkflowInstance instance, WorkflowStep step, User currentUser) {
-    // Cancel remaining tasks in current step
-    cancelRemainingStepTasks(instance, step, "Step approved - quorum reached", currentUser);
+            WorkflowTemplate template = loadTemplateWithStepsAndRoles(instance.getTemplate().getId());
+            boolean tasksCreated = generateTasksForStep(instance, template, nextStep);
 
-    int totalSteps = getTotalStepsInTemplate(instance.getTemplate());
+            if (!tasksCreated) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "No approvers found for step " + nextStep);
+            }
 
-    if (instance.getCurrentStepOrder() >= totalSteps) {
-        // Workflow completed
-        instance.setStatus(WorkflowStatus.APPROVED);
+            updateWorkflowTimestamp(instance, "Tasks generated for step " + nextStep);
+            instanceRepository.saveAndFlush(instance); // Single save after all updates
+
+            logWorkflowHistory(instance, "STEP_STARTED", "Step " + nextStep + " started", currentUser);
+
+            return false; // Workflow continues
+        }
+    }
+
+    private void handleWorkflowRejection(WorkflowInstance instance, WorkflowStep step, User currentUser) {
+        cancelRemainingStepTasks(instance, step, "Step rejected", currentUser);
+
+        instance.setStatus(WorkflowStatus.REJECTED);
         instance.setEndDate(LocalDateTime.now());
 
-        // Update timestamps
-        updateWorkflowTimestamp(instance, "Workflow approved - all steps completed");
+        // ✅ CRITICAL FIX: Update timestamp and save once
+        updateWorkflowTimestamp(instance, "Workflow rejected at step " + step.getStepOrder());
+        instanceRepository.saveAndFlush(instance); // Single save
 
-        // ✅ CRITICAL FIX: update Last Updated
-        instance.setUpdatedDate(LocalDateTime.now());
-        instanceRepository.save(instance);
-
-        // Update document + logs
-        updateDocumentOnApproval(instance);
-        logWorkflowHistory(instance, "WORKFLOW_APPROVED", "Workflow approved", currentUser);
-        auditWorkflowAction(instance, "Workflow Approved", currentUser, "All steps completed");
-        sendWorkflowApprovalNotification(instance);
-
-        return true; // Completed
-    } else {
-        // Move to next step
-        int nextStep = instance.getCurrentStepOrder() + 1;
-        instance.setCurrentStepOrder(nextStep);
-
-        updateWorkflowTimestamp(instance, "Advanced to step " + nextStep);
-
-        WorkflowTemplate template = loadTemplateWithStepsAndRoles(instance.getTemplate().getId());
-        boolean tasksCreated = generateTasksForStep(instance, template, nextStep);
-
-        if (!tasksCreated) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "No approvers found for step " + nextStep);
-        }
-
-        updateWorkflowTimestamp(instance, "Tasks generated for step " + nextStep);
-        logWorkflowHistory(instance, "STEP_STARTED", "Step " + nextStep + " started", currentUser);
-
-        // ✅ CRITICAL FIX: also bump Last Updated when progressing
-        instance.setUpdatedDate(LocalDateTime.now());
-        instanceRepository.save(instance);
-
-        return false; // Workflow continues
+        updateDocumentOnRejection(instance);
+        logWorkflowHistory(instance, "WORKFLOW_REJECTED", "Workflow rejected", currentUser);
+        auditWorkflowAction(instance, "Workflow Rejected", currentUser, "Step " + step.getStepOrder() + " rejected");
+        sendWorkflowRejectionNotification(instance);
     }
-}
 
     // ===== PRIVATE HELPER METHODS =====
 
@@ -722,45 +709,54 @@ private void handleWorkflowRejection(WorkflowInstance instance, WorkflowStep ste
     }
 
     /**
-     * ✅ Create workflow instance with proper assignments
+     * ✅ FIXED: Create workflow instance with proper timestamps
      */
-    private WorkflowInstance createWorkflowInstance(WorkflowTemplate template, Document document, 
-                                                  User initiator, String title, String description, 
-                                                  String priority) {
+    private WorkflowInstance createWorkflowInstance(WorkflowTemplate template, Document document,
+            User initiator, String title, String description,
+            String priority) {
         WorkflowInstance instance = new WorkflowInstance();
         instance.setTemplate(template);
         instance.setDocument(document);
         instance.setInitiatedBy(initiator); // ✅ CRITICAL: Proper user assignment
-        
+
         // Set enhanced properties
-        instance.setTitle(title != null && !title.trim().isEmpty() ? title : 
-                         "Document Approval: " + document.getOriginalFilename());
+        instance.setTitle(title != null && !title.trim().isEmpty() ? title
+                : "Document Approval: " + document.getOriginalFilename());
         instance.setDescription(description);
         instance.setPriority(parsePriority(priority));
         instance.setStatus(WorkflowStatus.IN_PROGRESS);
         instance.setCurrentStepOrder(1);
-        
+
+        // ✅ CRITICAL FIX: Set all timestamps during creation
+        LocalDateTime now = LocalDateTime.now();
+        instance.setCreatedDate(now);
+        instance.setStartDate(now);
+        instance.setUpdatedDate(now);
+
+        log.info("🔧 WORKFLOW CREATED: ID will be assigned, timestamps set to: {}", now);
+
         // Set SLA
         if (template.getDefaultSlaHours() != null && template.getDefaultSlaHours() > 0) {
-            instance.setDueDate(LocalDateTime.now().plusHours(template.getDefaultSlaHours()));
+            instance.setDueDate(now.plusHours(template.getDefaultSlaHours()));
         }
-        
+
         return instance;
     }
 
     /**
-     * ✅ CRITICAL FIX: Generate initial tasks with proper assignments
+     * ✅ CRITICAL FIX: Generate initial tasks with workflow timestamp updates
      */
     private boolean generateInitialTasks(WorkflowInstance instance, WorkflowTemplate template) {
         try {
             log.info("🔄 Generating initial tasks for workflow {}", instance.getId());
-            
+
             if (template.getSteps() == null || template.getSteps().isEmpty()) {
                 log.warn("⚠️ Template has no steps defined");
                 return false;
             }
 
             boolean anyTaskCreated = false;
+            LocalDateTime taskCreationTime = LocalDateTime.now();
 
             // Find steps for the first step order
             List<WorkflowStep> firstSteps = template.getSteps().stream()
@@ -778,7 +774,7 @@ private void handleWorkflowRejection(WorkflowInstance instance, WorkflowStep ste
                     continue;
                 }
 
-                log.info("✅ Found {} approvers for step '{}': {}", 
+                log.info("✅ Found {} approvers for step '{}': {}",
                         approvers.size(), step.getName(),
                         approvers.stream().map(User::getUsername).collect(Collectors.joining(", ")));
 
@@ -787,9 +783,9 @@ private void handleWorkflowRejection(WorkflowInstance instance, WorkflowStep ste
                     WorkflowTask task = createTaskWithAssignment(instance, step, approver);
                     taskRepository.save(task);
 
-                    logWorkflowHistory(instance, "TASK_ASSIGNED", 
-                                     "Task '" + step.getName() + "' assigned to " + getUserDisplayName(approver), 
-                                     instance.getInitiatedBy());
+                    logWorkflowHistory(instance, "TASK_ASSIGNED",
+                            "Task '" + step.getName() + "' assigned to " + getUserDisplayName(approver),
+                            instance.getInitiatedBy());
 
                     // Send notification
                     sendTaskAssignmentNotification(approver, task);
@@ -798,9 +794,23 @@ private void handleWorkflowRejection(WorkflowInstance instance, WorkflowStep ste
                 }
             }
 
+            // ✅ CRITICAL FIX: Update workflow timestamp after task creation
+            if (anyTaskCreated) {
+                instance.setUpdatedDate(taskCreationTime);
+                // Save the updated workflow instance
+                instanceRepository.saveAndFlush(instance);
+
+                log.info("🔧 WORKFLOW TIMESTAMP UPDATED: Workflow {} updated at {} after creating {} tasks",
+                        instance.getId(), taskCreationTime,
+                        template.getSteps().stream()
+                                .filter(step -> step.getStepOrder() != null && step.getStepOrder().equals(1))
+                                .mapToInt(step -> findApproversForStep(step).size())
+                                .sum());
+            }
+
             log.info("✅ Initial task generation completed. Tasks created: {}", anyTaskCreated);
             return anyTaskCreated;
-            
+
         } catch (Exception e) {
             log.error("❌ Error generating initial tasks: {}", e.getMessage(), e);
             return false;
@@ -812,7 +822,7 @@ private void handleWorkflowRejection(WorkflowInstance instance, WorkflowStep ste
      */
     private List<User> findApproversForStep(WorkflowStep step) {
         List<User> approvers = new ArrayList<>();
-        
+
         try {
             // First, check for directly assigned approvers
             if (step.getAssignedApprovers() != null && !step.getAssignedApprovers().isEmpty()) {
@@ -834,9 +844,9 @@ private void handleWorkflowRejection(WorkflowInstance instance, WorkflowStep ste
                         .map(WorkflowStepRole::getRoleName)
                         .collect(Collectors.toSet());
 
-                log.debug("Looking for users with roles: {} for step '{}'", 
-                         requiredRoles.stream().map(Role::toString).collect(Collectors.joining(", ")), 
-                         step.getName());
+                log.debug("Looking for users with roles: {} for step '{}'",
+                        requiredRoles.stream().map(Role::toString).collect(Collectors.joining(", ")),
+                        step.getName());
 
                 for (Role role : requiredRoles) {
                     List<User> usersWithRole = userRepository.findByRoleAndActiveAndEnabled(role, true, true);
@@ -861,7 +871,7 @@ private void handleWorkflowRejection(WorkflowInstance instance, WorkflowStep ste
 
             log.debug("Total approvers found for step '{}': {}", step.getName(), approvers.size());
             return approvers;
-            
+
         } catch (Exception e) {
             log.error("Error finding approvers for step '{}': {}", step.getName(), e.getMessage());
             return new ArrayList<>();
@@ -884,19 +894,19 @@ private void handleWorkflowRejection(WorkflowInstance instance, WorkflowStep ste
         task.setStep(step);
         task.setAssignedTo(assignee); // ✅ CRITICAL: Proper assignment
         task.setTitle(step.getName());
-        task.setDescription("Please review and " + 
-                           (step.getType() == StepType.APPROVAL ? "approve or reject" : "complete") + 
-                           " this workflow step");
+        task.setDescription("Please review and " +
+                (step.getType() == StepType.APPROVAL ? "approve or reject" : "complete") +
+                " this workflow step");
         task.setStatus(TaskStatus.PENDING);
         task.setPriority(TaskPriority.NORMAL);
         LocalDateTime now = LocalDateTime.now();
         task.setCreatedAt(now);
         task.setCreatedDate(now);
-        
+
         // Set due date
         LocalDateTime dueDate = calculateTaskDueDate(step, instance);
         task.setDueDate(dueDate);
-        
+
         return task;
     }
 
@@ -920,8 +930,8 @@ private void handleWorkflowRejection(WorkflowInstance instance, WorkflowStep ste
         try {
             return TaskAction.valueOf(action.toUpperCase());
         } catch (IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, 
-                "Invalid action: " + action + ". Must be APPROVE or REJECT");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Invalid action: " + action + ". Must be APPROVE or REJECT");
         }
     }
 
@@ -937,13 +947,13 @@ private void handleWorkflowRejection(WorkflowInstance instance, WorkflowStep ste
      * ✅ Validate task action authorization
      */
     private void validateTaskActionAuthorization(WorkflowTask task, User currentUser) {
-        boolean isAssignee = task.getAssignedTo() != null && 
-                            task.getAssignedTo().getId().equals(currentUser.getId());
-        
+        boolean isAssignee = task.getAssignedTo() != null &&
+                task.getAssignedTo().getId().equals(currentUser.getId());
+
         if (!isAssignee && !authz.isManagerOrAdmin()) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, 
-                "Not authorized to complete this task. Task is assigned to: " + 
-                (task.getAssignedTo() != null ? task.getAssignedTo().getUsername() : "unknown"));
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Not authorized to complete this task. Task is assigned to: " +
+                            (task.getAssignedTo() != null ? task.getAssignedTo().getUsername() : "unknown"));
         }
     }
 
@@ -954,135 +964,135 @@ private void handleWorkflowRejection(WorkflowInstance instance, WorkflowStep ste
         if (instance == null) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "Task without workflow instance");
         }
-        
+
         // Check workflow status
-        if (instance.getStatus() == WorkflowStatus.APPROVED || 
-            instance.getStatus() == WorkflowStatus.REJECTED || 
-            instance.getStatus() == WorkflowStatus.CANCELLED) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, 
-                "Cannot complete task for a finalized workflow. Current status: " + instance.getStatus());
+        if (instance.getStatus() == WorkflowStatus.APPROVED ||
+                instance.getStatus() == WorkflowStatus.REJECTED ||
+                instance.getStatus() == WorkflowStatus.CANCELLED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Cannot complete task for a finalized workflow. Current status: " + instance.getStatus());
         }
 
         // Check task status
         if (task.getStatus() != TaskStatus.PENDING) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, 
-                "Task is not in PENDING status. Current status: " + task.getStatus());
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Task is not in PENDING status. Current status: " + task.getStatus());
         }
     }
 
     /**
      * ✅ Process workflow progression
      */
-   /**
- * ✅ Enhanced: Process workflow progression with detailed tracking
- */
-private Map<String, Object> processWorkflowProgression(WorkflowInstance instance, User currentUser) {
-    Map<String, Object> result = new HashMap<>();
+    /**
+     * ✅ Enhanced: Process workflow progression with detailed tracking
+     */
+    private Map<String, Object> processWorkflowProgression(WorkflowInstance instance, User currentUser) {
+        Map<String, Object> result = new HashMap<>();
 
-    try {
-        if (instance == null) {
-            result.put("completed", false);
-            result.put("nextStep", null);
-            result.put("message", "⚠️ No workflow instance provided");
-            return result;
-        }
-
-        WorkflowStep currentStep = getCurrentStepSafe(instance);
-        if (currentStep == null) {
-            log.warn("⚠️ No current step found for workflow {}", instance.getId());
-            result.put("completed", false);
-            result.put("nextStep", null);
-            result.put("message", "No current step found - workflow may be misconfigured");
-            result.put("workflowId", instance.getId());
-            result.put("status", instance.getStatus().toString());
-            return result;
-        }
-
-        StepOutcome outcome = evaluateStepOutcome(instance, currentStep);
-        log.info("🔄 Workflow {} - Step {} outcome: {}", instance.getId(), currentStep.getStepOrder(), outcome);
-
-        switch (outcome) {
-            case REJECTED:
-                handleWorkflowRejection(instance, currentStep, currentUser);
-                result.put("completed", true);
+        try {
+            if (instance == null) {
+                result.put("completed", false);
                 result.put("nextStep", null);
-                result.put("status", instance.getStatus().toString());
-                result.put("message", "Workflow rejected at step: " + currentStep.getName());
-                break;
+                result.put("message", "⚠️ No workflow instance provided");
+                return result;
+            }
 
-            case APPROVED:
-                boolean workflowCompleted = handleStepApproval(instance, currentStep, currentUser);
-                result.put("completed", workflowCompleted);
-                result.put("nextStep", workflowCompleted ? null : instance.getCurrentStepOrder());
-                result.put("status", instance.getStatus().toString());
-                result.put("message", workflowCompleted 
-                    ? "Workflow approved and completed 🎉" 
-                    : "Step approved, moving to step " + instance.getCurrentStepOrder());
-                break;
-
-            case CONTINUE:
+            WorkflowStep currentStep = getCurrentStepSafe(instance);
+            if (currentStep == null) {
+                log.warn("⚠️ No current step found for workflow {}", instance.getId());
                 result.put("completed", false);
-                result.put("nextStep", currentStep.getStepOrder());
+                result.put("nextStep", null);
+                result.put("message", "No current step found - workflow may be misconfigured");
+                result.put("workflowId", instance.getId());
                 result.put("status", instance.getStatus().toString());
-                result.put("message", "Step still in progress: awaiting approvals/rejections");
-                break;
+                return result;
+            }
 
-            default:
-                result.put("completed", false);
-                result.put("nextStep", currentStep.getStepOrder());
-                result.put("status", instance.getStatus().toString());
-                result.put("message", "Unhandled outcome state: " + outcome);
-                break;
+            StepOutcome outcome = evaluateStepOutcome(instance, currentStep);
+            log.info("🔄 Workflow {} - Step {} outcome: {}", instance.getId(), currentStep.getStepOrder(), outcome);
+
+            switch (outcome) {
+                case REJECTED:
+                    handleWorkflowRejection(instance, currentStep, currentUser);
+                    result.put("completed", true);
+                    result.put("nextStep", null);
+                    result.put("status", instance.getStatus().toString());
+                    result.put("message", "Workflow rejected at step: " + currentStep.getName());
+                    break;
+
+                case APPROVED:
+                    boolean workflowCompleted = handleStepApproval(instance, currentStep, currentUser);
+                    result.put("completed", workflowCompleted);
+                    result.put("nextStep", workflowCompleted ? null : instance.getCurrentStepOrder());
+                    result.put("status", instance.getStatus().toString());
+                    result.put("message", workflowCompleted
+                            ? "Workflow approved and completed 🎉"
+                            : "Step approved, moving to step " + instance.getCurrentStepOrder());
+                    break;
+
+                case CONTINUE:
+                    result.put("completed", false);
+                    result.put("nextStep", currentStep.getStepOrder());
+                    result.put("status", instance.getStatus().toString());
+                    result.put("message", "Step still in progress: awaiting approvals/rejections");
+                    break;
+
+                default:
+                    result.put("completed", false);
+                    result.put("nextStep", currentStep.getStepOrder());
+                    result.put("status", instance.getStatus().toString());
+                    result.put("message", "Unhandled outcome state: " + outcome);
+                    break;
+            }
+
+            // Add common context
+            result.put("workflowId", instance.getId());
+            result.put("currentStep", currentStep.getStepOrder());
+            result.put("currentStepName", currentStep.getName());
+
+        } catch (Exception e) {
+            log.error("❌ Error processing workflow progression for workflow {}: {}",
+                    instance != null ? instance.getId() : "unknown", e.getMessage(), e);
+
+            result.put("completed", false);
+            result.put("nextStep", null);
+            result.put("status", instance != null ? instance.getStatus().toString() : "UNKNOWN");
+            result.put("message", "Error occurred: " + e.getMessage());
         }
 
-        // Add common context
-        result.put("workflowId", instance.getId());
-        result.put("currentStep", currentStep.getStepOrder());
-        result.put("currentStepName", currentStep.getName());
-
-    } catch (Exception e) {
-        log.error("❌ Error processing workflow progression for workflow {}: {}", 
-                  instance != null ? instance.getId() : "unknown", e.getMessage(), e);
-
-        result.put("completed", false);
-        result.put("nextStep", null);
-        result.put("status", instance != null ? instance.getStatus().toString() : "UNKNOWN");
-        result.put("message", "Error occurred: " + e.getMessage());
+        return result;
     }
-
-    return result;
-}
-
 
     /**
      * ✅ Get current step safely
      */
     private WorkflowStep getCurrentStepSafe(WorkflowInstance instance) {
         try {
-            if (instance.getCurrentStepOrder() == null) return null;
-            
+            if (instance.getCurrentStepOrder() == null)
+                return null;
+
             // First try to get from tasks
             List<WorkflowTask> tasks = taskRepository.findByWorkflowInstanceOrderByStepOrder(instance);
             for (WorkflowTask task : tasks) {
-                if (task.getStep() != null && 
-                    task.getStep().getStepOrder() != null &&
-                    task.getStep().getStepOrder().equals(instance.getCurrentStepOrder())) {
+                if (task.getStep() != null &&
+                        task.getStep().getStepOrder() != null &&
+                        task.getStep().getStepOrder().equals(instance.getCurrentStepOrder())) {
                     return task.getStep();
                 }
             }
-            
+
             // Fallback to template steps
             if (instance.getTemplate() != null) {
                 List<WorkflowStep> steps = stepRepository.findByTemplateOrderByStepOrderAsc(instance.getTemplate());
                 return steps.stream()
-                        .filter(s -> s.getStepOrder() != null && 
-                                   s.getStepOrder().equals(instance.getCurrentStepOrder()))
+                        .filter(s -> s.getStepOrder() != null &&
+                                s.getStepOrder().equals(instance.getCurrentStepOrder()))
                         .findFirst()
                         .orElse(null);
             }
-            
+
             return null;
-                    
+
         } catch (Exception e) {
             log.error("❌ Error getting current step for workflow {}: {}", instance.getId(), e.getMessage());
             return null;
@@ -1094,43 +1104,51 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
      */
     private StepOutcome evaluateStepOutcome(WorkflowInstance instance, WorkflowStep step) {
         List<WorkflowTask> stepTasks = getStepTasks(instance, step);
-        
+
         if (stepTasks.isEmpty()) {
             return StepOutcome.CONTINUE;
         }
-        
+
         long approvals = stepTasks.stream()
                 .filter(t -> t.getAction() == TaskAction.APPROVE).count();
         long rejections = stepTasks.stream()
                 .filter(t -> t.getAction() == TaskAction.REJECT).count();
         long totalAssigned = stepTasks.size();
-        
-        ApprovalPolicy policy = step.getApprovalPolicy() != null ? 
-                               step.getApprovalPolicy() : ApprovalPolicy.QUORUM;
-        
+
+        ApprovalPolicy policy = step.getApprovalPolicy() != null ? step.getApprovalPolicy() : ApprovalPolicy.QUORUM;
+
         switch (policy) {
             case UNANIMOUS:
-                if (rejections > 0) return StepOutcome.REJECTED;
-                if (approvals == totalAssigned) return StepOutcome.APPROVED;
+                if (rejections > 0)
+                    return StepOutcome.REJECTED;
+                if (approvals == totalAssigned)
+                    return StepOutcome.APPROVED;
                 break;
             case MAJORITY:
                 long needed = (totalAssigned / 2) + 1;
-                if (approvals >= needed) return StepOutcome.APPROVED;
-                if (rejections >= needed) return StepOutcome.REJECTED;
+                if (approvals >= needed)
+                    return StepOutcome.APPROVED;
+                if (rejections >= needed)
+                    return StepOutcome.REJECTED;
                 break;
             case ANY_ONE:
-                if (approvals > 0) return StepOutcome.APPROVED;
-                if (rejections > 0) return StepOutcome.REJECTED;
+                if (approvals > 0)
+                    return StepOutcome.APPROVED;
+                if (rejections > 0)
+                    return StepOutcome.REJECTED;
                 break;
             case QUORUM:
             default:
-                int required = (step.getRequiredApprovals() == null || step.getRequiredApprovals() <= 0) 
-                              ? 1 : step.getRequiredApprovals();
-                if (approvals >= required) return StepOutcome.APPROVED;
-                if (rejections > 0) return StepOutcome.REJECTED;
+                int required = (step.getRequiredApprovals() == null || step.getRequiredApprovals() <= 0)
+                        ? 1
+                        : step.getRequiredApprovals();
+                if (approvals >= required)
+                    return StepOutcome.APPROVED;
+                if (rejections > 0)
+                    return StepOutcome.REJECTED;
                 break;
         }
-        
+
         return StepOutcome.CONTINUE;
     }
 
@@ -1141,10 +1159,10 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
         if (instance.getTasks() == null) {
             return new ArrayList<>();
         }
-        
+
         return instance.getTasks().stream()
-                .filter(t -> t.getStep() != null && 
-                           t.getStep().getId().equals(step.getId()))
+                .filter(t -> t.getStep() != null &&
+                        t.getStep().getId().equals(step.getId()))
                 .collect(Collectors.toList());
     }
 
@@ -1154,7 +1172,7 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
     private boolean generateTasksForStep(WorkflowInstance instance, WorkflowTemplate template, int stepOrder) {
         try {
             log.info("🔄 Generating tasks for step {} in workflow {}", stepOrder, instance.getId());
-            
+
             if (template.getSteps() == null || template.getSteps().isEmpty()) {
                 log.warn("⚠️ Template has no steps defined");
                 return false;
@@ -1182,9 +1200,9 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
                     WorkflowTask task = createTaskWithAssignment(instance, step, approver);
                     taskRepository.save(task);
 
-                    logWorkflowHistory(instance, "TASK_ASSIGNED", 
-                                     "Task '" + step.getName() + "' assigned to " + getUserDisplayName(approver), 
-                                     instance.getInitiatedBy());
+                    logWorkflowHistory(instance, "TASK_ASSIGNED",
+                            "Task '" + step.getName() + "' assigned to " + getUserDisplayName(approver),
+                            instance.getInitiatedBy());
 
                     sendTaskAssignmentNotification(approver, task);
                     anyTaskCreated = true;
@@ -1193,7 +1211,7 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
 
             log.info("✅ Task generation completed for step {}. Tasks created: {}", stepOrder, anyTaskCreated);
             return anyTaskCreated;
-            
+
         } catch (Exception e) {
             log.error("❌ Error generating tasks for step {}: {}", stepOrder, e.getMessage(), e);
             return false;
@@ -1219,13 +1237,14 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
     /**
      * ✅ Cancel remaining step tasks
      */
-    private void cancelRemainingStepTasks(WorkflowInstance instance, WorkflowStep step, String reason, User currentUser) {
+    private void cancelRemainingStepTasks(WorkflowInstance instance, WorkflowStep step, String reason,
+            User currentUser) {
         List<WorkflowTask> pendingTasks = instance.getTasks().stream()
-                .filter(t -> t.getStep() != null && 
-                           t.getStep().getId().equals(step.getId()) && 
-                           t.getStatus() == TaskStatus.PENDING)
+                .filter(t -> t.getStep() != null &&
+                        t.getStep().getId().equals(step.getId()) &&
+                        t.getStatus() == TaskStatus.PENDING)
                 .collect(Collectors.toList());
-        
+
         for (WorkflowTask task : pendingTasks) {
             try {
                 task.setStatus(TaskStatus.COMPLETED);
@@ -1235,12 +1254,12 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
                 LocalDateTime now = LocalDateTime.now();
                 task.setCompletedDate(now);
                 task.setCompletedAt(now);
-                
+
                 taskRepository.saveAndFlush(task);
-                
-                logWorkflowHistory(instance, "TASK_CANCELLED", 
-                          "Task auto-cancelled: " + reason + " for " + getUserDisplayName(task.getAssignedTo()), 
-                          currentUser);
+
+                logWorkflowHistory(instance, "TASK_CANCELLED",
+                        "Task auto-cancelled: " + reason + " for " + getUserDisplayName(task.getAssignedTo()),
+                        currentUser);
             } catch (Exception e) {
                 log.warn("Failed to cancel task {}: {}", task.getId(), e.getMessage());
             }
@@ -1250,8 +1269,8 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
     /**
      * ✅ Build task action response
      */
-    private Map<String, Object> buildTaskActionResponse(WorkflowTask task, TaskAction taskAction, 
-                                                       WorkflowInstance instance, Map<String, Object> progressionResult) {
+    private Map<String, Object> buildTaskActionResponse(WorkflowTask task, TaskAction taskAction,
+            WorkflowInstance instance, Map<String, Object> progressionResult) {
         Map<String, Object> result = new HashMap<>();
         result.put("taskCompleted", true);
         result.put("taskId", task.getId());
@@ -1262,7 +1281,7 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
         result.put("workflowCompleted", progressionResult.get("completed"));
         result.put("message", "Task " + taskAction.toString().toLowerCase() + "d successfully");
         result.put("timestamp", LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
-        
+
         return result;
     }
 
@@ -1273,7 +1292,7 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
      */
     private Map<String, Object> convertTaskToDetailedDTO(WorkflowTask task) {
         Map<String, Object> dto = new HashMap<>();
-        
+
         try {
             dto.put("id", task.getId());
             dto.put("title", task.getTitle() != null ? task.getTitle() : "Task");
@@ -1282,15 +1301,12 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
             dto.put("comments", task.getComments());
             dto.put("action", task.getAction() != null ? task.getAction().toString() : null);
             dto.put("priority", task.getPriority() != null ? task.getPriority().toString() : "NORMAL");
-            
+
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-            dto.put("createdAt", task.getCreatedDate() != null ? 
-                    task.getCreatedDate().format(formatter) : null);
-            dto.put("completedAt", task.getCompletedDate() != null ? 
-                    task.getCompletedDate().format(formatter) : null);
-            dto.put("dueDate", task.getDueDate() != null ? 
-                    task.getDueDate().format(formatter) : null);
-            
+            dto.put("createdAt", task.getCreatedDate() != null ? task.getCreatedDate().format(formatter) : null);
+            dto.put("completedAt", task.getCompletedDate() != null ? task.getCompletedDate().format(formatter) : null);
+            dto.put("dueDate", task.getDueDate() != null ? task.getDueDate().format(formatter) : null);
+
             // Safe assignee handling
             if (task.getAssignedTo() != null) {
                 dto.put("assignedTo", getUserDisplayName(task.getAssignedTo()));
@@ -1299,7 +1315,7 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
                 dto.put("assignedTo", "Unassigned");
                 dto.put("assignedToId", null);
             }
-            
+
             // Safe step handling
             if (task.getStep() != null) {
                 dto.put("stepName", task.getStep().getName());
@@ -1310,33 +1326,33 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
                 dto.put("stepOrder", 0);
                 dto.put("stepType", "UNKNOWN");
             }
-            
+
             // Add action capabilities
             boolean isPending = task.getStatus() == TaskStatus.PENDING;
             boolean isApprovalStep = task.getStep() != null && task.getStep().getType() == StepType.APPROVAL;
-            
+
             dto.put("canApprove", isPending && isApprovalStep);
             dto.put("canReject", isPending && isApprovalStep);
             dto.put("isPending", isPending);
             dto.put("isOverdue", isTaskOverdue(task));
-            
+
             // Add workflow context
             if (task.getWorkflowInstance() != null) {
                 dto.put("workflowId", task.getWorkflowInstance().getId());
                 dto.put("workflowTitle", task.getWorkflowInstance().getTitle());
                 dto.put("workflowStatus", task.getWorkflowInstance().getStatus().toString());
             }
-            
+
             // Add completion details
             if (task.getCompletedBy() != null) {
                 dto.put("completedByName", getUserDisplayName(task.getCompletedBy()));
                 dto.put("completedById", task.getCompletedBy().getId());
             }
-            
+
         } catch (Exception e) {
             log.warn("Error creating detailed task DTO: {}", e.getMessage());
         }
-        
+
         return dto;
     }
 
@@ -1346,7 +1362,8 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
      * ✅ Get user display name with fallback
      */
     private String getUserDisplayName(User user) {
-        if (user == null) return "Unknown";
+        if (user == null)
+            return "Unknown";
         String fullName = user.getFullName();
         return (fullName != null && !fullName.trim().isEmpty()) ? fullName : user.getUsername();
     }
@@ -1355,9 +1372,9 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
      * ✅ Check if task is overdue
      */
     private boolean isTaskOverdue(WorkflowTask task) {
-        return task.getDueDate() != null && 
-               LocalDateTime.now().isAfter(task.getDueDate()) && 
-               task.getStatus() == TaskStatus.PENDING;
+        return task.getDueDate() != null &&
+                LocalDateTime.now().isAfter(task.getDueDate()) &&
+                task.getStatus() == TaskStatus.PENDING;
     }
 
     /**
@@ -1365,16 +1382,15 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
      */
     private boolean canUserAccessWorkflow(User user, WorkflowInstance workflow) {
         try {
-            boolean isInitiator = workflow.getInitiatedBy() != null && 
-                                 workflow.getInitiatedBy().getId().equals(user.getId());
-            
-            boolean hasTask = workflow.getTasks() != null && 
-                             workflow.getTasks().stream().anyMatch(task -> 
-                                 task.getAssignedTo() != null && 
-                                 task.getAssignedTo().getId().equals(user.getId()));
-            
+            boolean isInitiator = workflow.getInitiatedBy() != null &&
+                    workflow.getInitiatedBy().getId().equals(user.getId());
+
+            boolean hasTask = workflow.getTasks() != null &&
+                    workflow.getTasks().stream().anyMatch(task -> task.getAssignedTo() != null &&
+                            task.getAssignedTo().getId().equals(user.getId()));
+
             boolean isAdminOrManager = user.getRole() == Role.ADMIN || user.getRole() == Role.MANAGER;
-            
+
             return isInitiator || hasTask || isAdminOrManager;
         } catch (Exception e) {
             log.error("Error checking workflow access: {}", e.getMessage());
@@ -1389,12 +1405,12 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
         Map<String, Object> permissions = new HashMap<>();
         try {
             permissions.put("canView", canUserAccessWorkflow(user, workflow));
-            permissions.put("canEdit", workflow.getInitiatedBy() != null && 
-                                     workflow.getInitiatedBy().getId().equals(user.getId()));
+            permissions.put("canEdit", workflow.getInitiatedBy() != null &&
+                    workflow.getInitiatedBy().getId().equals(user.getId()));
             permissions.put("canCancel", authz.isInitiatorOrManager(workflow));
             permissions.put("hasPendingTasks", hasUserPendingTasks(workflow, user));
-            permissions.put("isInitiator", workflow.getInitiatedBy() != null && 
-                                         workflow.getInitiatedBy().getId().equals(user.getId()));
+            permissions.put("isInitiator", workflow.getInitiatedBy() != null &&
+                    workflow.getInitiatedBy().getId().equals(user.getId()));
         } catch (Exception e) {
             log.error("Error calculating user permissions: {}", e.getMessage());
         }
@@ -1406,10 +1422,9 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
      */
     private boolean hasUserPendingTasks(WorkflowInstance workflow, User user) {
         return workflow.getTasks() != null &&
-               workflow.getTasks().stream().anyMatch(task ->
-                   task.getStatus() == TaskStatus.PENDING &&
-                   task.getAssignedTo() != null &&
-                   task.getAssignedTo().getId().equals(user.getId()));
+                workflow.getTasks().stream().anyMatch(task -> task.getStatus() == TaskStatus.PENDING &&
+                        task.getAssignedTo() != null &&
+                        task.getAssignedTo().getId().equals(user.getId()));
     }
 
     /**
@@ -1505,7 +1520,7 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
         if (instance.getStatus() == WorkflowStatus.APPROVED || instance.getStatus() == WorkflowStatus.REJECTED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Cannot cancel a finalized workflow");
         }
-        
+
         if (instance.getStatus() == WorkflowStatus.CANCELLED) {
             // Idempotent - already cancelled
             return;
@@ -1516,12 +1531,13 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
      * ✅ Cancel pending tasks for workflow cancellation
      */
     private void cancelPendingTasks(WorkflowInstance instance, String reason, User currentUser) {
-        if (instance.getTasks() == null) return;
-        
+        if (instance.getTasks() == null)
+            return;
+
         List<WorkflowTask> pendingTasks = instance.getTasks().stream()
                 .filter(task -> task.getStatus() == TaskStatus.PENDING)
                 .collect(Collectors.toList());
-        
+
         for (WorkflowTask task : pendingTasks) {
             try {
                 task.setStatus(TaskStatus.COMPLETED);
@@ -1531,12 +1547,12 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
                 LocalDateTime now = LocalDateTime.now();
                 task.setCompletedDate(now);
                 task.setCompletedAt(now);
-                
+
                 taskRepository.saveAndFlush(task);
-                
-                logWorkflowHistory(instance, "TASK_CANCELLED", 
-                          "Task cancelled due to workflow cancellation for " + getUserDisplayName(task.getAssignedTo()), 
-                          currentUser);
+
+                logWorkflowHistory(instance, "TASK_CANCELLED",
+                        "Task cancelled due to workflow cancellation for " + getUserDisplayName(task.getAssignedTo()),
+                        currentUser);
             } catch (Exception e) {
                 log.warn("Failed to cancel task {}: {}", task.getId(), e.getMessage());
             }
@@ -1571,7 +1587,8 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
     private void updateDocumentOnApproval(WorkflowInstance instance) {
         try {
             Document doc = instance.getDocument();
-            if (doc == null) return;
+            if (doc == null)
+                return;
 
             doc.setStatus(DocumentStatus.APPROVED);
 
@@ -1594,7 +1611,7 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
 
             doc.setRejectionReason(null);
             documentRepository.save(doc);
-            
+
             log.info("✅ Document {} approved", doc.getId());
         } catch (Exception e) {
             log.warn("Failed to update document on approval: {}", e.getMessage());
@@ -1607,7 +1624,8 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
     private void updateDocumentOnRejection(WorkflowInstance instance) {
         try {
             Document doc = instance.getDocument();
-            if (doc == null) return;
+            if (doc == null)
+                return;
 
             doc.setStatus(DocumentStatus.REJECTED);
 
@@ -1630,7 +1648,7 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
             doc.setApprovalDate(null);
 
             documentRepository.save(doc);
-            
+
             log.info("✅ Document {} rejected", doc.getId());
         } catch (Exception e) {
             log.warn("Failed to update document on rejection: {}", e.getMessage());
@@ -1650,7 +1668,7 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
             history.setDetails(details);
             history.setPerformedBy(performedBy);
             history.setActionDate(LocalDateTime.now());
-            
+
             historyRepository.save(history);
         } catch (Exception e) {
             log.warn("Failed to log workflow history: {}", e.getMessage());
@@ -1662,9 +1680,9 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
      */
     private void auditWorkflowAction(WorkflowInstance instance, String action, User performedBy, String details) {
         try {
-            String message = action + " - Workflow: " + instance.getTitle() + 
-                           (details != null && !details.isEmpty() ? " (" + details + ")" : "");
-            
+            String message = action + " - Workflow: " + instance.getTitle() +
+                    (details != null && !details.isEmpty() ? " (" + details + ")" : "");
+
             auditService.logWorkflowAction(message, instance.getId().toString(), performedBy.getUsername());
         } catch (Exception e) {
             log.warn("Failed to audit workflow action: {}", e.getMessage());
@@ -1679,11 +1697,10 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
             User user = userRepository.findById(userId).orElse(null);
             if (user != null) {
                 auditService.logWorkflowActionWithStatus(
-                    "Workflow Creation Failed: " + e.getMessage(),
-                    "Template-" + templateId,
-                    user.getUsername(),
-                    AuditLog.Status.FAILED
-                );
+                        "Workflow Creation Failed: " + e.getMessage(),
+                        "Template-" + templateId,
+                        user.getUsername(),
+                        AuditLog.Status.FAILED);
             }
         } catch (Exception auditEx) {
             log.warn("Failed to log creation failure audit: {}", auditEx.getMessage());
@@ -1699,7 +1716,7 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
         try {
             notificationService.notifyTaskAssigned(assignee, task);
         } catch (Exception e) {
-            log.warn("Failed to send task assignment notification to {}: {}", 
+            log.warn("Failed to send task assignment notification to {}: {}",
                     assignee.getUsername(), e.getMessage());
         }
     }
@@ -1746,8 +1763,8 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
      */
     private void sendCancellationNotifications(WorkflowInstance instance, User currentUser) {
         try {
-            if (instance.getInitiatedBy() != null && 
-                !instance.getInitiatedBy().getId().equals(currentUser.getId())) {
+            if (instance.getInitiatedBy() != null &&
+                    !instance.getInitiatedBy().getId().equals(currentUser.getId())) {
                 notificationService.notifyWorkflowRejected(instance.getInitiatedBy(), instance);
             }
         } catch (Exception e) {
@@ -1755,5 +1772,4 @@ private Map<String, Object> processWorkflowProgression(WorkflowInstance instance
         }
     }
 
-    
 }
