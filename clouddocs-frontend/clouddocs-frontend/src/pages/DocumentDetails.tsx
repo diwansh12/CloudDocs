@@ -8,6 +8,7 @@ import Sidebar from '../components/layout/Sidebar';
 import ShareModal from '../components/ShareModal';
 import EditMetadataModal from '../components/EditMetadataModal';
 import documentService, { Document } from '../services/documentService';
+import TimestampDebug from '../components/TimeStampDebug';
 
 export default function DocumentDetails() {
   const { documentId } = useParams<{ documentId: string }>();
@@ -331,6 +332,10 @@ export default function DocumentDetails() {
             </Button>
           </div>
         </section>
+
+        {documentId && (
+          <TimestampDebug workflowId={documentId} />
+        )}
       </main>
 
       {document && (
