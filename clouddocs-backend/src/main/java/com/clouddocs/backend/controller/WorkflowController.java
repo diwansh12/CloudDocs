@@ -434,4 +434,12 @@ public class WorkflowController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unable to get current user ID");
         }
     }
+
+    // In your WorkflowController
+@PostMapping("/debug/{id}/timestamp")
+public ResponseEntity<?> debugTimestamp(@PathVariable Long id) {
+    workflowService.debugUpdateWorkflowTimestamp(id);
+    return ResponseEntity.ok("Debug timestamp update completed - check logs");
+}
+
 }

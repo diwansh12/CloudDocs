@@ -5,6 +5,8 @@ import com.clouddocs.backend.entity.*;
 import com.clouddocs.backend.mapper.WorkflowMapper;
 import com.clouddocs.backend.repository.*;
 import com.clouddocs.backend.security.AuthzUtil;
+
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,7 +56,7 @@ public class WorkflowService {
 
     @Autowired
     private AuditService auditService;
-
+ @Autowired private EntityManager entityManager;
     // ===== ENUMS =====
     private enum StepOutcome {
         CONTINUE, APPROVED, REJECTED
@@ -142,61 +144,72 @@ public class WorkflowService {
 
     // ===== TASK MANAGEMENT METHODS =====
 
-    /**
-     * ✅ FIXED: Process task action with proper timestamp updates
-     */
-    @Transactional
-    public Map<String, Object> processTaskActionWithUser(Long taskId, String action,
-            String comments, Long userId) {
-        log.info("🔄 Processing task action - TaskID: {}, Action: {}, UserID: {}", taskId, action, userId);
-
-        try {
-            // Validate and load entities
-            TaskAction taskAction = validateTaskAction(action);
-            WorkflowTask task = loadTaskWithWorkflow(taskId);
-            User currentUser = loadAndValidateUser(userId);
-
-            // Perform authorization and state checks
-            validateTaskActionAuthorization(task, currentUser);
-            WorkflowInstance instance = task.getWorkflowInstance();
-            validateWorkflowAndTaskState(instance, task);
-
-            // ✅ CRITICAL FIX: Complete the task with timestamp update
-            completeTaskWithDetails(task, taskAction, comments, currentUser);
-
-            // ✅ CRITICAL FIX: Update workflow timestamp immediately
-            updateWorkflowTimestamp(instance, "Task " + action + " completed by " + currentUser.getUsername());
-
-            // Process workflow progression
-            Map<String, Object> progressionResult = processWorkflowProgression(instance, currentUser);
-
-            // ✅ CRITICAL FIX: Reload and update timestamp after progression
-            WorkflowInstance updatedInstance = instanceRepository.findById(instance.getId())
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow not found"));
-
-            updateWorkflowTimestamp(updatedInstance, "Task action processing completed");
-
-            // Prepare comprehensive response with DTO
-            Map<String, Object> result = buildTaskActionResponse(task, taskAction, updatedInstance, progressionResult);
-
-            // ✅ Add WorkflowInstanceDTO to response
-            result.put("workflowDetails", WorkflowMapper.toInstanceDTO(updatedInstance));
-
-            log.info(
-                    "✅ Task action completed successfully - TaskID: {}, Action: {}, WorkflowStatus: {}, LastUpdated: {}",
-                    taskId, action, updatedInstance.getStatus(), updatedInstance.getUpdatedDate());
-
-            return result;
-
-        } catch (ResponseStatusException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("❌ Error processing task action - TaskID: {}: {}", taskId, e.getMessage(), e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
-                    "Failed to process task action: " + e.getMessage());
-        }
+   /**
+ * ✅ ENHANCED: Process task action with detailed timestamp logging
+ */
+@Transactional
+public Map<String, Object> processTaskActionWithUser(Long taskId, String action, 
+                                                    String comments, Long userId) {
+    log.info("🔄 TIMESTAMP DEBUG: Starting task action - TaskID: {}, Action: {}, UserID: {}, Time: {}", 
+            taskId, action, userId, LocalDateTime.now());
+    
+    try {
+        TaskAction taskAction = validateTaskAction(action);
+        WorkflowTask task = loadTaskWithWorkflow(taskId);
+        User currentUser = loadAndValidateUser(userId);
+        
+        validateTaskActionAuthorization(task, currentUser);
+        WorkflowInstance instance = task.getWorkflowInstance();
+        validateWorkflowAndTaskState(instance, task);
+        
+        LocalDateTime beforeTaskComplete = instance.getUpdatedDate();
+        log.info("🔍 TIMESTAMP DEBUG: Before task completion - Workflow {} UpdatedDate: {}", 
+                instance.getId(), beforeTaskComplete);
+        
+        // Complete the task
+        completeTaskWithDetails(task, taskAction, comments, currentUser);
+        
+        // Force refresh from database
+        entityManager.flush();
+        entityManager.clear();
+        WorkflowInstance refreshedInstance = instanceRepository.findById(instance.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow not found"));
+        
+        LocalDateTime afterTaskComplete = refreshedInstance.getUpdatedDate();
+        log.info("🔍 TIMESTAMP DEBUG: After task completion - Workflow {} UpdatedDate: {}", 
+                refreshedInstance.getId(), afterTaskComplete);
+        
+        // Process workflow progression
+        Map<String, Object> progressionResult = processWorkflowProgression(refreshedInstance, currentUser);
+        
+        // Final timestamp check
+        entityManager.flush();
+        entityManager.clear();
+        WorkflowInstance finalInstance = instanceRepository.findById(instance.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow not found"));
+        
+        LocalDateTime finalTimestamp = finalInstance.getUpdatedDate();
+        log.info("🔍 TIMESTAMP DEBUG: Final timestamp - Workflow {} UpdatedDate: {}", 
+                finalInstance.getId(), finalTimestamp);
+        
+        Map<String, Object> result = buildTaskActionResponse(task, taskAction, finalInstance, progressionResult);
+        result.put("workflowDetails", WorkflowMapper.toInstanceDTO(finalInstance));
+        
+        // Add timestamp debug info to response
+        result.put("timestampDebug", Map.of(
+            "beforeTask", beforeTaskComplete != null ? beforeTaskComplete.toString() : "null",
+            "afterTask", afterTaskComplete != null ? afterTaskComplete.toString() : "null", 
+            "final", finalTimestamp != null ? finalTimestamp.toString() : "null",
+            "serverTime", LocalDateTime.now().toString()
+        ));
+        
+        return result;
+        
+    } catch (Exception e) {
+        log.error("❌ TIMESTAMP DEBUG: Error during task action: {}", e.getMessage(), e);
+        throw e;
     }
-
+}
     /**
      * ✅ LEGACY COMPATIBILITY: String-based task action processing
      */
@@ -1771,5 +1784,51 @@ public class WorkflowService {
             log.warn("Failed to send cancellation notification: {}", e.getMessage());
         }
     }
+
+    /**
+ * ✅ DEBUG: Force database timestamp update and verify
+ */
+@Transactional
+public void debugUpdateWorkflowTimestamp(Long workflowId) {
+    try {
+        log.info("🔍 DEBUG: Starting timestamp update for workflow {}", workflowId);
+        
+        // Get workflow from database
+        WorkflowInstance workflow = instanceRepository.findById(workflowId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow not found"));
+        
+        LocalDateTime before = workflow.getUpdatedDate();
+        LocalDateTime now = LocalDateTime.now();
+        
+        log.info("🔍 DEBUG: Before update - UpdatedDate: {}", before);
+        log.info("🔍 DEBUG: Setting new timestamp: {}", now);
+        
+        // Force update
+        workflow.setUpdatedDate(now);
+        WorkflowInstance saved = instanceRepository.saveAndFlush(workflow);
+        
+        // Clear entity manager cache
+        entityManager.clear();
+        
+        // Re-fetch from database to verify
+        WorkflowInstance refetched = instanceRepository.findById(workflowId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workflow not found"));
+        
+        log.info("🔍 DEBUG: After save - UpdatedDate: {}", saved.getUpdatedDate());
+        log.info("🔍 DEBUG: After refetch - UpdatedDate: {}", refetched.getUpdatedDate());
+        
+        // Direct database query to double-check
+        String sql = "SELECT updated_date FROM workflow_instance WHERE id = ?";
+        Object result = entityManager.createNativeQuery(sql)
+                .setParameter(1, workflowId)
+                .getSingleResult();
+        
+        log.info("🔍 DEBUG: Direct DB query result: {}", result);
+        
+    } catch (Exception e) {
+        log.error("❌ DEBUG: Error during timestamp update: {}", e.getMessage(), e);
+    }
+}
+
 
 }
