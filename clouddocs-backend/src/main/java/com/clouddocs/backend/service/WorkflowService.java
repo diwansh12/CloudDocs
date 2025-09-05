@@ -590,86 +590,85 @@ public Map<String, Object> getWorkflowAnalyticsDebug() {
         sendTaskCompletionNotification(currentUser, task, action);
     }
 
-    /**
-     * ✅ FIXED: Handle workflow rejection with proper timestamps
-     */
-    private void handleWorkflowRejection(WorkflowInstance instance, WorkflowStep step, User currentUser) {
-        // Cancel remaining tasks
-        cancelRemainingStepTasks(instance, step, "Step rejected", currentUser);
-        
-        // Update workflow status
-        instance.setStatus(WorkflowStatus.REJECTED);
+  /**
+ * ✅ FIXED: Handle workflow rejection with proper timestamps
+ */
+private void handleWorkflowRejection(WorkflowInstance instance, WorkflowStep step, User currentUser) {
+    // Cancel remaining tasks
+    cancelRemainingStepTasks(instance, step, "Step rejected", currentUser);
+
+    // Update workflow status
+    instance.setStatus(WorkflowStatus.REJECTED);
+    instance.setEndDate(LocalDateTime.now());
+
+    // ✅ CRITICAL FIX: Force updateDate refresh
+    instance.setUpdatedDate(LocalDateTime.now());
+    instanceRepository.save(instance);
+
+    // ✅ CRITICAL FIX: Update timestamp on rejection (history/audit helper)
+    updateWorkflowTimestamp(instance, "Workflow rejected at step " + step.getStepOrder());
+
+    // Update document status
+    updateDocumentOnRejection(instance);
+
+    // Log and audit
+    logWorkflowHistory(instance, "WORKFLOW_REJECTED", "Workflow rejected", currentUser);
+    auditWorkflowAction(instance, "Workflow Rejected", currentUser, "Step " + step.getStepOrder() + " rejected");
+
+    // Send notification
+    sendWorkflowRejectionNotification(instance);
+}
+
+  private boolean handleStepApproval(WorkflowInstance instance, WorkflowStep step, User currentUser) {
+    // Cancel remaining tasks in current step
+    cancelRemainingStepTasks(instance, step, "Step approved - quorum reached", currentUser);
+
+    int totalSteps = getTotalStepsInTemplate(instance.getTemplate());
+
+    if (instance.getCurrentStepOrder() >= totalSteps) {
+        // Workflow completed
+        instance.setStatus(WorkflowStatus.APPROVED);
         instance.setEndDate(LocalDateTime.now());
-        
-        // ✅ CRITICAL FIX: Update timestamp on rejection
-        updateWorkflowTimestamp(instance, "Workflow rejected at step " + step.getStepOrder());
 
-        // Update document status
-        updateDocumentOnRejection(instance);
-        
-        // Log and audit
-        logWorkflowHistory(instance, "WORKFLOW_REJECTED", "Workflow rejected", currentUser);
-        auditWorkflowAction(instance, "Workflow Rejected", currentUser, "Step " + step.getStepOrder() + " rejected");
+        // Update timestamps
+        updateWorkflowTimestamp(instance, "Workflow approved - all steps completed");
 
-        // Send notification
-        sendWorkflowRejectionNotification(instance);
-    }
+        // ✅ CRITICAL FIX: update Last Updated
+        instance.setUpdatedDate(LocalDateTime.now());
+        instanceRepository.save(instance);
 
-    /**
-     * ✅ FIXED: Handle step approval with proper timestamps
-     */
-    private boolean handleStepApproval(WorkflowInstance instance, WorkflowStep step, User currentUser) {
-        // Cancel remaining tasks in current step
-        cancelRemainingStepTasks(instance, step, "Step approved - quorum reached", currentUser);
-        
-        // Check if this is the last step
-        int totalSteps = getTotalStepsInTemplate(instance.getTemplate());
-        
-        if (instance.getCurrentStepOrder() >= totalSteps) {
-            // Workflow completed
-            instance.setStatus(WorkflowStatus.APPROVED);
-            instance.setEndDate(LocalDateTime.now());
-            
-            // ✅ CRITICAL FIX: Update timestamp on approval
-            updateWorkflowTimestamp(instance, "Workflow approved - all steps completed");
+        // Update document + logs
+        updateDocumentOnApproval(instance);
+        logWorkflowHistory(instance, "WORKFLOW_APPROVED", "Workflow approved", currentUser);
+        auditWorkflowAction(instance, "Workflow Approved", currentUser, "All steps completed");
+        sendWorkflowApprovalNotification(instance);
 
-            // Update document status
-            updateDocumentOnApproval(instance);
-            
-            // Log and audit
-            logWorkflowHistory(instance, "WORKFLOW_APPROVED", "Workflow approved", currentUser);
-            auditWorkflowAction(instance, "Workflow Approved", currentUser, "All steps completed");
+        return true; // Completed
+    } else {
+        // Move to next step
+        int nextStep = instance.getCurrentStepOrder() + 1;
+        instance.setCurrentStepOrder(nextStep);
 
-            // Send notification
-            sendWorkflowApprovalNotification(instance);
-            instanceRepository.save(instance);
+        updateWorkflowTimestamp(instance, "Advanced to step " + nextStep);
 
-            return true; // Workflow completed
-        } else {
-            // Move to next step
-            int nextStep = instance.getCurrentStepOrder() + 1;
-            instance.setCurrentStepOrder(nextStep);
-            
-            // ✅ CRITICAL FIX: Update timestamp when moving to next step
-            updateWorkflowTimestamp(instance, "Advanced to step " + nextStep);
+        WorkflowTemplate template = loadTemplateWithStepsAndRoles(instance.getTemplate().getId());
+        boolean tasksCreated = generateTasksForStep(instance, template, nextStep);
 
-            // Generate tasks for next step
-            WorkflowTemplate template = loadTemplateWithStepsAndRoles(instance.getTemplate().getId());
-            boolean tasksCreated = generateTasksForStep(instance, template, nextStep);
-            
-            if (!tasksCreated) {
-                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                        "No approvers found for step " + nextStep);
-            }
-            
-            // ✅ Final timestamp update after task generation
-            updateWorkflowTimestamp(instance, "Tasks generated for step " + nextStep);
-            
-            logWorkflowHistory(instance, "STEP_STARTED", "Step " + nextStep + " started", currentUser);
-            
-            return false; // Workflow continues
+        if (!tasksCreated) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "No approvers found for step " + nextStep);
         }
+
+        updateWorkflowTimestamp(instance, "Tasks generated for step " + nextStep);
+        logWorkflowHistory(instance, "STEP_STARTED", "Step " + nextStep + " started", currentUser);
+
+        // ✅ CRITICAL FIX: also bump Last Updated when progressing
+        instance.setUpdatedDate(LocalDateTime.now());
+        instanceRepository.save(instance);
+
+        return false; // Workflow continues
     }
+}
 
     // ===== PRIVATE HELPER METHODS =====
 

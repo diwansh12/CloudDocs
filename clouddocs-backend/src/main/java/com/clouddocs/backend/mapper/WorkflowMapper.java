@@ -44,12 +44,20 @@ public class WorkflowMapper {
             dto.setTitle(instance.getTitle() != null ? instance.getTitle() : "Workflow");
             dto.setDescription(instance.getDescription());
             
-            // ✅ Date fields with proper handling
-            dto.setStartDate(instance.getStartDate());
-            dto.setEndDate(instance.getEndDate());
-            dto.setDueDate(instance.getDueDate());
-            dto.setCreatedDate(instance.getCreatedDate());
-            dto.setUpdatedDate(instance.getUpdatedDate());
+           // ✅ Date fields with proper handling
+dto.setStartDate(instance.getStartDate());
+dto.setEndDate(instance.getEndDate());
+dto.setDueDate(instance.getDueDate());
+dto.setCreatedDate(instance.getCreatedDate());
+
+// ✅ Fix for "Last Updated stuck"
+// If updatedDate is null, fall back to createdDate
+if (instance.getUpdatedDate() != null) {
+    dto.setUpdatedDate(instance.getUpdatedDate());
+} else {
+    dto.setUpdatedDate(instance.getCreatedDate());
+}
+
             
             // ✅ Enhanced: Template information
             mapTemplateInfo(instance, dto);
