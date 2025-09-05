@@ -642,7 +642,8 @@ public Map<String, Object> getWorkflowAnalyticsDebug() {
 
             // Send notification
             sendWorkflowApprovalNotification(instance);
-            
+            instanceRepository.save(instance);
+
             return true; // Workflow completed
         } else {
             // Move to next step
@@ -973,46 +974,86 @@ public Map<String, Object> getWorkflowAnalyticsDebug() {
     /**
      * ✅ Process workflow progression
      */
-    private Map<String, Object> processWorkflowProgression(WorkflowInstance instance, User currentUser) {
-        Map<String, Object> result = new HashMap<>();
-        
-        try {
-            // Evaluate current step outcome
-            WorkflowStep currentStep = getCurrentStepSafe(instance);
-            if (currentStep == null) {
-                result.put("completed", false);
-                result.put("nextStep", null);
-                return result;
-            }
+   /**
+ * ✅ Enhanced: Process workflow progression with detailed tracking
+ */
+private Map<String, Object> processWorkflowProgression(WorkflowInstance instance, User currentUser) {
+    Map<String, Object> result = new HashMap<>();
 
-            StepOutcome outcome = evaluateStepOutcome(instance, currentStep);
-            log.debug("Step outcome for step {}: {}", currentStep.getStepOrder(), outcome);
-            
-            switch (outcome) {
-                case REJECTED:
-                    handleWorkflowRejection(instance, currentStep, currentUser);
-                    result.put("completed", true);
-                    result.put("nextStep", null);
-                    break;
-                case APPROVED:
-                    boolean workflowCompleted = handleStepApproval(instance, currentStep, currentUser);
-                    result.put("completed", workflowCompleted);
-                    result.put("nextStep", workflowCompleted ? null : instance.getCurrentStepOrder());
-                    break;
-                case CONTINUE:
-                    result.put("completed", false);
-                    result.put("nextStep", currentStep.getStepOrder());
-                    break;
-            }
-            
-        } catch (Exception e) {
-            log.error("Error processing workflow progression: {}", e.getMessage(), e);
+    try {
+        if (instance == null) {
             result.put("completed", false);
             result.put("nextStep", null);
+            result.put("message", "⚠️ No workflow instance provided");
+            return result;
         }
-        
-        return result;
+
+        WorkflowStep currentStep = getCurrentStepSafe(instance);
+        if (currentStep == null) {
+            log.warn("⚠️ No current step found for workflow {}", instance.getId());
+            result.put("completed", false);
+            result.put("nextStep", null);
+            result.put("message", "No current step found - workflow may be misconfigured");
+            result.put("workflowId", instance.getId());
+            result.put("status", instance.getStatus().toString());
+            return result;
+        }
+
+        StepOutcome outcome = evaluateStepOutcome(instance, currentStep);
+        log.info("🔄 Workflow {} - Step {} outcome: {}", instance.getId(), currentStep.getStepOrder(), outcome);
+
+        switch (outcome) {
+            case REJECTED:
+                handleWorkflowRejection(instance, currentStep, currentUser);
+                result.put("completed", true);
+                result.put("nextStep", null);
+                result.put("status", instance.getStatus().toString());
+                result.put("message", "Workflow rejected at step: " + currentStep.getName());
+                break;
+
+            case APPROVED:
+                boolean workflowCompleted = handleStepApproval(instance, currentStep, currentUser);
+                result.put("completed", workflowCompleted);
+                result.put("nextStep", workflowCompleted ? null : instance.getCurrentStepOrder());
+                result.put("status", instance.getStatus().toString());
+                result.put("message", workflowCompleted 
+                    ? "Workflow approved and completed 🎉" 
+                    : "Step approved, moving to step " + instance.getCurrentStepOrder());
+                break;
+
+            case CONTINUE:
+                result.put("completed", false);
+                result.put("nextStep", currentStep.getStepOrder());
+                result.put("status", instance.getStatus().toString());
+                result.put("message", "Step still in progress: awaiting approvals/rejections");
+                break;
+
+            default:
+                result.put("completed", false);
+                result.put("nextStep", currentStep.getStepOrder());
+                result.put("status", instance.getStatus().toString());
+                result.put("message", "Unhandled outcome state: " + outcome);
+                break;
+        }
+
+        // Add common context
+        result.put("workflowId", instance.getId());
+        result.put("currentStep", currentStep.getStepOrder());
+        result.put("currentStepName", currentStep.getName());
+
+    } catch (Exception e) {
+        log.error("❌ Error processing workflow progression for workflow {}: {}", 
+                  instance != null ? instance.getId() : "unknown", e.getMessage(), e);
+
+        result.put("completed", false);
+        result.put("nextStep", null);
+        result.put("status", instance != null ? instance.getStatus().toString() : "UNKNOWN");
+        result.put("message", "Error occurred: " + e.getMessage());
     }
+
+    return result;
+}
+
 
     /**
      * ✅ Get current step safely
