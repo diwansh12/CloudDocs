@@ -29,7 +29,8 @@ public class WorkflowStep {
     /**
      * Role-based approvers for this step
      */
-    @OneToMany(mappedBy = "step", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+   @OneToMany(mappedBy = "step", cascade = {CascadeType.PERSIST, CascadeType.MERGE}, orphanRemoval = false, fetch = FetchType.LAZY)
+
     private List<WorkflowStepRole> roles = new ArrayList<>();
 
     /**

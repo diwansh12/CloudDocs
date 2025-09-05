@@ -42,7 +42,8 @@ public class WorkflowTemplate {
     private LocalDateTime updatedAt;
     
     // ✅ CRITICAL: Add @JsonIgnore to prevent serialization issues
-    @OneToMany(mappedBy = "template", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+   @OneToMany(mappedBy = "template", cascade = {CascadeType.PERSIST, CascadeType.MERGE}, fetch = FetchType.LAZY)
+
     @OrderBy("stepOrder ASC")
     @JsonIgnore  // ✅ Prevents Jackson from trying to serialize lazy collection
     private List<WorkflowStep> steps;
