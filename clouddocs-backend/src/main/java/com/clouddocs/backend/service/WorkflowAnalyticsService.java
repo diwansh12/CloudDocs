@@ -17,6 +17,7 @@ import jakarta.persistence.EntityManager;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime; // ✅ ADDED
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -45,9 +46,9 @@ public class WorkflowAnalyticsService {
         // ✅ ENHANCED DEBUG: Log all workflows with their dates and statuses
         allWorkflows.forEach(w -> 
             System.out.println("Workflow " + w.getId() + ": status=" + w.getStatus() + 
-                ", created=" + w.getCreatedDate() + 
-                ", started=" + w.getStartDate() + 
-                ", ended=" + w.getEndDate())
+                ", created=" + (w.getCreatedDate() != null ? w.getCreatedDate().toLocalDateTime() : "null") + // ✅ FIXED
+                ", started=" + (w.getStartDate() != null ? w.getStartDate().toLocalDateTime() : "null") + // ✅ FIXED
+                ", ended=" + (w.getEndDate() != null ? w.getEndDate().toLocalDateTime() : "null")) // ✅ FIXED
         );
 
         // ✅ COMPLETELY REWRITTEN: Comprehensive date filtering logic
@@ -59,18 +60,18 @@ public class WorkflowAnalyticsService {
                     if (i.getStatus() == WorkflowStatus.APPROVED || i.getStatus() == WorkflowStatus.REJECTED) {
                         // For completed workflows, prefer end_date, then start_date, then created_date
                         if (i.getEndDate() != null) {
-                            dateToCheck = i.getEndDate();
+                            dateToCheck = i.getEndDate().toLocalDateTime(); // ✅ FIXED
                         } else if (i.getStartDate() != null) {
-                            dateToCheck = i.getStartDate();
-                        } else {
-                            dateToCheck = i.getCreatedDate();
+                            dateToCheck = i.getStartDate().toLocalDateTime(); // ✅ FIXED
+                        } else if (i.getCreatedDate() != null) {
+                            dateToCheck = i.getCreatedDate().toLocalDateTime(); // ✅ FIXED
                         }
                     } else {
                         // For pending/in-progress workflows, use start_date or created_date
                         if (i.getStartDate() != null) {
-                            dateToCheck = i.getStartDate();
-                        } else {
-                            dateToCheck = i.getCreatedDate();
+                            dateToCheck = i.getStartDate().toLocalDateTime(); // ✅ FIXED
+                        } else if (i.getCreatedDate() != null) {
+                            dateToCheck = i.getCreatedDate().toLocalDateTime(); // ✅ FIXED
                         }
                     }
                     
@@ -95,7 +96,8 @@ public class WorkflowAnalyticsService {
                 boolean isApproved = i.getStatus() == WorkflowStatus.APPROVED;
                 if (isApproved) {
                     System.out.println("✅ APPROVED workflow found: ID=" + i.getId() + 
-                        ", endDate=" + i.getEndDate() + ", startDate=" + i.getStartDate());
+                        ", endDate=" + (i.getEndDate() != null ? i.getEndDate().toLocalDateTime() : "null") + 
+                        ", startDate=" + (i.getStartDate() != null ? i.getStartDate().toLocalDateTime() : "null"));
                 }
                 return isApproved;
             })
@@ -236,10 +238,19 @@ public class WorkflowAnalyticsService {
                     
                     // Use same date logic as overview
                     if (i.getStatus() == WorkflowStatus.APPROVED || i.getStatus() == WorkflowStatus.REJECTED) {
-                        dateToCheck = i.getEndDate() != null ? i.getEndDate() : 
-                                     (i.getStartDate() != null ? i.getStartDate() : i.getCreatedDate());
+                        if (i.getEndDate() != null) {
+                            dateToCheck = i.getEndDate().toLocalDateTime(); // ✅ FIXED
+                        } else if (i.getStartDate() != null) {
+                            dateToCheck = i.getStartDate().toLocalDateTime(); // ✅ FIXED
+                        } else if (i.getCreatedDate() != null) {
+                            dateToCheck = i.getCreatedDate().toLocalDateTime(); // ✅ FIXED
+                        }
                     } else {
-                        dateToCheck = i.getStartDate() != null ? i.getStartDate() : i.getCreatedDate();
+                        if (i.getStartDate() != null) {
+                            dateToCheck = i.getStartDate().toLocalDateTime(); // ✅ FIXED
+                        } else if (i.getCreatedDate() != null) {
+                            dateToCheck = i.getCreatedDate().toLocalDateTime(); // ✅ FIXED
+                        }
                     }
                     
                     return dateToCheck != null && !dateToCheck.isBefore(from) && !dateToCheck.isAfter(to);
@@ -342,10 +353,19 @@ public class WorkflowAnalyticsService {
                     // Use same date filtering logic as overview
                     LocalDateTime dateToCheck = null;
                     if (i.getStatus() == WorkflowStatus.APPROVED || i.getStatus() == WorkflowStatus.REJECTED) {
-                        dateToCheck = i.getEndDate() != null ? i.getEndDate() : 
-                                     (i.getStartDate() != null ? i.getStartDate() : i.getCreatedDate());
+                        if (i.getEndDate() != null) {
+                            dateToCheck = i.getEndDate().toLocalDateTime(); // ✅ FIXED
+                        } else if (i.getStartDate() != null) {
+                            dateToCheck = i.getStartDate().toLocalDateTime(); // ✅ FIXED
+                        } else if (i.getCreatedDate() != null) {
+                            dateToCheck = i.getCreatedDate().toLocalDateTime(); // ✅ FIXED
+                        }
                     } else {
-                        dateToCheck = i.getStartDate() != null ? i.getStartDate() : i.getCreatedDate();
+                        if (i.getStartDate() != null) {
+                            dateToCheck = i.getStartDate().toLocalDateTime(); // ✅ FIXED
+                        } else if (i.getCreatedDate() != null) {
+                            dateToCheck = i.getCreatedDate().toLocalDateTime(); // ✅ FIXED
+                        }
                     }
                     
                     return dateToCheck != null && !dateToCheck.isBefore(from) && !dateToCheck.isAfter(to);
@@ -490,19 +510,28 @@ public class WorkflowAnalyticsService {
 
     // ===== Helper Methods =====
 
+    /**
+     * ✅ FIXED: Calculate average duration hours for workflow instances
+     */
     private Double avgDurationHours(List<WorkflowInstance> completed) {
         if (completed == null || completed.isEmpty()) return null;
         double sum = 0;
         int count = 0;
         for (WorkflowInstance i : completed) {
             if (i.getStartDate() != null && i.getEndDate() != null) {
-                sum += Duration.between(i.getStartDate(), i.getEndDate()).toMinutes() / 60.0;
+                // ✅ FIXED: Convert OffsetDateTime to LocalDateTime for Duration calculation
+                LocalDateTime startLocal = i.getStartDate().toLocalDateTime();
+                LocalDateTime endLocal = i.getEndDate().toLocalDateTime();
+                sum += Duration.between(startLocal, endLocal).toMinutes() / 60.0;
                 count++;
             }
         }
         return count == 0 ? null : round2(sum / count);
     }
 
+    /**
+     * ✅ Tasks already use LocalDateTime, so no conversion needed here
+     */
     private Double avgTaskDurationHours(List<WorkflowTask> tasks) {
         if (tasks == null || tasks.isEmpty()) return null;
         double sum = 0;

@@ -3,13 +3,13 @@ package com.clouddocs.backend.entity;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 
 @Entity
 @Table(name = "workflow_instances")
-// ✅ REMOVE: @EntityListeners(WorkflowInstanceListener.class) - temporarily to test
 public class WorkflowInstance {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -33,14 +33,15 @@ public class WorkflowInstance {
     @JoinColumn(name = "initiated_by")
     private User initiatedBy;
     
+    // ✅ MIGRATED: Changed from LocalDateTime to OffsetDateTime
     @Column(name = "start_date")
-    private LocalDateTime startDate;
+    private OffsetDateTime startDate;
     
     @Column(name = "end_date")
-    private LocalDateTime endDate;
+    private OffsetDateTime endDate;
     
     @Column(name = "due_date")
-    private LocalDateTime dueDate;
+    private OffsetDateTime dueDate;
 
     @Column(name = "title")
     private String title;
@@ -48,14 +49,13 @@ public class WorkflowInstance {
     @Column(name = "description", length = 1000)
     private String description;
 
-    // ✅ FIXED: Use only @CreationTimestamp for created_date
+    // ✅ MIGRATED: Use OffsetDateTime with proper timezone handling
     @CreationTimestamp
     @Column(name = "created_date", updatable = false)
-    private LocalDateTime createdDate;
+    private OffsetDateTime createdDate;
 
-    // ✅ CRITICAL FIX: Remove @UpdateTimestamp - use manual updates only
     @Column(name = "updated_date")
-    private LocalDateTime updatedDate;
+    private OffsetDateTime updatedDate;
 
     @OneToMany(mappedBy = "workflowInstance", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<WorkflowTask> tasks = new ArrayList<>();
@@ -73,12 +73,12 @@ public class WorkflowInstance {
     
     private String comments;
     
-    // ✅ FIXED: Constructor with proper timestamp initialization
+    // ✅ UPDATED: Constructor with OffsetDateTime
     public WorkflowInstance() {
-        LocalDateTime now = LocalDateTime.now();
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         this.startDate = now;
         this.createdDate = now;
-        this.updatedDate = now; // ✅ Initialize updatedDate
+        this.updatedDate = now;
         this.status = WorkflowStatus.IN_PROGRESS;
     }
     
@@ -89,20 +89,18 @@ public class WorkflowInstance {
         this.initiatedBy = initiatedBy;
         this.currentStepOrder = 1;
         if (slaHours != null) {
-            this.dueDate = LocalDateTime.now().plusHours(slaHours);
+            this.dueDate = OffsetDateTime.now(ZoneOffset.UTC).plusHours(slaHours);
         }
     }
     
-    // ✅ ADD: Method to update timestamp manually
+    // ✅ UPDATED: Timestamp methods with OffsetDateTime
     public void updateTimestamp() {
-        this.updatedDate = LocalDateTime.now();
+        this.updatedDate = OffsetDateTime.now(ZoneOffset.UTC);
     }
     
-    // ✅ ADD: Method to update timestamp with logging
     public void updateTimestampWithReason(String reason) {
-        LocalDateTime oldTime = this.updatedDate;
-        this.updatedDate = LocalDateTime.now();
-        // You can add logging here if needed
+        OffsetDateTime oldTime = this.updatedDate;
+        this.updatedDate = OffsetDateTime.now(ZoneOffset.UTC);
         System.out.println("Timestamp updated for workflow " + this.id + 
                           " - Reason: " + reason + 
                           " - Old: " + oldTime + 
@@ -111,7 +109,7 @@ public class WorkflowInstance {
     
     // Helper methods
     public boolean isOverdue() {
-        return dueDate != null && LocalDateTime.now().isAfter(dueDate) && 
+        return dueDate != null && OffsetDateTime.now(ZoneOffset.UTC).isAfter(dueDate) && 
                status == WorkflowStatus.IN_PROGRESS;
     }
     
@@ -126,26 +124,32 @@ public class WorkflowInstance {
                    .orElse(null);
     }
 
-    public LocalDateTime getLastActivityDate() {
+    public OffsetDateTime getLastActivityDate() {
         if (updatedDate != null) return updatedDate;
         if (createdDate != null) return createdDate;
         return startDate;
     }
     
-    public void setPriorityFromString(String priorityStr) {
-        if (priorityStr == null || priorityStr.trim().isEmpty()) {
-            this.priority = WorkflowPriority.NORMAL;
-            return;
-        }
-        
-        try {
-            this.priority = WorkflowPriority.valueOf(priorityStr.toUpperCase());
-        } catch (IllegalArgumentException e) {
-            this.priority = WorkflowPriority.NORMAL;
-        }
+    // ✅ UPDATED: All getters and setters for OffsetDateTime
+    public OffsetDateTime getStartDate() { return startDate; }
+    public void setStartDate(OffsetDateTime startDate) { this.startDate = startDate; }
+    
+    public OffsetDateTime getEndDate() { return endDate; }
+    public void setEndDate(OffsetDateTime endDate) { 
+        this.endDate = endDate;
+        updateTimestamp();
     }
     
-    // ✅ ALL GETTERS AND SETTERS
+    public OffsetDateTime getDueDate() { return dueDate; }
+    public void setDueDate(OffsetDateTime dueDate) { this.dueDate = dueDate; }
+    
+    public OffsetDateTime getCreatedDate() { return createdDate; }
+    public void setCreatedDate(OffsetDateTime createdDate) { this.createdDate = createdDate; }
+    
+    public OffsetDateTime getUpdatedDate() { return updatedDate; }
+    public void setUpdatedDate(OffsetDateTime updatedDate) { this.updatedDate = updatedDate; }
+    
+    // ... rest of your getters and setters remain the same
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     
@@ -158,41 +162,23 @@ public class WorkflowInstance {
     public WorkflowStatus getStatus() { return status; }
     public void setStatus(WorkflowStatus status) { 
         this.status = status;
-        updateTimestamp(); // ✅ Auto-update timestamp on status change
+        updateTimestamp();
     }
     
     public Integer getCurrentStepOrder() { return currentStepOrder; }
     public void setCurrentStepOrder(Integer currentStepOrder) { 
         this.currentStepOrder = currentStepOrder;
-        updateTimestamp(); // ✅ Auto-update timestamp on step change
+        updateTimestamp();
     }
     
     public User getInitiatedBy() { return initiatedBy; }
     public void setInitiatedBy(User initiatedBy) { this.initiatedBy = initiatedBy; }
-    
-    public LocalDateTime getStartDate() { return startDate; }
-    public void setStartDate(LocalDateTime startDate) { this.startDate = startDate; }
-    
-    public LocalDateTime getEndDate() { return endDate; }
-    public void setEndDate(LocalDateTime endDate) { 
-        this.endDate = endDate;
-        updateTimestamp(); // ✅ Auto-update timestamp when workflow ends
-    }
-    
-    public LocalDateTime getDueDate() { return dueDate; }
-    public void setDueDate(LocalDateTime dueDate) { this.dueDate = dueDate; }
     
     public String getTitle() { return title; }
     public void setTitle(String title) { this.title = title; }
     
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
-    
-    public LocalDateTime getCreatedDate() { return createdDate; }
-    public void setCreatedDate(LocalDateTime createdDate) { this.createdDate = createdDate; }
-    
-    public LocalDateTime getUpdatedDate() { return updatedDate; }
-    public void setUpdatedDate(LocalDateTime updatedDate) { this.updatedDate = updatedDate; }
     
     public List<WorkflowTask> getTasks() { return tasks; }
     public void setTasks(List<WorkflowTask> tasks) { this.tasks = tasks; }

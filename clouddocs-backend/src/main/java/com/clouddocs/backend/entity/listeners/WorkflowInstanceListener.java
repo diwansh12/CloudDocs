@@ -5,7 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import jakarta.persistence.*;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime; // ✅ UPDATED: Changed from LocalDateTime
+import java.time.ZoneOffset;     // ✅ ADDED: For UTC zone offset
 
 @Slf4j
 @Component
@@ -13,20 +14,21 @@ public class WorkflowInstanceListener {
     
     @PrePersist
     public void prePersist(WorkflowInstance workflow) {
-        LocalDateTime now = LocalDateTime.now();
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC); // ✅ FIXED: Use OffsetDateTime with UTC
         if (workflow.getCreatedDate() == null) {
-            workflow.setCreatedDate(now);
+            workflow.setCreatedDate(now); // ✅ FIXED: Now compatible with OffsetDateTime field
         }
         if (workflow.getUpdatedDate() == null) {
-            workflow.setUpdatedDate(now);
+            workflow.setUpdatedDate(now); // ✅ FIXED: Now compatible with OffsetDateTime field
         }
-        log.debug("🔧 PrePersist: Setting timestamps for workflow {}", workflow.getId());
+        log.debug("🔧 PrePersist: Setting timestamps for workflow {} at {}", workflow.getId(), now);
     }
     
     @PreUpdate
     public void preUpdate(WorkflowInstance workflow) {
-        workflow.setUpdatedDate(LocalDateTime.now());
-        log.info("🔧 PreUpdate: Auto-updating timestamp for workflow: {}", workflow.getId());
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC); // ✅ FIXED: Use OffsetDateTime with UTC
+        workflow.setUpdatedDate(now); // ✅ FIXED: Now compatible with OffsetDateTime field
+        log.info("🔧 PreUpdate: Auto-updating timestamp for workflow {} to {}", workflow.getId(), now);
     }
     
     @PostPersist

@@ -15,12 +15,13 @@ public class JacksonConfig {
     public ObjectMapper objectMapper() {
         ObjectMapper mapper = new ObjectMapper();
         
-        // Register Java 8 time module
+        // Register Java Time module for OffsetDateTime support
         mapper.registerModule(new JavaTimeModule());
         
-        // Disable timestamp serialization
+        // Disable timestamp serialization - use ISO 8601 strings instead
         mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         
         return mapper;
     }
 }
+
