@@ -44,20 +44,19 @@ public class WorkflowMapper {
             dto.setTitle(instance.getTitle() != null ? instance.getTitle() : "Workflow");
             dto.setDescription(instance.getDescription());
             
-           // ✅ Date fields with proper handling
-dto.setStartDate(instance.getStartDate());
-dto.setEndDate(instance.getEndDate());
-dto.setDueDate(instance.getDueDate());
-dto.setCreatedDate(instance.getCreatedDate());
+            // ✅ FIXED: Date fields - no conversion needed since both use OffsetDateTime
+            dto.setStartDate(instance.getStartDate());
+            dto.setEndDate(instance.getEndDate());
+            dto.setDueDate(instance.getDueDate());
+            dto.setCreatedDate(instance.getCreatedDate());
 
-// ✅ Fix for "Last Updated stuck"
-// If updatedDate is null, fall back to createdDate
-if (instance.getUpdatedDate() != null) {
-    dto.setUpdatedDate(instance.getUpdatedDate());
-} else {
-    dto.setUpdatedDate(instance.getCreatedDate());
-}
-
+            // ✅ Fix for "Last Updated stuck"
+            // If updatedDate is null, fall back to createdDate
+            if (instance.getUpdatedDate() != null) {
+                dto.setUpdatedDate(instance.getUpdatedDate());
+            } else {
+                dto.setUpdatedDate(instance.getCreatedDate());
+            }
             
             // ✅ Enhanced: Template information
             mapTemplateInfo(instance, dto);
@@ -177,7 +176,7 @@ if (instance.getUpdatedDate() != null) {
     }
 
     /**
-     * ✅ ENHANCED: Map workflow tasks to DTOs with comprehensive error handling
+     * ✅ FIXED: Map workflow tasks to DTOs - assuming WorkflowTaskDTO also uses OffsetDateTime
      */
     private static List<WorkflowTaskDTO> mapTasks(List<WorkflowTask> tasks) {
         List<WorkflowTaskDTO> taskDTOs = new ArrayList<>();
@@ -198,10 +197,11 @@ if (instance.getUpdatedDate() != null) {
                 taskDTO.setAction(task.getAction());
                 taskDTO.setPriority(task.getPriority());
                 
-                // Date information
-                taskDTO.setCreatedDate(task.getCreatedDate());
-                taskDTO.setDueDate(task.getDueDate());
-                taskDTO.setCompletedDate(task.getCompletedDate());
+                // ✅ FIXED: Date information - no conversion needed if WorkflowTaskDTO uses OffsetDateTime
+                // If WorkflowTaskDTO still uses LocalDateTime, uncomment the .toLocalDateTime() calls:
+                taskDTO.setCreatedDate(task.getCreatedDate()); // Change to .toLocalDateTime() if DTO uses LocalDateTime
+                taskDTO.setDueDate(task.getDueDate()); // Change to .toLocalDateTime() if DTO uses LocalDateTime
+                taskDTO.setCompletedDate(task.getCompletedDate()); // Change to .toLocalDateTime() if DTO uses LocalDateTime
 
                 // ✅ Enhanced: Assignee details with fallback
                 if (task.getAssignedTo() != null) {
@@ -244,7 +244,7 @@ if (instance.getUpdatedDate() != null) {
     }
 
     /**
-     * ✅ ENHANCED: Map workflow history to DTOs with error handling
+     * ✅ FIXED: Map workflow history to DTOs - assuming WorkflowHistoryDTO also uses OffsetDateTime
      */
     private static List<WorkflowHistoryDTO> mapHistory(List<WorkflowHistory> historyList) {
         List<WorkflowHistoryDTO> historyDTOs = new ArrayList<>();
@@ -257,7 +257,11 @@ if (instance.getUpdatedDate() != null) {
             try {
                 WorkflowHistoryDTO historyDTO = new WorkflowHistoryDTO();
                 historyDTO.setId(history.getId());
-                historyDTO.setActionDate(history.getActionDate());
+                
+                // ✅ FIXED: Date - no conversion needed if WorkflowHistoryDTO uses OffsetDateTime
+                // If WorkflowHistoryDTO still uses LocalDateTime, uncomment the .toLocalDateTime() call:
+                historyDTO.setActionDate(history.getActionDate()); // Change to .toLocalDateTime() if DTO uses LocalDateTime
+                
                 historyDTO.setDetails(history.getDetails());
                 historyDTO.setAction(history.getAction());
 

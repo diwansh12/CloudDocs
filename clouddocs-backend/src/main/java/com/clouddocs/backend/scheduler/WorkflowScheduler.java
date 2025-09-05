@@ -15,7 +15,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime; // ✅ CHANGED: Use OffsetDateTime instead of LocalDateTime
+import java.time.ZoneOffset;     // ✅ ADDED: For UTC timezone handling
 import java.util.List;
 
 /**
@@ -51,7 +52,8 @@ public class WorkflowScheduler {
             return;
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        // ✅ FIXED: Use OffsetDateTime with UTC timezone
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         Pageable batch = PageRequest.of(0, 200);
 
         // 1) Mark tasks PENDING and dueDate < now as OVERDUE
@@ -84,7 +86,8 @@ public class WorkflowScheduler {
         }
 
         // 2) Escalate tasks OVERDUE older than graceHours
-        LocalDateTime escalationCutoff = now.minusHours(escalationGraceHours);
+        // ✅ FIXED: Use OffsetDateTime for escalation cutoff calculation
+        OffsetDateTime escalationCutoff = now.minusHours(escalationGraceHours);
         var escalatePage = taskRepository.findByStatusAndDueDateBefore(TaskStatus.OVERDUE, escalationCutoff, batch);
         List<WorkflowTask> toEscalate = escalatePage.getContent();
 
@@ -107,7 +110,8 @@ public class WorkflowScheduler {
 
                 User previousAssignee = task.getAssignedTo();
                 task.setAssignedTo(newAssignee);
-                // Optionally bump due date (e.g., +24h from now)
+                
+                // ✅ FIXED: Use OffsetDateTime for due date extension
                 task.setDueDate(now.plusHours(24));
                 taskRepository.save(task);
 

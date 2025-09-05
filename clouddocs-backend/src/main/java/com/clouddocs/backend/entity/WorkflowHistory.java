@@ -1,8 +1,8 @@
 package com.clouddocs.backend.entity;
 
 import jakarta.persistence.*;
-
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 
 /**
  * Entity representing workflow history/audit trail
@@ -29,12 +29,13 @@ public class WorkflowHistory {
     @JoinColumn(name = "performed_by")
     private User performedBy;
 
+    // ✅ MIGRATED: Changed from LocalDateTime to OffsetDateTime
     @Column(name = "action_date", nullable = false)
-    private LocalDateTime actionDate;
+    private OffsetDateTime actionDate;
 
-    // Constructors
+    // ✅ UPDATED: Constructors with OffsetDateTime
     public WorkflowHistory() {
-        this.actionDate = LocalDateTime.now();
+        this.actionDate = OffsetDateTime.now(ZoneOffset.UTC);
     }
 
     public WorkflowHistory(WorkflowInstance instance, String action, String details, User performedBy) {
@@ -45,7 +46,7 @@ public class WorkflowHistory {
         this.performedBy = performedBy;
     }
 
-    // Getters and Setters
+    // ✅ UPDATED: Getters and Setters with OffsetDateTime
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
@@ -61,6 +62,6 @@ public class WorkflowHistory {
     public User getPerformedBy() { return performedBy; }
     public void setPerformedBy(User performedBy) { this.performedBy = performedBy; }
 
-    public LocalDateTime getActionDate() { return actionDate; }
-    public void setActionDate(LocalDateTime actionDate) { this.actionDate = actionDate; }
+    public OffsetDateTime getActionDate() { return actionDate; }
+    public void setActionDate(OffsetDateTime actionDate) { this.actionDate = actionDate; }
 }

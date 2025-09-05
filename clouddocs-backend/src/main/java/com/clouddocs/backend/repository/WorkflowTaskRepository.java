@@ -12,6 +12,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime; // ✅ ADDED: Import for OffsetDateTime
 import java.util.List;
 import java.util.Optional;
 
@@ -72,17 +73,51 @@ public interface WorkflowTaskRepository extends JpaRepository<WorkflowTask, Long
            "ORDER BY ws.stepOrder ASC")
     List<WorkflowTask> findByWorkflowInstanceOrderByStepOrder(@Param("workflowInstance") WorkflowInstance workflowInstance);
 
-    // SLA and Scheduler queries
-    Page<WorkflowTask> findByStatusAndDueDateBefore(TaskStatus status, LocalDateTime dateTime, Pageable pageable);
-    
-    List<WorkflowTask> findByStatusAndDueDateBefore(TaskStatus status, LocalDateTime dateTime);
-    
+    // ===== SLA AND SCHEDULER QUERIES (OffsetDateTime versions) =====
+
+    /**
+     * ✅ ADDED: OffsetDateTime version for scheduler compatibility
+     */
+    @Query("SELECT t FROM WorkflowTask t WHERE t.status = :status AND t.dueDate < :dateTime ORDER BY t.dueDate ASC")
+    Page<WorkflowTask> findByStatusAndDueDateBefore(@Param("status") TaskStatus status, 
+                                                   @Param("dateTime") OffsetDateTime dateTime, 
+                                                   Pageable pageable);
+
+    /**
+     * ✅ ADDED: OffsetDateTime version without pagination
+     */
+    @Query("SELECT t FROM WorkflowTask t WHERE t.status = :status AND t.dueDate < :dateTime ORDER BY t.dueDate ASC")
+    List<WorkflowTask> findByStatusAndDueDateBefore(@Param("status") TaskStatus status, 
+                                                   @Param("dateTime") OffsetDateTime dateTime);
+
+    /**
+     * ✅ LEGACY: Keep LocalDateTime versions for backward compatibility
+     */
+    @Query("SELECT t FROM WorkflowTask t WHERE t.status = :status AND t.dueDate < :dateTime ORDER BY t.dueDate ASC")
+    Page<WorkflowTask> findByStatusAndDueDateBeforeLocalDateTime(@Param("status") TaskStatus status, 
+                                                                @Param("dateTime") LocalDateTime dateTime, 
+                                                                Pageable pageable);
+
+    @Query("SELECT t FROM WorkflowTask t WHERE t.status = :status AND t.dueDate < :dateTime ORDER BY t.dueDate ASC")
+    List<WorkflowTask> findByStatusAndDueDateBeforeLocalDateTime(@Param("status") TaskStatus status, 
+                                                                @Param("dateTime") LocalDateTime dateTime);
+
+    /**
+     * ✅ UPDATED: OffsetDateTime version for overdue tasks
+     */
     @Query("SELECT t FROM WorkflowTask t WHERE t.status = :status AND t.dueDate < :cutoff ORDER BY t.dueDate ASC")
     Page<WorkflowTask> findOverdueTasksByStatus(@Param("status") TaskStatus status, 
-                                                @Param("cutoff") LocalDateTime cutoff, 
+                                                @Param("cutoff") OffsetDateTime cutoff, 
                                                 Pageable pageable);
 
-    // Analytics queries
+    /**
+     * ✅ UPDATED: OffsetDateTime version for overdue count
+     */
+    @Query("SELECT COUNT(t) FROM WorkflowTask t WHERE t.status = :status AND t.dueDate < :cutoff")
+    long countOverdueTasks(@Param("status") TaskStatus status, @Param("cutoff") OffsetDateTime cutoff);
+
+    // ===== ANALYTICS QUERIES (Updated for OffsetDateTime) =====
+
     @Query(value = """
         SELECT 
             ws.step_order AS stepOrder,
@@ -106,20 +141,34 @@ public interface WorkflowTaskRepository extends JpaRepository<WorkflowTask, Long
         """, nativeQuery = true)
     List<StepMetricsProjection> aggregateByStepBetween(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
-    // Tasks in date range
+    /**
+     * ✅ UPDATED: OffsetDateTime version for date range queries
+     */
     @Query("SELECT t FROM WorkflowTask t WHERE t.createdDate >= :from AND t.createdDate <= :to")
     List<WorkflowTask> findTasksInDateRange(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
-    // Overdue tasks
+    /**
+     * ✅ ADDED: OffsetDateTime version for date range queries
+     */
+    @Query("SELECT t FROM WorkflowTask t WHERE t.createdDate >= :from AND t.createdDate <= :to")
+    List<WorkflowTask> findTasksInDateRangeOffsetDateTime(@Param("from") OffsetDateTime from, @Param("to") OffsetDateTime to);
+
+    /**
+     * ✅ UPDATED: OffsetDateTime version for overdue tasks detection
+     */
     @Query("SELECT t FROM WorkflowTask t WHERE t.dueDate < :now AND t.status = 'PENDING'")
-    List<WorkflowTask> findOverdueTasks(@Param("now") LocalDateTime now);
+    List<WorkflowTask> findOverdueTasks(@Param("now") OffsetDateTime now);
+
+    /**
+     * ✅ LEGACY: Keep LocalDateTime version for compatibility
+     */
+    @Query("SELECT t FROM WorkflowTask t WHERE t.dueDate < :now AND t.status = 'PENDING'")
+    List<WorkflowTask> findOverdueTasksLocalDateTime(@Param("now") LocalDateTime now);
+
+    // ===== UTILITY QUERIES =====
 
     // Tasks by workflow instance
     List<WorkflowTask> findByWorkflowInstanceIdOrderByCreatedDateAsc(Long workflowInstanceId);
-    
-    // Additional utility queries for scheduler
-    @Query("SELECT COUNT(t) FROM WorkflowTask t WHERE t.status = :status AND t.dueDate < :cutoff")
-    long countOverdueTasks(@Param("status") TaskStatus status, @Param("cutoff") LocalDateTime cutoff);
     
     @Query("SELECT t FROM WorkflowTask t WHERE t.status = :status AND t.assignedTo = :user ORDER BY t.dueDate ASC")
     List<WorkflowTask> findTasksByStatusAndAssignee(@Param("status") TaskStatus status, @Param("user") User user);

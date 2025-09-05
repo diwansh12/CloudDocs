@@ -1,8 +1,6 @@
 package com.clouddocs.backend.dto.workflow;
 
-import com.fasterxml.jackson.annotation.JsonFormat;
-
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime; // ✅ CHANGED: Use OffsetDateTime instead of LocalDateTime
 
 /**
  * DTO for workflow history/audit trail
@@ -11,8 +9,9 @@ public class WorkflowHistoryDTO {
     
     private Long id;
     
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
-    private LocalDateTime actionDate;
+    // ✅ CHANGED: Use OffsetDateTime for proper timezone handling
+    // ✅ REMOVED: @JsonFormat annotation - not needed since OffsetDateTime serializes correctly
+    private OffsetDateTime actionDate;
     
     private String details;
     private String action;
@@ -24,12 +23,12 @@ public class WorkflowHistoryDTO {
     // Constructors
     public WorkflowHistoryDTO() {}
 
-    // Getters and Setters
+    // ✅ UPDATED: Getters and Setters for OffsetDateTime
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
-    public LocalDateTime getActionDate() { return actionDate; }
-    public void setActionDate(LocalDateTime actionDate) { this.actionDate = actionDate; }
+    public OffsetDateTime getActionDate() { return actionDate; }
+    public void setActionDate(OffsetDateTime actionDate) { this.actionDate = actionDate; }
 
     public String getDetails() { return details; }
     public void setDetails(String details) { this.details = details; }

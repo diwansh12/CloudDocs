@@ -3,12 +3,12 @@ package com.clouddocs.backend.dto.workflow;
 import com.clouddocs.backend.entity.TaskAction;
 import com.clouddocs.backend.entity.TaskPriority;
 import com.clouddocs.backend.entity.TaskStatus;
-import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import jakarta.validation.constraints.NotNull;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime; // ✅ CHANGED: Use OffsetDateTime instead of LocalDateTime
+import java.time.ZoneOffset;
 
 /**
  * DTO for workflow task details
@@ -37,17 +37,15 @@ public class WorkflowTaskDTO {
     @Schema(description = "Task priority level")
     private TaskPriority priority;
     
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    // ✅ CHANGED: Use OffsetDateTime for proper timezone handling
     @Schema(description = "Task creation timestamp")
-    private LocalDateTime createdDate;
+    private OffsetDateTime createdDate;
     
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     @Schema(description = "Task due date")
-    private LocalDateTime dueDate;
+    private OffsetDateTime dueDate;
     
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     @Schema(description = "Task completion timestamp")
-    private LocalDateTime completedDate;
+    private OffsetDateTime completedDate;
 
     // Assignee details
     @Schema(description = "ID of assigned user")
@@ -91,13 +89,23 @@ public class WorkflowTaskDTO {
     // Constructors
     public WorkflowTaskDTO() {}
 
-    // ✅ ENHANCED: Helper methods
+    // ✅ UPDATED: Helper methods with OffsetDateTime
     public boolean getIsOverdue() {
-        return dueDate != null && LocalDateTime.now().isAfter(dueDate) && 
+        return dueDate != null && OffsetDateTime.now(ZoneOffset.UTC).isAfter(dueDate) && 
                status != TaskStatus.COMPLETED;
     }
 
-    // All getters and setters
+    // ✅ UPDATED: All getters and setters for OffsetDateTime
+    public OffsetDateTime getCreatedDate() { return createdDate; }
+    public void setCreatedDate(OffsetDateTime createdDate) { this.createdDate = createdDate; }
+
+    public OffsetDateTime getDueDate() { return dueDate; }
+    public void setDueDate(OffsetDateTime dueDate) { this.dueDate = dueDate; }
+
+    public OffsetDateTime getCompletedDate() { return completedDate; }
+    public void setCompletedDate(OffsetDateTime completedDate) { this.completedDate = completedDate; }
+
+    // All other getters and setters remain the same
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
@@ -116,15 +124,6 @@ public class WorkflowTaskDTO {
     public TaskPriority getPriority() { return priority; }
     public void setPriority(TaskPriority priority) { this.priority = priority; }
 
-    public LocalDateTime getCreatedDate() { return createdDate; }
-    public void setCreatedDate(LocalDateTime createdDate) { this.createdDate = createdDate; }
-
-    public LocalDateTime getDueDate() { return dueDate; }
-    public void setDueDate(LocalDateTime dueDate) { this.dueDate = dueDate; }
-
-    public LocalDateTime getCompletedDate() { return completedDate; }
-    public void setCompletedDate(LocalDateTime completedDate) { this.completedDate = completedDate; }
-
     public Long getAssignedToId() { return assignedToId; }
     public void setAssignedToId(Long assignedToId) { this.assignedToId = assignedToId; }
 
@@ -137,7 +136,7 @@ public class WorkflowTaskDTO {
     public String getStepName() { return stepName; }
     public void setStepName(String stepName) { this.stepName = stepName; }
     
-    // ✅ NEW: Enhanced field getters/setters
+    // Enhanced field getters/setters
     public String getComments() { return comments; }
     public void setComments(String comments) { this.comments = comments; }
     
@@ -162,3 +161,4 @@ public class WorkflowTaskDTO {
     public Long getWorkflowInstanceId() { return workflowInstanceId; }
     public void setWorkflowInstanceId(Long workflowInstanceId) { this.workflowInstanceId = workflowInstanceId; }
 }
+

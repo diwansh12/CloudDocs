@@ -20,7 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.time.LocalDateTime;
+
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -565,16 +565,19 @@ public class WorkflowService {
     /**
      * ✅ FIXED: Complete task with proper timestamp handling
      */
-    private void completeTaskWithDetails(WorkflowTask task, TaskAction action, String comments, User currentUser) {
-        task.setStatus(TaskStatus.COMPLETED);
-        task.setAction(action);
-        task.setComments(comments);
-        task.setCompletedBy(currentUser);
-        OffsetDateTime completedTime = OffsetDateTime.now(ZoneOffset.UTC); // ✅ FIXED
-        task.setCompletedDate(completedTime.toLocalDateTime()); // Convert for task entity
-        task.setCompletedAt(completedTime.toLocalDateTime()); // Convert for task entity
+    // ✅ FIXED: Update task completion method
+private void completeTaskWithDetails(WorkflowTask task, TaskAction action, String comments, User currentUser) {
+    task.setStatus(TaskStatus.COMPLETED);
+    task.setAction(action);
+    task.setComments(comments);
+    task.setCompletedBy(currentUser);
+    
+    // ✅ FIXED: Use OffsetDateTime consistently
+    OffsetDateTime completedTime = OffsetDateTime.now(ZoneOffset.UTC);
+    task.setCompletedDate(completedTime);
+    task.setCompletedAt(completedTime);
 
-        taskRepository.saveAndFlush(task);
+    taskRepository.saveAndFlush(task);
 
         // ✅ CRITICAL FIX: Update workflow timestamp and save once
         WorkflowInstance workflow = task.getWorkflowInstance();
@@ -849,27 +852,29 @@ public class WorkflowService {
         return user != null && user.isActive() && user.isEnabled();
     }
 
-    private WorkflowTask createTaskWithAssignment(WorkflowInstance instance, WorkflowStep step, User assignee) {
-        WorkflowTask task = new WorkflowTask();
-        task.setWorkflowInstance(instance);
-        task.setStep(step);
-        task.setAssignedTo(assignee);
-        task.setTitle(step.getName());
-        task.setDescription("Please review and " +
-                (step.getType() == StepType.APPROVAL ? "approve or reject" : "complete") +
-                " this workflow step");
-        task.setStatus(TaskStatus.PENDING);
-        task.setPriority(TaskPriority.NORMAL);
-        LocalDateTime now = LocalDateTime.now();
-        task.setCreatedAt(now);
-        task.setCreatedDate(now);
+   private WorkflowTask createTaskWithAssignment(WorkflowInstance instance, WorkflowStep step, User assignee) {
+    WorkflowTask task = new WorkflowTask();
+    task.setWorkflowInstance(instance);
+    task.setStep(step);
+    task.setAssignedTo(assignee);
+    task.setTitle(step.getName());
+    task.setDescription("Please review and " +
+            (step.getType() == StepType.APPROVAL ? "approve or reject" : "complete") +
+            " this workflow step");
+    task.setStatus(TaskStatus.PENDING);
+    task.setPriority(TaskPriority.NORMAL);
+    
+    // ✅ FIXED: Use OffsetDateTime consistently
+    OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+    task.setCreatedAt(now);
+    task.setCreatedDate(now);
 
-        // Set due date - convert OffsetDateTime to LocalDateTime for task
-        OffsetDateTime dueDate = calculateTaskDueDate(step, instance);
-        task.setDueDate(dueDate.toLocalDateTime());
+    // Set due date
+    OffsetDateTime dueDate = calculateTaskDueDate(step, instance);
+    task.setDueDate(dueDate);
 
-        return task;
-    }
+    return task;
+}
 
     /**
      * ✅ Calculate task due date - returns OffsetDateTime
@@ -1168,9 +1173,9 @@ public class WorkflowService {
                 task.setAction(TaskAction.REJECT);
                 task.setComments(reason);
                 task.setCompletedBy(currentUser);
-                LocalDateTime now = LocalDateTime.now();
-                task.setCompletedDate(now);
-                task.setCompletedAt(now);
+                OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+    task.setCreatedAt(now);
+    task.setCreatedDate(now);
 
                 taskRepository.saveAndFlush(task);
 
@@ -1276,14 +1281,11 @@ public class WorkflowService {
         return (fullName != null && !fullName.trim().isEmpty()) ? fullName : user.getUsername();
     }
 
-    /**
-     * ✅ Check if task is overdue - updated for OffsetDateTime compatibility
-     */
-    private boolean isTaskOverdue(WorkflowTask task) {
-        return task.getDueDate() != null &&
-                LocalDateTime.now().isAfter(task.getDueDate()) && // Task still uses LocalDateTime
-                task.getStatus() == TaskStatus.PENDING;
-    }
+ private boolean isTaskOverdue(WorkflowTask task) {
+    return task.getDueDate() != null &&
+            OffsetDateTime.now(ZoneOffset.UTC).isAfter(task.getDueDate()) && // ✅ FIXED: Use OffsetDateTime.now()
+            task.getStatus() == TaskStatus.PENDING;
+}
 
     private boolean canUserAccessWorkflow(User user, WorkflowInstance workflow) {
         try {
@@ -1417,9 +1419,9 @@ public class WorkflowService {
                 task.setAction(TaskAction.REJECT);
                 task.setComments("Workflow cancelled: " + (reason != null ? reason : "No reason provided"));
                 task.setCompletedBy(currentUser);
-                LocalDateTime now = LocalDateTime.now();
-                task.setCompletedDate(now);
-                task.setCompletedAt(now);
+                OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+    task.setCreatedAt(now);
+    task.setCreatedDate(now);
 
                 taskRepository.saveAndFlush(task);
 
@@ -1534,7 +1536,7 @@ public class WorkflowService {
             history.setAction(action);
             history.setDetails(details);
             history.setPerformedBy(performedBy);
-            history.setActionDate(LocalDateTime.now()); // WorkflowHistory still uses LocalDateTime
+            history.setActionDate(OffsetDateTime.now(ZoneOffset.UTC));
 
             historyRepository.save(history);
         } catch (Exception e) {

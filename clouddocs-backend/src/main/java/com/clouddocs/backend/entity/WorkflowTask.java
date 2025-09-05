@@ -1,7 +1,8 @@
 package com.clouddocs.backend.entity;
 
 import jakarta.persistence.*;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 
 @Entity
 @Table(name = "workflow_tasks")
@@ -30,22 +31,21 @@ public class WorkflowTask {
     @Enumerated(EnumType.STRING)
     private TaskStatus status = TaskStatus.PENDING;
     
+    // ✅ MIGRATED: Changed from LocalDateTime to OffsetDateTime
     @Column(name = "created_date")
-    private LocalDateTime createdDate;
+    private OffsetDateTime createdDate;
     
-    // ✅ ADD: Alternative field name for createdAt
     @Column(name = "created_at")
-    private LocalDateTime createdAt;
+    private OffsetDateTime createdAt;
     
     @Column(name = "due_date")
-    private LocalDateTime dueDate;
+    private OffsetDateTime dueDate;
     
     @Column(name = "completed_date")
-    private LocalDateTime completedDate;
+    private OffsetDateTime completedDate;
     
-    // ✅ ADD: Alternative field name for completedAt
     @Column(name = "completed_at")
-    private LocalDateTime completedAt;
+    private OffsetDateTime completedAt;
     
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "completed_by")
@@ -63,10 +63,11 @@ public class WorkflowTask {
     @Column(name = "version")
     private Long version;
 
-    // Constructors
+    // ✅ UPDATED: Constructors with OffsetDateTime
     public WorkflowTask() {
-        this.createdDate = LocalDateTime.now();
-        this.createdAt = LocalDateTime.now();
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        this.createdDate = now;
+        this.createdAt = now;
     }
     
     public WorkflowTask(WorkflowInstance workflowInstance, WorkflowStep workflowStep, 
@@ -80,13 +81,13 @@ public class WorkflowTask {
                           workflowInstance.getDocument().getOriginalFilename();
         
         if (workflowStep.getSlaHours() != null) {
-            this.dueDate = LocalDateTime.now().plusHours(workflowStep.getSlaHours());
+            this.dueDate = OffsetDateTime.now(ZoneOffset.UTC).plusHours(workflowStep.getSlaHours());
         }
     }
     
-    // Helper methods
+    // ✅ UPDATED: Helper methods with OffsetDateTime
     public boolean isOverdue() {
-        return dueDate != null && LocalDateTime.now().isAfter(dueDate) && 
+        return dueDate != null && OffsetDateTime.now(ZoneOffset.UTC).isAfter(dueDate) && 
                status == TaskStatus.PENDING;
     }
     
@@ -94,8 +95,9 @@ public class WorkflowTask {
         this.action = action;
         this.comments = comments;
         this.completedBy = completedBy;
-        this.completedDate = LocalDateTime.now();
-        this.completedAt = LocalDateTime.now();
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        this.completedDate = now;
+        this.completedAt = now;
         this.status = TaskStatus.COMPLETED;
     }
     
@@ -114,7 +116,7 @@ public class WorkflowTask {
     public WorkflowStep getWorkflowStep() { return workflowStep; }
     public void setWorkflowStep(WorkflowStep workflowStep) { this.workflowStep = workflowStep; }
     
-    // ✅ ADD: Alias methods for step
+    // ✅ Alias methods for step
     public WorkflowStep getStep() { return this.workflowStep; }
     public void setStep(WorkflowStep step) { this.workflowStep = step; }
     
@@ -130,31 +132,30 @@ public class WorkflowTask {
     public TaskStatus getStatus() { return status; }
     public void setStatus(TaskStatus status) { this.status = status; }
     
-    public LocalDateTime getCreatedDate() { return createdDate; }
-    public void setCreatedDate(LocalDateTime createdDate) { 
+    // ✅ UPDATED: OffsetDateTime getters and setters
+    public OffsetDateTime getCreatedDate() { return createdDate; }
+    public void setCreatedDate(OffsetDateTime createdDate) { 
         this.createdDate = createdDate; 
         this.createdAt = createdDate; // Keep both in sync
     }
     
-    // ✅ ADD: Alias methods for createdAt
-    public LocalDateTime getCreatedAt() { return this.createdAt != null ? this.createdAt : this.createdDate; }
-    public void setCreatedAt(LocalDateTime createdAt) { 
+    public OffsetDateTime getCreatedAt() { return this.createdAt != null ? this.createdAt : this.createdDate; }
+    public void setCreatedAt(OffsetDateTime createdAt) { 
         this.createdAt = createdAt; 
         if (this.createdDate == null) this.createdDate = createdAt; // Keep both in sync
     }
     
-    public LocalDateTime getDueDate() { return dueDate; }
-    public void setDueDate(LocalDateTime dueDate) { this.dueDate = dueDate; }
+    public OffsetDateTime getDueDate() { return dueDate; }
+    public void setDueDate(OffsetDateTime dueDate) { this.dueDate = dueDate; }
     
-    public LocalDateTime getCompletedDate() { return completedDate; }
-    public void setCompletedDate(LocalDateTime completedDate) { 
+    public OffsetDateTime getCompletedDate() { return completedDate; }
+    public void setCompletedDate(OffsetDateTime completedDate) { 
         this.completedDate = completedDate; 
         this.completedAt = completedDate; // Keep both in sync
     }
     
-    // ✅ ADD: Alias methods for completedAt
-    public LocalDateTime getCompletedAt() { return this.completedAt != null ? this.completedAt : this.completedDate; }
-    public void setCompletedAt(LocalDateTime completedAt) { 
+    public OffsetDateTime getCompletedAt() { return this.completedAt != null ? this.completedAt : this.completedDate; }
+    public void setCompletedAt(OffsetDateTime completedAt) { 
         this.completedAt = completedAt; 
         if (this.completedDate == null) this.completedDate = completedAt; // Keep both in sync
     }
