@@ -35,23 +35,23 @@ public class WorkflowInstanceDTO {
     @Schema(description = "Detailed description of the workflow")
     private String description;
     
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss", timezone = "UTC")
     @Schema(description = "When the workflow started")
     private LocalDateTime startDate;
     
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss", timezone = "UTC")
     @Schema(description = "When the workflow ended (if completed)")
     private LocalDateTime endDate;
     
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss", timezone = "UTC")
     @Schema(description = "Expected completion date")
     private LocalDateTime dueDate;
 
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss", timezone = "UTC")
     @Schema(description = "Last update timestamp")
     private LocalDateTime updatedDate;
     
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss", timezone = "UTC")
     @Schema(description = "Creation timestamp")
     private LocalDateTime createdDate;
     
