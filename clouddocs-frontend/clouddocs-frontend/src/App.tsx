@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Register from './pages/Register';
 import Login from './pages/Login';
@@ -11,8 +11,9 @@ import WorkflowDetails from './pages/WorkflowDetails';
 import AnalyticsDashboard from './pages/AnalyticsDashboard';
 import AuditTrail from './pages/AuditTrail';
 import Settings from './pages/Settings';
-import authService from './services/auth';
 import ProfilePage from './pages/ProfilePage';
+import authService from './services/auth';
+import api from './services/api'; // ✅ Import the API client
 import './styles/globals.css';
 
 // Protected Route Component
@@ -38,6 +39,35 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 };
 
 const App: React.FC = () => {
+  // ✅ MOVED: useEffect inside the App component
+  useEffect(() => {
+    // Clear cache on app start to ensure fresh data
+    const clearCacheOnStart = async () => {
+      try {
+        await api.clearCache();
+        console.log('✅ App started with fresh cache');
+      } catch (error) {
+        console.warn('⚠️ Failed to clear cache on start:', error);
+      }
+    };
+
+    clearCacheOnStart();
+  }, []);
+
+  // ✅ OPTIONAL: Add periodic cache clearing for long-running sessions
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        await api.clearCache();
+        console.log('🔄 Periodic cache clear completed');
+      } catch (error) {
+        console.warn('⚠️ Periodic cache clear failed:', error);
+      }
+    }, 5 * 60 * 1000); // Every 5 minutes
+
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <Router>
       <div className="App">
@@ -55,11 +85,10 @@ const App: React.FC = () => {
             </PublicRoute>
           } />
           
-        
           {/* Protected Routes */}
           <Route path="/documents" element={
             <ProtectedRoute>
-                <Documents />
+              <Documents />
             </ProtectedRoute>
           } />
           
@@ -69,7 +98,7 @@ const App: React.FC = () => {
             </ProtectedRoute>
           } />
           
-        <Route path="/workflow" element={
+          <Route path="/workflow" element={
             <ProtectedRoute>
               <Workflow />
             </ProtectedRoute>
@@ -78,14 +107,13 @@ const App: React.FC = () => {
           <Route path="/workflow/new" element={
             <ProtectedRoute>
               <WorkflowNew />
-              </ProtectedRoute>
+            </ProtectedRoute>
           } />
 
           <Route path="/workflow/:id" element={
             <ProtectedRoute>
               <WorkflowDetails />
             </ProtectedRoute>
-
           } />
 
           <Route path="/audit-trail" element={
@@ -99,10 +127,11 @@ const App: React.FC = () => {
               <Settings />
             </ProtectedRoute>
           } />
-<Route path="/documents/:documentId" element={
+
+          <Route path="/documents/:documentId" element={
             <ProtectedRoute>
               <DocumentDetails />
-              </ProtectedRoute>
+            </ProtectedRoute>
           } />
 
           <Route path="/analytics" element={
@@ -117,7 +146,6 @@ const App: React.FC = () => {
             </ProtectedRoute>
           } />
           
-          {/* Catch-all route for 404 */}
           {/* Default redirect */}
           <Route path="/" element={<Navigate to="/documents" replace />} />
         </Routes>
