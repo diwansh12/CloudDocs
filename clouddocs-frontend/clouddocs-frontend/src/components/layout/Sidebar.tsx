@@ -15,11 +15,12 @@ import {
   User,
   Shield,
   Crown,
-  BarChart3  // ✅ ADDED: Analytics icon
+  BarChart3
 } from 'lucide-react';
 import { Avatar, AvatarImage, AvatarFallback } from '../ui/avatar';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
+import AuthenticatedImage from '../AuthenticatedImage'; // ✅ ADDED (adjust path as needed)
 import userService from '../../services/userService';
 
 interface UserProfile {
@@ -39,17 +40,18 @@ const Sidebar: React.FC = () => {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
-  // ✅ UPDATED: Added Analytics to sidebar navigation items
+  // ✅ ADDED: Get token for authenticated images
+  const token = localStorage.getItem('token');
+
   const sidebarItems = [
     { name: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
-    { name: 'Analytics', icon: BarChart3, href: '/analytics' },  // ✅ NEW: Analytics Dashboard
+    { name: 'Analytics', icon: BarChart3, href: '/analytics' },
     { name: 'Documents', icon: FileText, href: '/documents' },
     { name: 'Workflow', icon: GitBranch, href: '/workflow' },
     { name: 'Audit Trail', icon: FileCheck, href: '/audit-trail' },
     { name: 'Settings', icon: Settings, href: '/settings' }
   ];
 
-  // Load user profile on component mount
   useEffect(() => {
     loadUserProfile();
   }, []);
@@ -67,22 +69,14 @@ const Sidebar: React.FC = () => {
     navigate(href);
   };
 
-  const getProfileImageUrl = (profilePicture?: string) => {
-    if (!profilePicture) {
-      return '/default-avatar.png';
-    }
+  // ✅ UPDATED: Build authenticated image URL
+  const getAuthenticatedImageUrl = (profilePicture?: string) => {
+    if (!profilePicture) return undefined;
     
     const baseUrl = process.env.REACT_APP_BACKEND_URL || 'https://clouddocs.onrender.com';
-    const imageUrl = `${baseUrl}/api/users/profile/picture/${profilePicture}`;
-    
-    // Add cache busting to force fresh image load
-    const cacheBuster = `?cb=${Date.now()}`;
-    
-    console.log('🔍 Sidebar Image URL:', imageUrl + cacheBuster);
-    return imageUrl + cacheBuster;
+    return `${baseUrl}/api/users/profile/picture/${profilePicture}`;
   };
 
-  // ✅ ENHANCED: Upload handler that refreshes all images
   const handleProfilePictureUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -103,16 +97,6 @@ const Sidebar: React.FC = () => {
       setUser(updatedUser);
       setShowProfileMenu(false);
 
-      // ✅ CRITICAL: Force refresh all profile images across the app
-      setTimeout(() => {
-        const profileImages = document.querySelectorAll('img[src*="profile/picture"]');
-        profileImages.forEach((img) => {
-          const imageElement = img as HTMLImageElement;
-          const baseSrc = imageElement.src.split('?')[0];
-          imageElement.src = `${baseSrc}?cb=${Date.now()}`;
-        });
-      }, 500);
-
     } catch (error) {
       console.error('Failed to upload profile picture:', error);
       alert('Failed to upload profile picture');
@@ -130,7 +114,6 @@ const Sidebar: React.FC = () => {
     }
   };
 
-  // ✅ UPDATED: Enhanced route matching to include analytics
   const isActiveRoute = (href: string) => {
     if (href === '/documents') {
       return location.pathname === '/documents' || location.pathname.startsWith('/documents/');
@@ -219,12 +202,10 @@ const Sidebar: React.FC = () => {
                     <span className="text-base font-medium">{item.name}</span>
                   )}
                   
-                  {/* Active indicator */}
                   {isActive && (
                     <div className="absolute right-0 top-1/2 transform -translate-y-1/2 w-1 h-8 bg-white rounded-l-full"></div>
                   )}
                   
-                  {/* Tooltip for collapsed state */}
                   {isCollapsed && (
                     <div className="absolute left-full ml-3 px-3 py-2 bg-gray-900 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50">
                       {item.name}
@@ -248,22 +229,23 @@ const Sidebar: React.FC = () => {
               isCollapsed ? 'justify-center p-2' : ''
             }`}
           >
-            {/* Avatar with Upload Indicator */}
+            {/* ✅ UPDATED: Avatar with AuthenticatedImage */}
             <div className="relative">
-              <Avatar className={`${isCollapsed ? 'w-10 h-10' : 'w-12 h-12'} ring-2 ring-white/30 shadow-lg`}>
-                 <AvatarImage 
-                  src={getProfileImageUrl(user?.profilePicture)}
-                  alt={user?.fullName}
-                  onLoad={() => console.log('✅ Sidebar image loaded')}
-                  onError={(e) => {
-                    console.error('❌ Sidebar image failed:', e.currentTarget.src);
-                    e.currentTarget.src = '/default-avatar.png';
-                  }}
-                />
-                <AvatarFallback className="bg-gradient-to-br from-blue-600 to-blue-700 text-white font-semibold">
-                  {user?.fullName?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
-                </AvatarFallback>
-              </Avatar>
+              <div className={`${isCollapsed ? 'w-10 h-10' : 'w-12 h-12'} ring-2 ring-white/30 shadow-lg rounded-full overflow-hidden bg-gradient-to-br from-blue-600 to-blue-700`}>
+                {user?.profilePicture && token ? (
+                  <AuthenticatedImage
+                    src={getAuthenticatedImageUrl(user.profilePicture)!}
+                    alt={user.fullName}
+                    token={token}
+                    className="w-full h-full object-cover"
+                    fallbackSrc="/default-avatar.png"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-white font-semibold">
+                    {user?.fullName?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
+                  </div>
+                )}
+              </div>
               
               {/* Upload indicator */}
               <div className="absolute -bottom-1 -right-1 bg-green-500 rounded-full p-1">
@@ -302,15 +284,21 @@ const Sidebar: React.FC = () => {
               {/* User Info Header */}
               <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-4 text-white">
                 <div className="flex items-center space-x-3">
-                  <Avatar className="w-12 h-12 ring-2 ring-white/30">
-                    <AvatarImage 
-                      src={getProfileImageUrl(user?.profilePicture)}
-                      alt={user?.fullName}
-                    />
-                    <AvatarFallback className="bg-white/20 text-white">
-                      {user?.fullName?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
-                    </AvatarFallback>
-                  </Avatar>
+                  <div className="w-12 h-12 ring-2 ring-white/30 rounded-full overflow-hidden bg-white/20">
+                    {user?.profilePicture && token ? (
+                      <AuthenticatedImage
+                        src={getAuthenticatedImageUrl(user.profilePicture)!}
+                        alt={user.fullName}
+                        token={token}
+                        className="w-full h-full object-cover"
+                        fallbackSrc="/default-avatar.png"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-white font-semibold">
+                        {user?.fullName?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
+                      </div>
+                    )}
+                  </div>
                   <div>
                     <p className="font-semibold">{user?.fullName}</p>
                     <p className="text-sm text-blue-100">{user?.email}</p>
