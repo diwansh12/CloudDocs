@@ -5,6 +5,7 @@ import com.clouddocs.backend.dto.UserProfileUpdateRequest;
 import com.clouddocs.backend.dto.ChangePasswordRequest;
 import com.clouddocs.backend.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -15,12 +16,17 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.core.io.Resource;
 
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.HttpHeaders;
 import jakarta.validation.Valid;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.Path;
 
 /**
  * REST Controller for User Profile Management
@@ -119,45 +125,56 @@ public class UserController {
         }
     }
 
-    /* 
-    @GetMapping("/profile/picture/{filename:.+}")
-public ResponseEntity<?> getProfilePicture(@PathVariable String filename) {
+    
+   /**
+ * ✅ Controller-based image serving (reliable solution)
+ */
+@GetMapping("/profile/picture/{path}/{filename:.+}")
+@PreAuthorize("isAuthenticated()")
+public ResponseEntity<Resource> getProfilePicture(
+        @PathVariable String path,
+        @PathVariable String filename) {
     try {
-        System.out.println("🖼️ Attempting to serve image: " + filename);
+        System.out.println("🖼️ Serving image: " + path + "/" + filename);
         
-        // ✅ CRITICAL: Load resource correctly based on how you store files
-        Resource resource = fileStorageService.loadFileAsResource(filename);
+        // ✅ Build file path securely
+        Path uploadPath = Paths.get("./uploads");
+        Path imagePath = uploadPath.resolve(path).resolve(filename).normalize();
         
-        if (!resource.exists() || !resource.isReadable()) {
-            System.err.println("❌ Image file not found or not readable: " + filename);
+        // ✅ Security check - ensure file is within uploads directory
+        if (!imagePath.startsWith(uploadPath)) {
+            System.err.println("❌ Security violation: Path traversal attempt blocked");
             return ResponseEntity.notFound().build();
         }
         
-        // Determine content type
-        String contentType = "image/jpeg";
-        String lowerFilename = filename.toLowerCase();
-        
-        if (lowerFilename.endsWith(".png")) {
-            contentType = "image/png";
-        } else if (lowerFilename.endsWith(".gif")) {
-            contentType = "image/gif";
-        } else if (lowerFilename.endsWith(".webp")) {
-            contentType = "image/webp";
+        if (!Files.exists(imagePath)) {
+            System.err.println("❌ Image not found: " + imagePath);
+            return ResponseEntity.notFound().build();
         }
         
-        System.out.println("✅ Successfully serving image: " + filename + " as " + contentType);
+        Resource resource = new UrlResource(imagePath.toUri());
+        
+        // ✅ Determine content type
+        String contentType = Files.probeContentType(imagePath);
+        if (contentType == null) {
+            contentType = "application/octet-stream";
+        }
+        
+        System.out.println("✅ Successfully serving: " + path + "/" + filename + " as " + contentType);
         
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(contentType))
-                .header(HttpHeaders.CACHE_CONTROL, "no-cache") // Disable cache for testing
+                .header(HttpHeaders.CACHE_CONTROL, "public, max-age=3600")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
                 .body(resource);
                 
     } catch (Exception e) {
-        System.err.println("❌ Failed to serve image: " + filename + " - " + e.getMessage());
+        System.err.println("❌ Error serving image: " + e.getMessage());
         e.printStackTrace();
         return ResponseEntity.notFound().build();
     }
-} */
+}
+
     /**
      * Update user profile information
      */

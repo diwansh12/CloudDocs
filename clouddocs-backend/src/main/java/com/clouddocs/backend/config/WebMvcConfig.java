@@ -1,4 +1,4 @@
-package com.clouddocs.backend.config;
+ /*package com.clouddocs.backend.config;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
@@ -40,4 +40,4 @@ public class WebMvcConfig implements WebMvcConfigurer {
             e.printStackTrace();
         }
     }
-}
+}*/
