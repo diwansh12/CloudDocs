@@ -24,6 +24,7 @@ import jakarta.validation.Valid;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.Path;
@@ -126,8 +127,8 @@ public class UserController {
     }
 
     
-   /**
- * ✅ Controller-based image serving (reliable solution)
+/**
+ * ✅ FIXED: Controller-based image serving with proper security check
  */
 @GetMapping("/profile/picture/{path}/{filename:.+}")
 @PreAuthorize("isAuthenticated()")
@@ -137,13 +138,25 @@ public ResponseEntity<Resource> getProfilePicture(
     try {
         System.out.println("🖼️ Serving image: " + path + "/" + filename);
         
-        // ✅ Build file path securely
-        Path uploadPath = Paths.get("./uploads");
+        // ✅ FIXED: Proper path resolution and security check
+        Path uploadPath = Paths.get("./uploads").toAbsolutePath().normalize();
         Path imagePath = uploadPath.resolve(path).resolve(filename).normalize();
         
-        // ✅ Security check - ensure file is within uploads directory
-        if (!imagePath.startsWith(uploadPath)) {
+        System.out.println("🔍 Upload path: " + uploadPath);
+        System.out.println("🔍 Image path: " + imagePath);
+        System.out.println("🔍 Starts with check: " + imagePath.startsWith(uploadPath));
+        
+        // ✅ CORRECTED: Security check with proper path normalization
+        if (!imagePath.normalize().startsWith(uploadPath.normalize())) {
             System.err.println("❌ Security violation: Path traversal attempt blocked");
+            System.err.println("    Requested path: " + imagePath);
+            System.err.println("    Base path: " + uploadPath);
+            return ResponseEntity.notFound().build();
+        }
+        
+        // ✅ Additional security: Only allow 'profile-pictures' subfolder
+        if (!"profile-pictures".equals(path)) {
+            System.err.println("❌ Invalid subfolder: " + path);
             return ResponseEntity.notFound().build();
         }
         
@@ -157,7 +170,19 @@ public ResponseEntity<Resource> getProfilePicture(
         // ✅ Determine content type
         String contentType = Files.probeContentType(imagePath);
         if (contentType == null) {
-            contentType = "application/octet-stream";
+            // Fallback content type detection
+            String lowerFilename = filename.toLowerCase();
+            if (lowerFilename.endsWith(".jpg") || lowerFilename.endsWith(".jpeg")) {
+                contentType = "image/jpeg";
+            } else if (lowerFilename.endsWith(".png")) {
+                contentType = "image/png";
+            } else if (lowerFilename.endsWith(".webp")) {
+                contentType = "image/webp";
+            } else if (lowerFilename.endsWith(".gif")) {
+                contentType = "image/gif";
+            } else {
+                contentType = "application/octet-stream";
+            }
         }
         
         System.out.println("✅ Successfully serving: " + path + "/" + filename + " as " + contentType);
@@ -402,4 +427,38 @@ public ResponseEntity<Resource> getProfilePicture(
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
         }
     }
+
+    /**
+ * ✅ Debug endpoint to check uploads directory
+ */
+@GetMapping("/debug/uploads")
+@PreAuthorize("isAuthenticated()")
+public ResponseEntity<?> debugUploads() {
+    Map<String, Object> info = new HashMap<>();
+    
+    try {
+        Path uploadPath = Paths.get("./uploads").toAbsolutePath().normalize();
+        Path profilePicturesPath = uploadPath.resolve("profile-pictures");
+        
+        info.put("uploadPath", uploadPath.toString());
+        info.put("profilePicturesPath", profilePicturesPath.toString());
+        info.put("uploadExists", Files.exists(uploadPath));
+        info.put("profilePicturesExists", Files.exists(profilePicturesPath));
+        
+        if (Files.exists(profilePicturesPath)) {
+            List<String> files = Files.list(profilePicturesPath)
+                .map(Path::getFileName)
+                .map(Path::toString)
+                .collect(Collectors.toList());
+            info.put("files", files);
+            info.put("fileCount", files.size());
+        }
+        
+    } catch (Exception e) {
+        info.put("error", e.getMessage());
+    }
+    
+    return ResponseEntity.ok(info);
+}
+
 }
