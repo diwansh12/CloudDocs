@@ -501,5 +501,36 @@ public ResponseEntity<?> fixCreationDates() {
     return ResponseEntity.ok(result);
 }
 
+// ✅ Add this to UserController.java
+@GetMapping("/debug/verify-database-fix")
+@PreAuthorize("hasRole('ADMIN')")
+public ResponseEntity<?> verifyDatabaseFix() {
+    Map<String, Object> result = new HashMap<>();
+    
+    try {
+        List<User> allUsers = userRepository.findAll();
+        
+        List<Map<String, Object>> userDetails = allUsers.stream().map(user -> {
+            Map<String, Object> userInfo = new HashMap<>();
+            userInfo.put("id", user.getId());
+            userInfo.put("username", user.getUsername());
+            userInfo.put("createdAt", user.getCreatedAt());
+            userInfo.put("createdAtString", user.getCreatedAt() != null ? user.getCreatedAt().toString() : "NULL");
+            userInfo.put("lastLogin", user.getLastLogin());
+            return userInfo;
+        }).collect(Collectors.toList());
+        
+        result.put("users", userDetails);
+        result.put("totalUsers", allUsers.size());
+        result.put("usersWithNullCreatedAt", allUsers.stream().filter(u -> u.getCreatedAt() == null).count());
+        
+    } catch (Exception e) {
+        result.put("error", e.getMessage());
+    }
+    
+    return ResponseEntity.ok(result);
+}
+
+
 
 }
