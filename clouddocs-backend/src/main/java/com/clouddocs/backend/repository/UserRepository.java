@@ -21,6 +21,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     List<User> findByRoleIn(List<Role> roles);
 
+    
+List<User> findByCreatedAtIsNull();
+
+
   
      @Query("SELECT u FROM User u WHERE u.role = :role AND u.active = :active AND u.enabled = :enabled")
      List<User> findByRoleAndActiveAndEnabled(@Param("role") Role role, @Param("active") boolean active, @Param("enabled") boolean enabled);

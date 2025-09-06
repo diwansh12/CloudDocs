@@ -4,7 +4,8 @@ import com.clouddocs.backend.dto.UserProfileDTO;
 import com.clouddocs.backend.dto.UserProfileUpdateRequest;
 import com.clouddocs.backend.dto.ChangePasswordRequest;
 import com.clouddocs.backend.service.UserService;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.clouddocs.backend.repository.UserRepository; 
+import com.clouddocs.backend.entity.User;                
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -24,6 +25,7 @@ import jakarta.validation.Valid;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.time.LocalDateTime;
 import java.util.stream.Collectors;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -38,12 +40,18 @@ import java.nio.file.Path;
 @CrossOrigin(origins = {"https://cloud-docs-tan.vercel.app", "http://localhost:3000"})
 public class UserController {
 
-    @Autowired
-    private UserService userService;
+    // ✅ FIXED: Both dependencies as final fields
+    private final UserRepository userRepository;
+    private final UserService userService;
 
-   
+    // ✅ FIXED: Constructor injection for both dependencies
 
-    /**
+    public UserController(UserRepository userRepository, UserService userService) {
+        this.userRepository = userRepository;
+        this.userService = userService;
+    }
+
+  /**
      * Get current authenticated user's profile
      */
 
@@ -460,5 +468,38 @@ public ResponseEntity<?> debugUploads() {
     
     return ResponseEntity.ok(info);
 }
+
+/**
+ * ✅ TEMPORARY: Fix existing NULL creation dates
+ */
+@PostMapping("/debug/fix-creation-dates")
+@PreAuthorize("hasRole('ADMIN')")
+public ResponseEntity<?> fixCreationDates() {
+    Map<String, Object> result = new HashMap<>();
+    
+    try {
+        // Find users with NULL createdAt
+        List<User> usersWithNullDates = userRepository.findByCreatedAtIsNull();
+        
+        int fixedCount = 0;
+        for (User user : usersWithNullDates) {
+            // Set creation date to a reasonable default (e.g., account registration time)
+            // You might want to use a more sophisticated approach based on your data
+            user.setCreatedAt(LocalDateTime.now().minusDays(30)); // Example: 30 days ago
+            userRepository.save(user);
+            fixedCount++;
+        }
+        
+        result.put("message", "Fixed creation dates for users");
+        result.put("usersFixed", fixedCount);
+        result.put("totalUsers", usersWithNullDates.size());
+        
+    } catch (Exception e) {
+        result.put("error", e.getMessage());
+    }
+    
+    return ResponseEntity.ok(result);
+}
+
 
 }
