@@ -1,5 +1,6 @@
 package com.clouddocs.backend.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import java.time.LocalDateTime;
 
 public class UserProfileDTO {
@@ -9,8 +10,15 @@ public class UserProfileDTO {
     private String email;
     private String role;
     private String profilePicture;
+    
+    // ✅ ADD: Jackson annotation for proper date serialization
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
     private LocalDateTime createdAt;
+    
+    // ✅ ADD: Jackson annotation for proper date serialization
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
     private LocalDateTime lastLoginAt;
+    
     private boolean active;
 
     // Constructors
@@ -30,7 +38,7 @@ public class UserProfileDTO {
         this.active = active;
     }
 
-    // Getters and setters
+    // ✅ All your existing getters and setters remain the same
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     
