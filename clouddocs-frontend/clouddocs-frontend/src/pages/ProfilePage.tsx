@@ -20,6 +20,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '../components/ui/avatar';
 import { Badge } from '../components/ui/badge';
 import AuthenticatedImage from '../components/AuthenticatedImage'; // ✅ ADDED
 import userService from '../services/userService';
+import { buildProfileImageUrl } from '../utils/imageUtils';
 
 interface UserProfile {
   id: number;
@@ -72,15 +73,12 @@ export default function ProfilePage() {
     }
   };
 
-  // ✅ UPDATED: Build authenticated image URL
-  const getAuthenticatedImageUrl = (profilePicture?: string) => {
-    if (!profilePicture) return undefined;
-    
+ const getAuthenticatedImageUrl = (profilePicture?: string) => {
     const baseUrl = process.env.REACT_APP_BACKEND_URL || 'https://clouddocs.onrender.com';
-    return `${baseUrl}/api/users/profile/picture/${profilePicture}`;
+    return buildProfileImageUrl(profilePicture, baseUrl);
   };
 
-  const handleProfilePictureUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+const handleProfilePictureUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -104,10 +102,13 @@ export default function ProfilePage() {
       console.log('📥 Upload response:', response);
       
       const updatedUser = response;
-      
       setUser(updatedUser);
       setSuccess('Profile picture updated successfully!');
       setTimeout(() => setSuccess(''), 3000);
+
+      // ✅ Log the normalized URL for debugging
+      const newImageUrl = getAuthenticatedImageUrl(updatedUser.profilePicture);
+      console.log('🔍 New normalized image URL:', newImageUrl);
       
     } catch (err: any) {
       console.error('❌ Upload failed:', err);

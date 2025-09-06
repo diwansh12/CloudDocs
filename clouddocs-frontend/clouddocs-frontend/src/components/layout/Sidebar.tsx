@@ -22,6 +22,7 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import AuthenticatedImage from '../AuthenticatedImage'; // ✅ ADDED (adjust path as needed)
 import userService from '../../services/userService';
+import { buildProfileImageUrl } from '../../utils/imageUtils';
 
 interface UserProfile {
   id: number;
@@ -69,12 +70,9 @@ const Sidebar: React.FC = () => {
     navigate(href);
   };
 
-  // ✅ UPDATED: Build authenticated image URL
-  const getAuthenticatedImageUrl = (profilePicture?: string) => {
-    if (!profilePicture) return undefined;
-    
+   const getAuthenticatedImageUrl = (profilePicture?: string) => {
     const baseUrl = process.env.REACT_APP_BACKEND_URL || 'https://clouddocs.onrender.com';
-    return `${baseUrl}/api/users/profile/picture/${profilePicture}`;
+    return buildProfileImageUrl(profilePicture, baseUrl);
   };
 
   const handleProfilePictureUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
