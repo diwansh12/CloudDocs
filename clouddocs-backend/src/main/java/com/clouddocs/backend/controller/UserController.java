@@ -4,10 +4,7 @@ import com.clouddocs.backend.dto.UserProfileDTO;
 import com.clouddocs.backend.dto.UserProfileUpdateRequest;
 import com.clouddocs.backend.dto.ChangePasswordRequest;
 import com.clouddocs.backend.service.UserService;
-import com.clouddocs.backend.service.FileStorageService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.io.Resource;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -37,8 +34,7 @@ public class UserController {
     @Autowired
     private UserService userService;
 
-    @Autowired
-    private FileStorageService fileStorageService;
+   
 
     /**
      * Get current authenticated user's profile
@@ -123,9 +119,7 @@ public class UserController {
         }
     }
 
-    /**
-     * ✅ ENHANCED: Serve user profile pictures with better content type handling
-     */
+    /* 
     @GetMapping("/profile/picture/{filename:.+}")
 public ResponseEntity<?> getProfilePicture(@PathVariable String filename) {
     try {
@@ -163,7 +157,7 @@ public ResponseEntity<?> getProfilePicture(@PathVariable String filename) {
         e.printStackTrace();
         return ResponseEntity.notFound().build();
     }
-}
+} */
     /**
      * Update user profile information
      */

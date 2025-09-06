@@ -88,6 +88,7 @@ public class SecurityConfig {
                     "/auth/signin", "/auth/signup", "/auth/refresh",
                     "/auth/forgot-password", "/auth/reset-password", "/public/**"
                 ).permitAll()
+                .requestMatchers("/api/users/profile/picture/**").authenticated()
                 .requestMatchers(
                     "/users/**", "/workflows/**", "/documents/**", 
                     "/notifications/**", "/settings/**", "/audit/**"

@@ -10,6 +10,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -33,23 +34,21 @@ public class UserService {
         return convertToDTO(user);
     }
 
-    public UserProfileDTO uploadProfilePicture(String username, MultipartFile file) {
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found: " + username));
+    // ✅ In your UserService.uploadProfilePicture method
+public UserProfileDTO uploadProfilePicture(String username, MultipartFile file) throws IOException {
+    User user = userRepository.findByUsername(username)
+        .orElseThrow(() -> new RuntimeException("User not found"));
+    
+    // ✅ Store file in profile-pictures subfolder
+    String fileName = fileStorageService.storeFile(file, "profile-pictures");
+    
+    // ✅ Save the relative path in database
+    user.setProfilePicture(fileName);
+    userRepository.save(user);
+    
+    return convertToDTO(user);
+}
 
-        try {
-            // Store file in profile-pictures directory
-            String fileName = fileStorageService.storeFile(file, "profile-pictures");
-            
-            // Update user's profile picture path
-            user.setProfilePicture(fileName);
-            user = userRepository.save(user);
-            
-            return convertToDTO(user);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to upload profile picture: " + e.getMessage());
-        }
-    }
 
     public UserProfileDTO updateProfile(String username, UserProfileUpdateRequest request) {
         User user = userRepository.findByUsername(username)

@@ -6,6 +6,7 @@ import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
+import jakarta.annotation.PostConstruct;
 
 import java.io.IOException;
 import java.net.MalformedURLException;
@@ -32,6 +33,26 @@ public class FileStorageService {
             throw new RuntimeException("Could not create the directory where the uploaded files will be stored.", ex);
         }
     }
+
+ @PostConstruct
+public void initDirectories() {
+    try {
+        // Ensure main upload directory exists
+        Files.createDirectories(this.fileStorageLocation);
+        
+        // Ensure profile-pictures subdirectory exists
+        Path profilePicturesDir = this.fileStorageLocation.resolve("profile-pictures");
+        Files.createDirectories(profilePicturesDir);
+        
+        System.out.println("✅ Upload directories initialized:");
+        System.out.println("    Main: " + this.fileStorageLocation.toAbsolutePath());
+        System.out.println("    Profile Pictures: " + profilePicturesDir.toAbsolutePath());
+        
+    } catch (IOException e) {
+        throw new RuntimeException("Could not create upload directories", e);
+    }
+}
+
     
     /**
      * Store file with date-based folder structure
