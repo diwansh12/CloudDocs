@@ -163,13 +163,41 @@ const handleProfilePictureUpload = async (event: React.ChangeEvent<HTMLInputElem
     );
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
+const formatDate = (dateString: string | null | undefined): string => {
+  // Handle null, undefined, or empty values
+  if (!dateString || dateString.trim() === '') {
+    return 'Not available';
+  }
+
+  try {
+    // Create date object from string
+    const date = new Date(dateString);
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      console.error('Invalid date string:', dateString);
+      return 'Invalid date';
+    }
+    
+    // Check if date is the Unix epoch (indicates parsing error)
+    if (date.getTime() === 0 || date.getFullYear() < 1990) {
+      console.error('Date parsed as epoch or invalid year:', dateString, date);
+      return 'Date unavailable';
+    }
+    
+    // Format the valid date
+    return date.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
       day: 'numeric'
     });
-  };
+    
+  } catch (error) {
+    console.error('Error parsing date:', dateString, error);
+    return 'Date format error';
+  }
+};
+
 
   if (loading) {
     return (
