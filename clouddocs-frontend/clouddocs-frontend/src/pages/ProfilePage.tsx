@@ -74,7 +74,7 @@ export default function ProfilePage() {
     }
     
     // Use environment variable or default to backend server
-    const baseUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8080';
+    const baseUrl = process.env.REACT_APP_BACKEND_URL || 'https://clouddocs.onrender.com';
     const imageUrl = `${baseUrl}/api/users/profile/picture/${profilePicture}`;
     
     // Add cache busting to force fresh image load
