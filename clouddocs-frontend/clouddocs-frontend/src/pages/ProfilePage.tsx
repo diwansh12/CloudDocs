@@ -312,17 +312,19 @@ export default function ProfilePage() {
                       />
                     </div>
 
-                    {/* Rest of the component remains the same... */}
+                    {/* Enhanced Basic Info */}
                     <div className="text-center">
                       <h2 className="text-3xl font-bold text-slate-800 mb-2">
                         {user.fullName}
                       </h2>
                       <p className="text-slate-500 mb-6 font-medium text-lg">@{user.username}</p>
                       
+                      {/* Enhanced Role Badge */}
                       <div className="flex justify-center mb-6">
                         {getRoleBadge(user.role)}
                       </div>
 
+                      {/* Enhanced Status */}
                       <div className="flex justify-center">
                         <div className={`inline-flex items-center px-4 py-2 rounded-full font-semibold text-sm ${
                           user.active 
@@ -341,9 +343,8 @@ export default function ProfilePage() {
               </Card>
             </div>
 
-            {/* Rest of your existing ProfilePage content... */}
+            {/* Enhanced Information Card */}
             <div className="xl:col-span-3">
-              {/* Your existing information card content */}
               <Card className="border-0 shadow-2xl bg-white/70 backdrop-blur-xl rounded-3xl">
                 <CardContent className="p-8">
                   <div className="flex items-center justify-between mb-8">
@@ -385,8 +386,9 @@ export default function ProfilePage() {
                     )}
                   </div>
 
-                  {/* Your existing form fields... */}
                   <div className="space-y-8">
+                    
+                    {/* Enhanced Full Name Field */}
                     <div className="group">
                       <div className="flex items-start space-x-4">
                         <div className="bg-gradient-to-br from-blue-100 to-blue-200 p-4 rounded-2xl group-hover:shadow-lg transition-all duration-300">
@@ -413,7 +415,86 @@ export default function ProfilePage() {
                       </div>
                     </div>
 
-                    {/* Add your other form fields here... */}
+                    {/* Enhanced Email Field */}
+                    <div className="group">
+                      <div className="flex items-start space-x-4">
+                        <div className="bg-gradient-to-br from-emerald-100 to-emerald-200 p-4 rounded-2xl group-hover:shadow-lg transition-all duration-300">
+                          <Mail className="w-6 h-6 text-emerald-600" />
+                        </div>
+                        <div className="flex-1">
+                          <label className="block text-sm font-bold text-slate-700 mb-3 uppercase tracking-wide">
+                            Email Address
+                          </label>
+                          {editing ? (
+                            <input
+                              type="email"
+                              value={editForm.email}
+                              onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                              className="w-full px-4 py-4 border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-emerald-100 focus:border-emerald-500 bg-white text-slate-800 font-medium text-lg transition-all duration-300"
+                              placeholder="Enter your email"
+                            />
+                          ) : (
+                            <div className="bg-slate-50 px-4 py-4 rounded-xl">
+                              <p className="text-xl font-semibold text-slate-800">{user.email}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Enhanced Username Field */}
+                    <div className="group">
+                      <div className="flex items-start space-x-4">
+                        <div className="bg-gradient-to-br from-purple-100 to-purple-200 p-4 rounded-2xl group-hover:shadow-lg transition-all duration-300">
+                          <User className="w-6 h-6 text-purple-600" />
+                        </div>
+                        <div className="flex-1">
+                          <label className="block text-sm font-bold text-slate-700 mb-3 uppercase tracking-wide">
+                            Username
+                          </label>
+                          <div className="bg-slate-50 px-4 py-4 rounded-xl border-2 border-dashed border-slate-200">
+                            <p className="text-xl font-semibold text-slate-800">@{user.username}</p>
+                            <p className="text-sm text-slate-500 mt-1 font-medium">Username cannot be changed</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Enhanced Member Since Field */}
+                    <div className="group">
+                      <div className="flex items-start space-x-4">
+                        <div className="bg-gradient-to-br from-amber-100 to-amber-200 p-4 rounded-2xl group-hover:shadow-lg transition-all duration-300">
+                          <Calendar className="w-6 h-6 text-amber-600" />
+                        </div>
+                        <div className="flex-1">
+                          <label className="block text-sm font-bold text-slate-700 mb-3 uppercase tracking-wide">
+                            Member Since
+                          </label>
+                          <div className="bg-slate-50 px-4 py-4 rounded-xl">
+                            <p className="text-xl font-semibold text-slate-800">{formatDate(user.createdAt)}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Enhanced Last Login Field */}
+                    {user.lastLoginAt && (
+                      <div className="group">
+                        <div className="flex items-start space-x-4">
+                          <div className="bg-gradient-to-br from-slate-100 to-slate-200 p-4 rounded-2xl group-hover:shadow-lg transition-all duration-300">
+                            <Calendar className="w-6 h-6 text-slate-600" />
+                          </div>
+                          <div className="flex-1">
+                            <label className="block text-sm font-bold text-slate-700 mb-3 uppercase tracking-wide">
+                              Last Login
+                            </label>
+                            <div className="bg-slate-50 px-4 py-4 rounded-xl">
+                              <p className="text-xl font-semibold text-slate-800">{formatDate(user.lastLoginAt)}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
