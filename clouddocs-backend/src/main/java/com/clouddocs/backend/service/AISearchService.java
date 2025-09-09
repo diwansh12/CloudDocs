@@ -68,7 +68,7 @@ public class AISearchService {
 
                         log.info("🔍 Document: {} → Similarity: {:.3f}", 
                 doc.getOriginalFilename(), similarity);
-                
+
                         return new DocumentWithScore(doc, similarity);
                     } catch (Exception e) {
                         log.warn("⚠️ Failed to calculate similarity for document {}: {}", 
@@ -329,4 +329,40 @@ public class AISearchService {
             return score; 
         }
     }
+
+
+public void forceRegenerateAllEmbeddings(String username) {
+    log.info("🔄 Force regenerating ALL embeddings for user: {}", username);
+    
+    // Get ALL documents for this user (regardless of embedding status)
+    List<Document> allDocuments = documentRepository.findByUploadedByUsername(username);
+    
+    log.info("📄 Regenerating embeddings for {} documents", allDocuments.size());
+    
+    for (Document doc : allDocuments) {
+        try {
+            String content = createEmbeddingContent(doc);
+            
+            // ✅ Generate new embedding with current active provider
+            List<Double> embedding = multiProviderAIService.generateEmbedding(content);
+            
+            // Store new embedding
+            doc.setEmbedding(embeddingService.embeddingToJson(embedding));
+            doc.setEmbeddingGenerated(true);
+            documentRepository.save(doc);
+            
+            log.info("✅ Regenerated embedding for: {} ({} dimensions)", 
+                doc.getOriginalFilename(), embedding.size());
+            
+            Thread.sleep(2000); // 2 second delay for rate limiting
+            
+        } catch (Exception e) {
+            log.error("❌ Failed to regenerate embedding for {}: {}", 
+                doc.getOriginalFilename(), e.getMessage());
+        }
+    }
+    
+    log.info("🎯 Embedding regeneration complete");
+}
+
 }

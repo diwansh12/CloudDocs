@@ -277,4 +277,33 @@ public class AIController {
             ));
         }
     }
+
+@PostMapping("/regenerate-embeddings")
+@PreAuthorize("isAuthenticated()")
+public ResponseEntity<?> regenerateAllEmbeddings(@AuthenticationPrincipal UserDetails userDetails) {
+    try {
+        String username = userDetails.getUsername();
+        
+        if (!featureFlagService.isAiEmbeddingEnabledForUser(username)) {
+            return ResponseEntity.ok(Map.of(
+                "message", "AI embedding generation is not available for your account"
+            ));
+        }
+        
+        aiSearchService.forceRegenerateAllEmbeddings(username);
+        
+        return ResponseEntity.ok(Map.of(
+            "message", "All embeddings regenerated successfully with active provider",
+            "activeProvider", multiProviderAIService.getActiveProvider() != null 
+                ? multiProviderAIService.getActiveProvider().getProviderName() 
+                : "None"
+        ));
+        
+    } catch (Exception e) {
+        return ResponseEntity.status(500).body(Map.of(
+            "error", "Failed to regenerate embeddings: " + e.getMessage()
+        ));
+    }
+}
+
 }
