@@ -26,6 +26,7 @@ public class DocumentDTO {
     private LocalDateTime approvalDate;
     private String rejectionReason;
     private Double aiScore;
+     private String searchType;
     
     // Constructors
     public DocumentDTO() {}
@@ -122,5 +123,13 @@ public class DocumentDTO {
     
     public void setAiScore(Double aiScore) { 
         this.aiScore = aiScore; 
+    }
+
+      public String getSearchType() {
+        return searchType;
+    }
+    
+    public void setSearchType(String searchType) {
+        this.searchType = searchType;
     }
 }

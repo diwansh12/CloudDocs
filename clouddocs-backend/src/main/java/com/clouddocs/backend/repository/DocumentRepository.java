@@ -27,8 +27,6 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     // Find documents by uploaded user ID
     Page<Document> findByUploadedById(Long uploadedById, Pageable pageable);
 
-    
-
     // ✅ CRITICAL: JOIN FETCH to prevent lazy loading exceptions
     @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
            "WHERE d.uploadedBy.id = :userId ORDER BY d.uploadDate DESC")
@@ -167,13 +165,79 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
            "FROM Document d")
     Object[] getFileSizeStatistics();
 
-     // ✅ ADD: AI search methods
-    @Query("SELECT d FROM Document d JOIN d.uploadedBy u WHERE u.username = :username AND d.embeddingGenerated = true")
+    // ===== ✅ NEW: AI SEARCH METHODS =====
+    
+    /**
+     * Find documents with embeddings generated for a specific user
+     */
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+           "WHERE d.uploadedBy.username = :username AND d.embeddingGenerated = true")
     List<Document> findByUploadedByUsernameAndEmbeddingGeneratedTrue(@Param("username") String username);
     
-    @Query("SELECT d FROM Document d JOIN d.uploadedBy u WHERE u.username = :username AND (d.embeddingGenerated = false OR d.embeddingGenerated IS NULL)")
+    /**
+     * Find documents without embeddings generated for a specific user
+     */
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+           "WHERE d.uploadedBy.username = :username AND (d.embeddingGenerated = false OR d.embeddingGenerated IS NULL)")
     List<Document> findByUploadedByUsernameAndEmbeddingGeneratedFalse(@Param("username") String username);
+
+    /**
+     * Count total documents by username
+     */
+    @Query("SELECT COUNT(d) FROM Document d WHERE d.uploadedBy.username = :username")
+    long countByUploadedByUsername(@Param("username") String username);
+
+    /**
+     * Count documents with embeddings generated for a specific user
+     */
+    @Query("SELECT COUNT(d) FROM Document d WHERE d.uploadedBy.username = :username AND d.embeddingGenerated = true")
+    long countByUploadedByUsernameAndEmbeddingGeneratedTrue(@Param("username") String username);
+
+    /**
+     * Count documents without embeddings generated for a specific user
+     */
+    @Query("SELECT COUNT(d) FROM Document d WHERE d.uploadedBy.username = :username AND (d.embeddingGenerated = false OR d.embeddingGenerated IS NULL)")
+    long countByUploadedByUsernameAndEmbeddingGeneratedFalse(@Param("username") String username);
+
+    /**
+     * Find documents by username and filename containing (case insensitive) for keyword search fallback
+     */
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+           "WHERE d.uploadedBy.username = :username AND LOWER(d.originalFilename) LIKE LOWER(CONCAT('%', :filename, '%'))")
+    List<Document> findByUploadedByUsernameAndOriginalFilenameContainingIgnoreCase(@Param("username") String username, @Param("filename") String filename);
+
+    /**
+     * Advanced search by username and query across multiple fields for hybrid AI search
+     */
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+           "WHERE d.uploadedBy.username = :username AND (" +
+           "LOWER(d.filename) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+           "LOWER(COALESCE(d.description, '')) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+           "LOWER(d.originalFilename) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+           "LOWER(COALESCE(d.category, '')) LIKE LOWER(CONCAT('%', :query, '%')))")
+    List<Document> searchDocumentsByQuery(@Param("username") String username, @Param("query") String query);
+
+    // ===== ✅ NEW: ADDITIONAL AI HELPER METHODS =====
+
+    /**
+     * Find documents by username (for general AI operations)
+     */
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+           "WHERE d.uploadedBy.username = :username ORDER BY d.uploadDate DESC")
+    List<Document> findByUploadedByUsername(@Param("username") String username);
+
+    /**
+     * Find recent documents without embeddings for a user (for batch processing)
+     */
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+           "WHERE d.uploadedBy.username = :username AND (d.embeddingGenerated = false OR d.embeddingGenerated IS NULL) " +
+           "ORDER BY d.uploadDate DESC")
+    List<Document> findRecentDocumentsWithoutEmbeddings(@Param("username") String username, Pageable pageable);
+
+    /**
+     * Count documents by username and status for AI statistics
+     */
+    @Query("SELECT COUNT(d) FROM Document d WHERE d.uploadedBy.username = :username AND d.status = :status")
+    long countByUploadedByUsernameAndStatus(@Param("username") String username, @Param("status") DocumentStatus status);
 }
-
-
 
