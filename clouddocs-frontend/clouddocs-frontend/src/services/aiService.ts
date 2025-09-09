@@ -53,10 +53,12 @@ const mapBackendResponseToDocument = (backendDoc: any): DocumentResult => ({
 });
 
 
-// Base API configuration
-const AI_API_BASE = '/api/ai';
+const AI_API_BASE = process.env.REACT_APP_API_BASE_URL 
+  ? `${process.env.REACT_APP_API_BASE_URL}/ai`
+  : 'https://clouddocs.onrender.com/api/ai';
 
-// Get auth token helper
+
+// ✅ Keep the rest of your aiService code exactly the same
 const getAuthHeaders = () => ({
   'Content-Type': 'application/json',
   'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -81,7 +83,6 @@ export const aiService = {
         throw new Error(data.message);
       }
 
-      // ✅ Map backend response to proper Document format
       return (data.results || []).map(mapBackendResponseToDocument);
     } catch (error) {
       console.error('AI Search Error:', error);
@@ -89,9 +90,6 @@ export const aiService = {
     }
   },
 
-  /**
-   * Generate embeddings for user's documents
-   */
   async generateEmbeddings(): Promise<string> {
     try {
       const response = await fetch(`${AI_API_BASE}/generate-embeddings`, {
@@ -111,9 +109,6 @@ export const aiService = {
     }
   },
 
-  /**
-   * Check AI feature status for current user
-   */
   async getAIStatus(): Promise<any> {
     try {
       const response = await fetch(`${AI_API_BASE}/status`, {
