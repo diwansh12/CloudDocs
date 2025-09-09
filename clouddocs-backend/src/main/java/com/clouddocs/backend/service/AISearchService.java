@@ -65,6 +65,10 @@ public class AISearchService {
                     try {
                         List<Double> docEmbedding = embeddingService.jsonToEmbedding(doc.getEmbedding());
                         double similarity = embeddingService.calculateSimilarity(queryEmbedding, docEmbedding);
+
+                        log.info("🔍 Document: {} → Similarity: {:.3f}", 
+                doc.getOriginalFilename(), similarity);
+                
                         return new DocumentWithScore(doc, similarity);
                     } catch (Exception e) {
                         log.warn("⚠️ Failed to calculate similarity for document {}: {}", 
@@ -72,12 +76,12 @@ public class AISearchService {
                         return new DocumentWithScore(doc, 0.0);
                     }
                 })
-                .filter(scored -> scored.score > 0.65)
+                .filter(scored -> scored.score > 0.55)
                 .sorted(Comparator.comparing(DocumentWithScore::getScore).reversed())
                 .limit(limit)
                 .collect(Collectors.toList());
             
-            log.info("✅ Semantic search completed: {} relevant documents found (threshold: 0.65)", 
+            log.info("✅ Semantic search completed: {} relevant documents found (threshold: 0.55)", 
                 scoredDocuments.size());
             
             // Convert to DTOs and return
