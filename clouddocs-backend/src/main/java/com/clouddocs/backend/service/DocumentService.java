@@ -460,7 +460,7 @@ public Page<DocumentDTO> getPendingDocuments(int page, int size) {
     
     // ===== HELPER METHODS =====
     
- private DocumentDTO convertToDTO(Document document) {
+ public DocumentDTO convertToDTO(Document document) {
         try {
             DocumentDTO dto = new DocumentDTO();
             

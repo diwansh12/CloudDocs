@@ -76,6 +76,12 @@ public class Document {
     
     @Column(name = "document_type")
     private String documentType;
+
+     @Column(name = "embedding", columnDefinition = "TEXT")
+    private String embedding; // Store as JSON string
+    
+    @Column(name = "embedding_generated")
+    private Boolean embeddingGenerated = false;
     
     // Constructors
     public Document() {
@@ -221,4 +227,10 @@ public class Document {
         if (fileSize < 1024 * 1024 * 1024) return String.format("%.1f MB", fileSize / (1024.0 * 1024.0));
         return String.format("%.1f GB", fileSize / (1024.0 * 1024.0 * 1024.0));
     }
+
+     public String getEmbedding() { return embedding; }
+    public void setEmbedding(String embedding) { this.embedding = embedding; }
+    
+    public Boolean getEmbeddingGenerated() { return embeddingGenerated; }
+    public void setEmbeddingGenerated(Boolean embeddingGenerated) { this.embeddingGenerated = embeddingGenerated; }
 }

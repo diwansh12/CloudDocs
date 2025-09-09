@@ -25,6 +25,7 @@ public class DocumentDTO {
     private String approvedByName;
     private LocalDateTime approvalDate;
     private String rejectionReason;
+    private Double aiScore;
     
     // Constructors
     public DocumentDTO() {}
@@ -114,4 +115,12 @@ public class DocumentDTO {
     
     public String getRejectionReason() { return rejectionReason; }
     public void setRejectionReason(String rejectionReason) { this.rejectionReason = rejectionReason; }
+
+     public Double getAiScore() { 
+        return aiScore; 
+    }
+    
+    public void setAiScore(Double aiScore) { 
+        this.aiScore = aiScore; 
+    }
 }

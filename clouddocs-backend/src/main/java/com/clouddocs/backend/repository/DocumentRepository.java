@@ -27,6 +27,8 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     // Find documents by uploaded user ID
     Page<Document> findByUploadedById(Long uploadedById, Pageable pageable);
 
+    
+
     // ✅ CRITICAL: JOIN FETCH to prevent lazy loading exceptions
     @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
            "WHERE d.uploadedBy.id = :userId ORDER BY d.uploadDate DESC")
@@ -164,4 +166,14 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
            "COUNT(CASE WHEN d.fileSize > 10485760 THEN 1 END) as largeFiles " +
            "FROM Document d")
     Object[] getFileSizeStatistics();
+
+     // ✅ ADD: AI search methods
+    @Query("SELECT d FROM Document d JOIN d.uploadedBy u WHERE u.username = :username AND d.embeddingGenerated = true")
+    List<Document> findByUploadedByUsernameAndEmbeddingGeneratedTrue(@Param("username") String username);
+    
+    @Query("SELECT d FROM Document d JOIN d.uploadedBy u WHERE u.username = :username AND (d.embeddingGenerated = false OR d.embeddingGenerated IS NULL)")
+    List<Document> findByUploadedByUsernameAndEmbeddingGeneratedFalse(@Param("username") String username);
 }
+
+
+
