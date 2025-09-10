@@ -6,7 +6,6 @@ import com.clouddocs.backend.dto.OCRResultDTO;
 import com.clouddocs.backend.dto.DocumentDTO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -24,15 +23,18 @@ import java.util.Map;
 @RequestMapping("/api/ocr")
 @CrossOrigin(origins = {"https://cloud-docs-tan.vercel.app", "http://localhost:3000"})
 public class OCRController {
-    
+
     private static final Logger logger = LoggerFactory.getLogger(OCRController.class);
-    
-    @Autowired
-    private OCRService ocrService;
-    
-    @Autowired
-    private DocumentService documentService;
-    
+
+    private final OCRService ocrService;
+    private final DocumentService documentService;
+
+    // ✅ Constructor injection
+    public OCRController(OCRService ocrService, DocumentService documentService) {
+        this.ocrService = ocrService;
+        this.documentService = documentService;
+    }
+
     /**
      * Extract text from image using OCR (preview only)
      */
@@ -47,101 +49,81 @@ public class OCRController {
         } catch (IllegalArgumentException e) {
             logger.warn("⚠️ Invalid request for OCR: {}", e.getMessage());
             return ResponseEntity.badRequest()
-                .body(new OCRResultDTO("", 0.0, 0L, file.getOriginalFilename(), false, e.getMessage()));
+                    .body(new OCRResultDTO("", 0.0, 0L, file.getOriginalFilename(), false, e.getMessage()));
         } catch (Exception e) {
             logger.error("❌ OCR extraction failed for {}: {}", file.getOriginalFilename(), e.getMessage(), e);
             return ResponseEntity.internalServerError()
-                .body(new OCRResultDTO("", 0.0, 0L, file.getOriginalFilename(), false, 
-                    "OCR processing failed: " + e.getMessage()));
+                    .body(new OCRResultDTO("", 0.0, 0L, file.getOriginalFilename(), false,
+                            "OCR processing failed: " + e.getMessage()));
         }
     }
-    
-   // In your OCRController.java - Update the getOCRStatistics method
 
-@GetMapping("/stats")
-@PreAuthorize("isAuthenticated()")
-public ResponseEntity<?> getOCRStatistics() {
-    try {
-        logger.info("📊 OCR statistics requested");
-        
+    /**
+     * Fetch OCR statistics
+     */
+    @GetMapping("/stats")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Map<String, Object>> getOCRStatistics() {
         Map<String, Object> stats = new HashMap<>();
-        
         try {
-            // Get actual OCR statistics from service
-            Map<String, Object> serviceStats = ocrService.getOCRStatistics();
-            stats.putAll(serviceStats);
-            
-        } catch (Exception serviceException) {
-            logger.warn("OCR service stats failed, using safe defaults: {}", serviceException.getMessage());
-            
-            // ✅ SAFE FALLBACK: Always return valid structure
+            logger.info("📊 OCR statistics requested");
+
+            // Always attempt to fetch service stats
+            stats.putAll(ocrService.getOCRStatistics());
+
+            // Always ensure metadata is present
+            stats.put("timestamp", System.currentTimeMillis());
+            stats.put("status", "success");
+            stats.put("service", "OCR Controller");
+
+            logger.info("✅ OCR statistics returned successfully: {}", stats);
+            return ResponseEntity.ok(stats);
+
+        } catch (Exception e) {
+            logger.error("❌ Failed to fetch OCR statistics: {}", e.getMessage(), e);
+
+            // Always return structured JSON
             stats.put("totalDocuments", 0);
             stats.put("documentsWithOCR", 0);
             stats.put("documentsWithEmbeddings", 0);
             stats.put("ocrCoverage", 0.0);
             stats.put("averageOCRConfidence", 0.0);
             stats.put("aiReadyDocuments", 0);
-        }
-        
-        // ✅ CRITICAL: Always include required fields
-        stats.put("timestamp", System.currentTimeMillis());
-        stats.put("status", "success");
-        stats.put("service", "OCR Controller");
-        
-        logger.info("✅ OCR statistics returned successfully: {}", stats);
-        return ResponseEntity.ok(stats);
-        
-    } catch (Exception e) {
-        logger.error("❌ Failed to fetch OCR statistics: {}", e.getMessage(), e);
-        
-        // ✅ STRUCTURED ERROR RESPONSE
-        Map<String, Object> errorResponse = new HashMap<>();
-        errorResponse.put("error", "Failed to fetch OCR statistics");
-        errorResponse.put("message", "Service temporarily unavailable");
-        errorResponse.put("timestamp", System.currentTimeMillis());
-        errorResponse.put("status", "error");
-        
-        // ✅ SAFE DEFAULTS for frontend
-        errorResponse.put("totalDocuments", 0);
-        errorResponse.put("documentsWithOCR", 0);
-        errorResponse.put("documentsWithEmbeddings", 0);
-        errorResponse.put("ocrCoverage", 0.0);
-        errorResponse.put("averageOCRConfidence", 0.0);
-        errorResponse.put("aiReadyDocuments", 0);
-        
-        return ResponseEntity.status(500).body(errorResponse);
-    }
-}
 
-    
+            stats.put("error", "Failed to fetch OCR statistics");
+            stats.put("message", "Service temporarily unavailable");
+            stats.put("timestamp", System.currentTimeMillis());
+            stats.put("status", "error");
+            stats.put("service", "OCR Controller");
+
+            return ResponseEntity.status(500).body(stats);
+        }
+    }
+
     /**
-     * ✅ NEW: OCR Health Check endpoint
+     * ✅ OCR Health Check endpoint
      */
     @GetMapping("/health")
-    public ResponseEntity<?> healthCheck() {
+    public ResponseEntity<Map<String, Object>> healthCheck() {
+        Map<String, Object> health = new HashMap<>();
         try {
-            Map<String, Object> health = new HashMap<>();
             health.put("status", "UP");
             health.put("service", "OCR Controller");
             health.put("timestamp", System.currentTimeMillis());
             health.put("message", "OCR endpoints are responding");
-            
-            // Check if OCR service is available
-            boolean ocrAvailable = ocrService != null;
-            health.put("ocrServiceAvailable", ocrAvailable);
-            
+            health.put("ocrServiceAvailable", (ocrService != null));
             return ResponseEntity.ok(health);
-            
+
         } catch (Exception e) {
             logger.error("❌ OCR health check failed: {}", e.getMessage(), e);
             return ResponseEntity.status(500).body(Map.of(
-                "status", "DOWN",
-                "error", e.getMessage(),
-                "timestamp", System.currentTimeMillis()
+                    "status", "DOWN",
+                    "error", e.getMessage(),
+                    "timestamp", System.currentTimeMillis()
             ));
         }
     }
-    
+
     /**
      * Upload document with OCR processing and AI embedding
      */
@@ -152,22 +134,22 @@ public ResponseEntity<?> getOCRStatistics() {
             @RequestParam(value = "description", required = false) String description,
             @RequestParam(value = "category", required = false) String category,
             @AuthenticationPrincipal UserDetails userDetails) {
-        
+
         try {
             logger.info("📤 OCR upload request for: {}", file.getOriginalFilename());
-            
+
             // Process document with OCR
             var documentWithOCR = ocrService.processDocumentWithOCR(file, description, category);
-            
+
             // Save document with OCR data
             DocumentDTO savedDocument = documentService.saveDocumentWithOCR(
-                documentWithOCR, 
-                userDetails.getUsername()
+                    documentWithOCR,
+                    userDetails.getUsername()
             );
-            
+
             logger.info("✅ OCR upload completed for: {}", file.getOriginalFilename());
             return ResponseEntity.ok(savedDocument);
-            
+
         } catch (IllegalArgumentException e) {
             logger.warn("⚠️ Invalid request for OCR upload: {}", e.getMessage());
             return ResponseEntity.badRequest().build();
@@ -177,4 +159,3 @@ public ResponseEntity<?> getOCRStatistics() {
         }
     }
 }
-
