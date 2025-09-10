@@ -96,7 +96,8 @@ public class SecurityConfig {
                 
                 // ✅ FIXED: OCR endpoints - EXPLICIT MAPPING
                 .requestMatchers("/api/ocr/**").authenticated()
-                
+                .requestMatchers("/api/search/**").authenticated()  // Add this line
+
                 // ✅ FIXED: All API endpoints with proper /api/ prefix
                 .requestMatchers("/api/users/**").authenticated()
                 .requestMatchers("/api/documents/**").authenticated()

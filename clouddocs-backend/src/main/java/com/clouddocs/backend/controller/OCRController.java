@@ -20,7 +20,7 @@ import java.util.Map;
  * 📖 OCR Controller for FREE text extraction from images
  */
 @RestController
-@RequestMapping("/api/ocr")
+@RequestMapping("/ocr")
 @CrossOrigin(origins = {"https://cloud-docs-tan.vercel.app", "http://localhost:3000"})
 public class OCRController {
 
