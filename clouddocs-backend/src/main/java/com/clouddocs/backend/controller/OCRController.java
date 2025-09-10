@@ -63,42 +63,34 @@ public class OCRController {
      */
     @GetMapping("/stats")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<Map<String, Object>> getOCRStatistics() {
-        Map<String, Object> stats = new HashMap<>();
-        try {
-            logger.info("📊 OCR statistics requested");
+  public ResponseEntity<Map<String, Object>> getOCRStatistics(@AuthenticationPrincipal UserDetails userDetails) {
+    Map<String, Object> stats = new HashMap<>();
+    try {
+        String username = userDetails.getUsername();
+        stats.putAll(ocrService.getOCRStatistics(username));
 
-            // Always attempt to fetch service stats
-            stats.putAll(ocrService.getOCRStatistics());
+        stats.put("timestamp", System.currentTimeMillis());
+        stats.put("status", "success");
+        stats.put("service", "OCR Controller");
 
-            // Always ensure metadata is present
-            stats.put("timestamp", System.currentTimeMillis());
-            stats.put("status", "success");
-            stats.put("service", "OCR Controller");
+        return ResponseEntity.ok(stats);
 
-            logger.info("✅ OCR statistics returned successfully: {}", stats);
-            return ResponseEntity.ok(stats);
+    } catch (Exception e) {
+        stats.put("totalDocuments", 0);
+        stats.put("documentsWithOCR", 0);
+        stats.put("documentsWithEmbeddings", 0);
+        stats.put("ocrCoverage", 0.0);
+        stats.put("averageOCRConfidence", 0.0);
+        stats.put("aiReadyDocuments", 0);
+        stats.put("error", "Failed to fetch OCR statistics");
+        stats.put("message", "Service temporarily unavailable");
+        stats.put("timestamp", System.currentTimeMillis());
+        stats.put("status", "error");
+        stats.put("service", "OCR Controller");
 
-        } catch (Exception e) {
-            logger.error("❌ Failed to fetch OCR statistics: {}", e.getMessage(), e);
-
-            // Always return structured JSON
-            stats.put("totalDocuments", 0);
-            stats.put("documentsWithOCR", 0);
-            stats.put("documentsWithEmbeddings", 0);
-            stats.put("ocrCoverage", 0.0);
-            stats.put("averageOCRConfidence", 0.0);
-            stats.put("aiReadyDocuments", 0);
-
-            stats.put("error", "Failed to fetch OCR statistics");
-            stats.put("message", "Service temporarily unavailable");
-            stats.put("timestamp", System.currentTimeMillis());
-            stats.put("status", "error");
-            stats.put("service", "OCR Controller");
-
-            return ResponseEntity.status(500).body(stats);
-        }
+        return ResponseEntity.status(500).body(stats);
     }
+}
 
     /**
      * ✅ OCR Health Check endpoint

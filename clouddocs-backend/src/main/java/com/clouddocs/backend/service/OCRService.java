@@ -110,86 +110,81 @@ public class OCRService {
     }
     
 
-  public Map<String, Object> getOCRStatistics() {
-        Map<String, Object> stats = new HashMap<>();
+  public Map<String, Object> getOCRStatistics(String username) {
+    Map<String, Object> stats = new HashMap<>();
+
+    try {
+        log.info("📊 Fetching OCR statistics for user: {}", username);
+
+        long totalDocuments = documentRepository.count();
+        long documentsWithOCR = 0L;
+        long documentsWithEmbeddings = 0L;
+        long aiReadyDocuments = 0L;
+        Double avgOCRConfidence = 0.0;
 
         try {
-            log.info("📊 Fetching OCR statistics from repository");
-
-            // Use repository queries safely
-            long totalDocuments = documentRepository.count();
-            long documentsWithOCR = 0L;
-            long documentsWithEmbeddings = 0L;
-            long aiReadyDocuments = 0L;
-            Double avgOCRConfidence = 0.0;
-
-            try {
-                documentsWithOCR = documentRepository.findByHasOcrTrue().size();
-            } catch (Exception e) {
-                log.warn("⚠️ Failed to fetch documentsWithOCR: {}", e.getMessage());
-            }
-
-            try {
-                documentsWithEmbeddings = documentRepository.findByEmbeddingGeneratedTrue().size();
-            } catch (Exception e) {
-                log.warn("⚠️ Failed to fetch documentsWithEmbeddings: {}", e.getMessage());
-            }
-
-            try {
-                aiReadyDocuments = documentRepository.countAIReadyDocumentsWithOCR("system"); 
-                // 🔑 Replace "system" with actual logged-in user if needed
-            } catch (Exception e) {
-                log.warn("⚠️ Failed to fetch aiReadyDocuments: {}", e.getMessage());
-            }
-
-            try {
-                avgOCRConfidence = Optional.ofNullable(
-                        documentRepository.getAverageOCRConfidenceByUser("system")
-                ).orElse(0.0);
-            } catch (Exception e) {
-                log.warn("⚠️ Failed to fetch averageOCRConfidence: {}", e.getMessage());
-            }
-
-            double ocrCoverage = (totalDocuments > 0)
-                    ? (documentsWithOCR * 100.0 / totalDocuments)
-                    : 0.0;
-
-            // ✅ Populate map with safe defaults
-            stats.put("totalDocuments", totalDocuments);
-            stats.put("documentsWithOCR", documentsWithOCR);
-            stats.put("documentsWithEmbeddings", documentsWithEmbeddings);
-            stats.put("ocrCoverage", ocrCoverage);
-            stats.put("averageOCRConfidence", avgOCRConfidence);
-            stats.put("aiReadyDocuments", aiReadyDocuments);
-
-            // ✅ Add metadata
-            stats.put("timestamp", System.currentTimeMillis());
-            stats.put("status", "success");
-            stats.put("service", "OCR Service");
-            stats.put("supportedFormats", Arrays.asList("JPEG", "PNG", "BMP", "TIFF", "GIF"));
-            stats.put("tesseractAvailable", true); // assume true; update if you have a checker
-
-            log.info("✅ OCR statistics built successfully: {}", stats);
-
+            documentsWithOCR = documentRepository.findByHasOcrTrue().size();
         } catch (Exception e) {
-            log.error("❌ Error while building OCR statistics: {}", e.getMessage(), e);
-
-            // Always return safe defaults on error
-            stats.put("totalDocuments", 0);
-            stats.put("documentsWithOCR", 0);
-            stats.put("documentsWithEmbeddings", 0);
-            stats.put("ocrCoverage", 0.0);
-            stats.put("averageOCRConfidence", 0.0);
-            stats.put("aiReadyDocuments", 0);
-            stats.put("timestamp", System.currentTimeMillis());
-            stats.put("status", "error");
-            stats.put("service", "OCR Service");
-            stats.put("supportedFormats", Arrays.asList("JPEG", "PNG", "BMP", "TIFF", "GIF"));
-            stats.put("tesseractAvailable", false);
+            log.warn("⚠️ Failed to fetch documentsWithOCR: {}", e.getMessage());
         }
 
-        return stats;
+        try {
+            documentsWithEmbeddings = documentRepository.findByEmbeddingGeneratedTrue().size();
+        } catch (Exception e) {
+            log.warn("⚠️ Failed to fetch documentsWithEmbeddings: {}", e.getMessage());
+        }
+
+        try {
+            aiReadyDocuments = documentRepository.countAIReadyDocumentsWithOCR(username);
+        } catch (Exception e) {
+            log.warn("⚠️ Failed to fetch aiReadyDocuments: {}", e.getMessage());
+        }
+
+        try {
+            avgOCRConfidence = Optional.ofNullable(
+                    documentRepository.getAverageOCRConfidenceByUser(username)
+            ).orElse(0.0);
+        } catch (Exception e) {
+            log.warn("⚠️ Failed to fetch averageOCRConfidence: {}", e.getMessage());
+        }
+
+        double ocrCoverage = (totalDocuments > 0)
+                ? (documentsWithOCR * 100.0 / totalDocuments)
+                : 0.0;
+
+        stats.put("totalDocuments", totalDocuments);
+        stats.put("documentsWithOCR", documentsWithOCR);
+        stats.put("documentsWithEmbeddings", documentsWithEmbeddings);
+        stats.put("ocrCoverage", ocrCoverage);
+        stats.put("averageOCRConfidence", avgOCRConfidence);
+        stats.put("aiReadyDocuments", aiReadyDocuments);
+
+        stats.put("timestamp", System.currentTimeMillis());
+        stats.put("status", "success");
+        stats.put("service", "OCR Service");
+        stats.put("supportedFormats", Arrays.asList("JPEG", "PNG", "BMP", "TIFF", "GIF"));
+        stats.put("tesseractAvailable", true);
+
+        log.info("✅ OCR statistics built successfully: {}", stats);
+
+    } catch (Exception e) {
+        log.error("❌ Error while building OCR statistics: {}", e.getMessage(), e);
+
+        stats.put("totalDocuments", 0);
+        stats.put("documentsWithOCR", 0);
+        stats.put("documentsWithEmbeddings", 0);
+        stats.put("ocrCoverage", 0.0);
+        stats.put("averageOCRConfidence", 0.0);
+        stats.put("aiReadyDocuments", 0);
+        stats.put("timestamp", System.currentTimeMillis());
+        stats.put("status", "error");
+        stats.put("service", "OCR Service");
+        stats.put("supportedFormats", Arrays.asList("JPEG", "PNG", "BMP", "TIFF", "GIF"));
+        stats.put("tesseractAvailable", false);
     }
+
+    return stats;
+}
 
 
 private boolean isTesseractAvailable() {
