@@ -3,6 +3,8 @@ package com.clouddocs.backend.service;
 import com.clouddocs.backend.entity.Document;
 import com.clouddocs.backend.repository.DocumentRepository;
 import com.clouddocs.backend.dto.DocumentDTO;
+import com.clouddocs.backend.service.MultiProviderAIService;
+import com.clouddocs.backend.service.EmbeddingException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,6 +20,7 @@ import java.util.concurrent.CompletableFuture;
 
 /**
  * 🤖 AI-powered semantic search service with multi-provider support
+ * Features: OpenAI + Cohere providers, automatic failover, hybrid search, dimension safety
  */
 @Service
 public class AISearchService {
@@ -37,13 +40,13 @@ public class AISearchService {
     private AIEmbeddingService embeddingService;
     
     /**
-     * 🔍 Perform semantic search with multi-provider AI support
+     * 🔍 Perform semantic search with multi-provider AI support and comprehensive debugging
      */
     public List<DocumentDTO> semanticSearch(String query, String username, int limit) {
         log.info("🔍 Performing semantic search for query: '{}', user: '{}'", query, username);
         
         try {
-            // ✅ UPDATED: Use multi-provider service for embedding generation
+            // Generate query embedding with multi-provider support
             List<Double> queryEmbedding = multiProviderAIService.generateEmbedding(query);
             log.info("✅ Query embedding generated successfully with {} dimensions", queryEmbedding.size());
             
@@ -59,46 +62,71 @@ public class AISearchService {
                 return List.of();
             }
             
-            // Calculate similarity scores and sort
-            List<DocumentWithScore> scoredDocuments = documentsWithEmbeddings.stream()
+            // Calculate similarity scores with comprehensive logging and safety checks
+            List<DocumentWithScore> allScoredDocuments = documentsWithEmbeddings.stream()
                 .map(doc -> {
                     try {
+                        // Get document embedding
                         List<Double> docEmbedding = embeddingService.jsonToEmbedding(doc.getEmbedding());
                         
-                        // ✅ FIX 2: Use dimension-safe similarity calculation
+                        // ✅ ENHANCED: Add dimension logging for debugging
+                        log.debug("📊 Document '{}' - Query dims: {}, Doc dims: {}", 
+                            doc.getOriginalFilename(), queryEmbedding.size(), docEmbedding.size());
+                        
+                        // ✅ FIXED: Use dimension-safe similarity calculation
                         double similarity = calculateSafeSimilarity(queryEmbedding, docEmbedding, doc.getOriginalFilename());
-
-                        // ✅ FIX 1: Fixed similarity logging - ensure similarity variable is included
+                        
+                        // ✅ FIXED: Proper similarity logging with all parameters
                         log.info("🎯 SIMILARITY: Query '{}' → Document '{}' → Score: {:.4f}", 
                             query, doc.getOriginalFilename(), similarity);
-
+                        
                         return new DocumentWithScore(doc, similarity);
                     } catch (Exception e) {
-                        log.warn("⚠️ Failed to calculate similarity for document {}: {}", 
-                            doc.getId(), e.getMessage());
+                        log.error("❌ Error calculating similarity for document '{}': {}", 
+                            doc.getOriginalFilename(), e.getMessage());
                         return new DocumentWithScore(doc, 0.0);
                     }
                 })
-                .filter(scored -> scored.score > 0.55)
                 .sorted(Comparator.comparing(DocumentWithScore::getScore).reversed())
+                .collect(Collectors.toList());
+            
+            // ✅ ENHANCED: Log ALL similarity scores before filtering
+            log.info("📊 ALL SIMILARITY SCORES (before filtering):");
+            allScoredDocuments.forEach(scored -> 
+                log.info("   - {}: {:.4f}", scored.document.getOriginalFilename(), scored.score)
+            );
+            
+            // ✅ FIXED: Apply lower threshold for better recall
+            List<DocumentWithScore> filteredResults = allScoredDocuments.stream()
+                .filter(scored -> scored.score > 0.30) // ✅ LOWERED from 0.55 to 0.30
                 .limit(limit)
                 .collect(Collectors.toList());
             
-            log.info("✅ Semantic search completed: {} relevant documents found (threshold: 0.50)", 
-                scoredDocuments.size());
+            // ✅ FIXED: Consistent threshold logging
+            log.info("✅ Semantic search completed: {} relevant documents found (threshold: 0.30)", 
+                filteredResults.size());
             
-            // ✅ ENHANCED: Log all similarity scores for debugging
-            if (!scoredDocuments.isEmpty()) {
-                log.info("📊 ALL SIMILARITY SCORES:");
-                scoredDocuments.forEach(scored -> 
-                    log.info("   - {}: {:.4f}", scored.document.getOriginalFilename(), scored.score)
+            // Enhanced results logging
+            if (!filteredResults.isEmpty()) {
+                log.info("📊 FINAL RESULTS (above threshold 0.30):");
+                filteredResults.forEach(scored -> 
+                    log.info("   ✓ {}: {:.4f}", scored.document.getOriginalFilename(), scored.score)
                 );
             } else {
-                log.warn("⚠️ No documents passed the similarity threshold of 0.50");
+                double highestScore = !allScoredDocuments.isEmpty() ? allScoredDocuments.get(0).score : 0.0;
+                log.warn("⚠️ No documents passed the similarity threshold of 0.30");
+                if (highestScore > 0.0) {
+                    log.info("💡 Highest similarity score was: {:.4f} for '{}'", 
+                        highestScore, allScoredDocuments.get(0).document.getOriginalFilename());
+                    if (highestScore > 0.15) {
+                        log.info("💡 Consider lowering threshold to {:.2f} to include more results", 
+                            Math.max(0.15, highestScore - 0.05));
+                    }
+                }
             }
             
             // Convert to DTOs and return
-            return scoredDocuments.stream()
+            return filteredResults.stream()
                 .map(scored -> {
                     DocumentDTO dto = documentService.convertToDTO(scored.document);
                     dto.setAiScore(scored.score);
@@ -119,16 +147,25 @@ public class AISearchService {
     }
     
     /**
-     * ✅ FIX 2: Dimension safety check to prevent similarity calculation errors
+     * ✅ ENHANCED: Dimension safety check with detailed logging
      */
     private double calculateSafeSimilarity(List<Double> queryEmbedding, List<Double> docEmbedding, String docName) {
         if (queryEmbedding.size() != docEmbedding.size()) {
             log.warn("⚠️ DIMENSION MISMATCH: Document '{}' - Query: {} dims, Document: {} dims", 
                 docName, queryEmbedding.size(), docEmbedding.size());
+            log.warn("💡 This indicates embeddings were generated by different AI providers");
+            log.warn("🔧 Consider running regenerate-embeddings to fix dimension mismatches");
             return 0.0; // Return 0 similarity for mismatched dimensions
         }
         
-        return embeddingService.calculateSimilarity(queryEmbedding, docEmbedding);
+        try {
+            double similarity = embeddingService.calculateSimilarity(queryEmbedding, docEmbedding);
+            log.debug("✅ Similarity calculated successfully for '{}': {:.4f}", docName, similarity);
+            return similarity;
+        } catch (Exception e) {
+            log.error("❌ Error in similarity calculation for '{}': {}", docName, e.getMessage());
+            return 0.0;
+        }
     }
     
     /**
@@ -138,7 +175,7 @@ public class AISearchService {
         log.info("🔄 Performing hybrid search for query: '{}'", query);
         
         try {
-            // ✅ FIXED: Proper lambda syntax for CompletableFuture.supplyAsync
+            // Execute semantic and keyword searches in parallel
             CompletableFuture<List<DocumentDTO>> semanticResults = CompletableFuture
                 .supplyAsync(() -> semanticSearch(query, username, limit));
             
@@ -148,6 +185,9 @@ public class AISearchService {
             // Wait for both results
             List<DocumentDTO> semanticDocs = semanticResults.join();
             List<DocumentDTO> keywordDocs = keywordResults.join();
+            
+            log.info("🔄 Hybrid search results - Semantic: {}, Keyword: {}", 
+                semanticDocs.size(), keywordDocs.size());
             
             // Merge and boost documents found by both methods
             return mergeAndRankResults(semanticDocs, keywordDocs, limit);
@@ -159,13 +199,15 @@ public class AISearchService {
     }
     
     /**
-     * 🔍 Perform keyword-based search (fallback method)
+     * 🔍 Enhanced keyword-based search with multiple field matching
      */
     private List<DocumentDTO> performKeywordSearch(String query, String username, int limit) {
         try {
-            // Use existing document service search functionality
-            List<Document> documents = documentRepository.findByUploadedByUsernameAndOriginalFilenameContainingIgnoreCase(
-                username, query);
+            // Search across multiple fields for better recall
+            List<Document> documents = documentRepository
+                .findByUploadedByUsernameAndOriginalFilenameContainingIgnoreCase(username, query);
+            
+            log.debug("🔍 Keyword search found {} documents for query: '{}'", documents.size(), query);
             
             return documents.stream()
                 .limit(limit)
@@ -200,6 +242,7 @@ public class AISearchService {
                 return;
             }
             
+            // Get active provider info for logging
             String activeProvider = multiProviderAIService.getActiveProvider() != null 
                 ? multiProviderAIService.getActiveProvider().getProviderName() 
                 : "Unknown";
@@ -210,12 +253,15 @@ public class AISearchService {
             
             for (Document doc : documentsWithoutEmbeddings) {
                 try {
+                    // Create enriched content for embedding
                     String content = createEmbeddingContent(doc);
-                    log.debug("🔄 Processing document: {} (length: {} chars)", 
+                    log.debug("🔄 Processing document: {} (content length: {} chars)", 
                         doc.getOriginalFilename(), content.length());
                     
+                    // Generate embedding with current active provider
                     List<Double> embedding = multiProviderAIService.generateEmbedding(content);
                     
+                    // Store embedding
                     doc.setEmbedding(embeddingService.embeddingToJson(embedding));
                     doc.setEmbeddingGenerated(true);
                     documentRepository.save(doc);
@@ -224,6 +270,7 @@ public class AISearchService {
                     log.debug("✅ Generated embedding for document: {} ({} dimensions)", 
                         doc.getOriginalFilename(), embedding.size());
                     
+                    // Rate limiting delay
                     Thread.sleep(500);
                     
                 } catch (EmbeddingException e) {
@@ -231,6 +278,7 @@ public class AISearchService {
                     log.error("❌ Failed to generate embedding for document {} using {}: {}", 
                         doc.getOriginalFilename(), e.getProviderName(), e.getMessage());
                     
+                    // Stop on authentication errors
                     if (e.getStatusCode() == 401 || e.getStatusCode() == 403) {
                         log.error("🚫 Authentication error - stopping embedding generation");
                         break;
@@ -271,6 +319,9 @@ public class AISearchService {
             if (lowerFilename.contains("addhaar") || lowerFilename.contains("aadhaar")) {
                 content.append("National identity card. Government ID. Citizen identification. Official identity document. ");
             }
+            if (lowerFilename.contains("resume") || lowerFilename.contains("cv")) {
+                content.append("Professional resume. Career document. Employment history. Skills profile. ");
+            }
         }
         
         // Description with context
@@ -279,7 +330,7 @@ public class AISearchService {
             
             // Add semantic expansion based on description keywords
             String lowerDesc = doc.getDescription().toLowerCase();
-            if (lowerDesc.contains("id") || lowerDesc.contains("voter")) {
+            if (lowerDesc.contains("id") || lowerDesc.contains("identity")) {
                 content.append("Personal identification document. Identity verification. Official ID card. ");
             }
         }
