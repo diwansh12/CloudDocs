@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Upload, FileImage, Brain, Check, AlertCircle } from 'lucide-react';
+import ocrService from '../services/ocrService';
 
 interface OCRResult {
   extractedText: string;
@@ -30,75 +31,63 @@ const OCRUpload: React.FC = () => {
     }
   };
   
-  const extractText = async () => {
+const extractText = async () => {
     if (!file) return;
-    
+
+    // Validate file first
+    const validation = ocrService.validateFileForOCR(file);
+    if (!validation.valid) {
+      alert(validation.error);
+      return;
+    }
+
     setIsProcessing(true);
-    
+
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      
-      const response = await fetch('/api/ocr/extract', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: formData
-      });
-      
-      const result: OCRResult = await response.json();
+      const result = await ocrService.extractText(file);
       setOcrResult(result);
       
+      if (result.success) {
+        console.log('✅ OCR Success:', {
+          text: result.extractedText,
+          confidence: ocrService.formatConfidence(result.confidence),
+          processingTime: `${result.processingTimeMs}ms`
+        });
+      }
     } catch (error) {
-      console.error('OCR extraction failed:', error);
+      console.error('❌ OCR Error:', error);
       setOcrResult({
         extractedText: '',
         confidence: 0,
         processingTimeMs: 0,
         filename: file.name,
         success: false,
-        errorMessage: 'OCR processing failed'
+        errorMessage: error instanceof Error ? error.message : 'OCR processing failed'
       });
     } finally {
       setIsProcessing(false);
     }
   };
-  
+
   const uploadDocument = async () => {
     if (!file) return;
-    
+
     setIsProcessing(true);
-    
+
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('description', description);
-      formData.append('category', category);
+      const document = await ocrService.uploadDocumentWithOCR(file, description, category);
       
-      const response = await fetch('/api/ocr/upload', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: formData
-      });
+      alert('🎉 Document uploaded successfully with OCR processing!');
+      console.log('✅ Upload Success:', document);
       
-      if (response.ok) {
-        const document = await response.json();
-        alert('Document uploaded with OCR processing!');
-        // Reset form
-        setFile(null);
-        setOcrResult(null);
-        setDescription('');
-        setCategory('');
-      } else {
-        alert('Upload failed');
-      }
-      
+      // Reset form
+      setFile(null);
+      setOcrResult(null);
+      setDescription('');
+      setCategory('');
     } catch (error) {
-      console.error('Upload failed:', error);
-      alert('Upload failed');
+      console.error('❌ Upload Error:', error);
+      alert(`Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsProcessing(false);
     }

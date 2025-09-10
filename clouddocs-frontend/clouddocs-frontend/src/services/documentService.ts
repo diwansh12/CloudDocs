@@ -1,4 +1,6 @@
+// src/services/documentService.ts
 import api from './api';
+import { DocumentWithOCR } from './api';
 
 export interface Document {
   id: number;
@@ -21,6 +23,15 @@ export interface Document {
   approvedByName?: string;
   approvalDate?: string;
   rejectionReason?: string;
+  // ✅ NEW: OCR fields
+  hasOcr?: boolean;
+  ocrText?: string;
+  ocrConfidence?: number;
+  ocrProcessingTime?: number;
+  // ✅ NEW: AI fields
+  embeddingGenerated?: boolean;
+  aiScore?: number;
+  searchType?: 'semantic' | 'keyword' | 'hybrid';
 }
 
 export interface DocumentsResponse {
@@ -37,7 +48,24 @@ export interface DocumentUploadResponse {
   document: Document;
 }
 
-// ✅ NEW: Share link interfaces
+// ✅ NEW: OCR-specific interfaces
+export interface OCRStatistics {
+  totalDocuments: number;
+  documentsWithOCR: number;
+  documentsWithEmbeddings: number;
+  ocrCoverage: number;
+  averageOCRConfidence: number;
+  aiReadyDocuments: number;
+}
+
+export interface SearchResult {
+  documents: Document[];
+  totalResults: number;
+  searchType: 'semantic' | 'keyword' | 'hybrid';
+  processingTime: number;
+}
+
+// ✅ Existing interfaces
 export interface ShareLinkOptions {
   expiryHours?: number;
   allowDownload?: boolean;
@@ -60,7 +88,6 @@ export interface ShareLink {
   accessCount: number;
 }
 
-// ✅ NEW: Metadata update interface
 export interface DocumentMetadata {
   title?: string;
   description?: string;
@@ -69,6 +96,8 @@ export interface DocumentMetadata {
 }
 
 class DocumentService {
+  
+  // ===== EXISTING DOCUMENT METHODS =====
   
   // Get all documents with pagination and filtering
   async getAllDocuments(
@@ -121,6 +150,28 @@ class DocumentService {
     }
   }
 
+  // ✅ NEW: Get user's documents with OCR information
+  async getMyDocumentsWithOCR(
+    page: number = 0,
+    size: number = 20,
+    sortBy: string = 'uploadDate',
+    sortDir: string = 'desc'
+  ): Promise<{ documents: Document[]; currentPage: number; totalItems: number; totalPages: number; hasNext: boolean; hasPrevious: boolean; }> {
+    try {
+      const params = new URLSearchParams({
+        page: page.toString(),
+        size: size.toString(),
+        sortBy,
+        sortDir
+      });
+
+      const response = await api.get<any>(`/documents/my-documents-ocr?${params}`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Failed to fetch your documents with OCR info');
+    }
+  }
+
   // Get document by ID
   async getDocumentById(id: number): Promise<Document> {
     try {
@@ -131,7 +182,7 @@ class DocumentService {
     }
   }
 
-  // Upload document
+  // Upload document (regular)
   async uploadDocument(file: File, description?: string, category?: string, tags?: string[]): Promise<Document> {
     try {
       const formData = new FormData();
@@ -156,6 +207,43 @@ class DocumentService {
       return response.data.document;
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Failed to upload document');
+    }
+  }
+
+  // ✅ NEW: Upload document with OCR processing
+  async uploadDocumentWithOCR(
+    file: File, 
+    description?: string, 
+    category?: string, 
+    tags?: string[]
+  ): Promise<Document> {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      if (description) formData.append('description', description);
+      if (category) formData.append('category', category);
+      if (tags && tags.length > 0) {
+        tags.forEach(tag => formData.append('tags', tag));
+      }
+
+      const response = await api.uploadFile<{ document: Document }>('/ocr/upload', formData, {
+        timeout: 60000, // Extended timeout for OCR processing
+        onUploadProgress: (progressEvent) => {
+          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total!);
+          console.log(`📤 OCR Upload Progress: ${progress}%`);
+        },
+      });
+      
+      return response.data.document;
+    } catch (error: any) {
+      if (error.response?.status === 413) {
+        throw new Error('File too large. Please select an image smaller than 10MB.');
+      }
+      if (error.response?.status === 415) {
+        throw new Error('Unsupported file type. Please upload an image file (JPEG, PNG, BMP, TIFF, GIF).');
+      }
+      throw new Error(error.response?.data?.error || 'Failed to upload document with OCR');
     }
   }
 
@@ -189,7 +277,111 @@ class DocumentService {
     }
   }
 
-  // ✅ NEW: Update document metadata
+  // ===== OCR-SPECIFIC METHODS =====
+
+  // ✅ NEW: Get OCR statistics for current user
+  async getOCRStatistics(): Promise<OCRStatistics> {
+    try {
+      const response = await api.get<OCRStatistics>('/ocr/stats');
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Failed to fetch OCR statistics');
+    }
+  }
+
+  // ✅ NEW: Filter documents by OCR status
+  async getDocumentsByOCRStatus(hasOCR: boolean): Promise<Document[]> {
+    try {
+      const response = await api.get<Document[]>(`/documents/filter-ocr?hasOCR=${hasOCR}`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Failed to fetch documents by OCR status');
+    }
+  }
+
+  // ✅ NEW: Get documents with high OCR confidence
+  async getHighConfidenceOCRDocuments(minConfidence: number = 0.8): Promise<Document[]> {
+    try {
+      const response = await api.get<Document[]>(`/documents/ocr/high-confidence?minConfidence=${minConfidence}`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Failed to fetch high confidence OCR documents');
+    }
+  }
+
+  // ✅ NEW: Get AI-ready documents (both OCR and embeddings)
+  async getAIReadyDocuments(): Promise<Document[]> {
+    try {
+      const response = await api.get<Document[]>('/documents/ai-ready');
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Failed to fetch AI-ready documents');
+    }
+  }
+
+  // ===== SEARCH METHODS =====
+
+  // ✅ NEW: AI-powered semantic search (includes OCR text)
+  async semanticSearch(query: string, limit: number = 10): Promise<SearchResult> {
+    try {
+      console.log('🔍 Starting semantic search for:', query);
+      
+      const startTime = Date.now();
+      
+      const response = await api.post<SearchResult>('/search/semantic', {
+        query,
+        limit
+      });
+      
+      const processingTime = Date.now() - startTime;
+      console.log(`✅ Semantic search completed in ${processingTime}ms`);
+      
+      return {
+        ...response.data,
+        processingTime
+      };
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Semantic search failed');
+    }
+  }
+
+  // ✅ NEW: Hybrid search (semantic + keyword + OCR text)
+  async hybridSearch(query: string, limit: number = 10): Promise<SearchResult> {
+    try {
+      console.log('🔍 Starting hybrid search for:', query);
+      
+      const startTime = Date.now();
+      
+      const response = await api.post<SearchResult>('/search/hybrid', {
+        query,
+        limit
+      });
+      
+      const processingTime = Date.now() - startTime;
+      console.log(`✅ Hybrid search completed in ${processingTime}ms`);
+      
+      return {
+        ...response.data,
+        processingTime
+      };
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Hybrid search failed');
+    }
+  }
+
+  // ✅ NEW: Search specifically in OCR text
+  async searchOCRText(query: string): Promise<Document[]> {
+    try {
+      const response = await api.get<Document[]>(`/search/ocr?q=${encodeURIComponent(query)}`);
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'OCR text search failed');
+    }
+  }
+
+  // ===== EXISTING SHARE AND METADATA METHODS =====
+
+  // Update document metadata
   async updateDocumentMetadata(id: number, metadata: DocumentMetadata): Promise<Document> {
     try {
       const response = await api.put<Document>(`/documents/${id}/metadata`, metadata);
@@ -199,7 +391,7 @@ class DocumentService {
     }
   }
 
-  // ✅ NEW: Generate share link
+  // Generate share link
   async generateShareLink(id: number, options: ShareLinkOptions = {}): Promise<ShareLinkResponse> {
     try {
       const response = await api.post<ShareLinkResponse>(`/documents/${id}/share`, options);
@@ -209,7 +401,7 @@ class DocumentService {
     }
   }
 
-  // ✅ NEW: Get existing share links for a document
+  // Get existing share links for a document
   async getShareLinks(id: number): Promise<ShareLink[]> {
     try {
       const response = await api.get<ShareLink[]>(`/documents/${id}/shares`);
@@ -219,7 +411,7 @@ class DocumentService {
     }
   }
 
-  // ✅ NEW: Revoke share link
+  // Revoke share link
   async revokeShareLink(documentId: number, shareId: string): Promise<void> {
     try {
       await api.delete(`/documents/${documentId}/shares/${shareId}`);
@@ -228,7 +420,7 @@ class DocumentService {
     }
   }
 
-  // ✅ NEW: Access shared document (public endpoint)
+  // Access shared document (public endpoint)
   async accessSharedDocument(shareId: string, password?: string): Promise<Document> {
     try {
       const payload = password ? { password } : {};
@@ -239,7 +431,7 @@ class DocumentService {
     }
   }
 
-  // ✅ NEW: Download shared document (public endpoint)
+  // Download shared document (public endpoint)
   async downloadSharedDocument(shareId: string, password?: string): Promise<void> {
     try {
       const payload = password ? { password } : {};
@@ -269,6 +461,8 @@ class DocumentService {
       throw new Error(error.response?.data?.error || 'Failed to download shared document');
     }
   }
+
+  // ===== ADMIN/MANAGER METHODS =====
 
   // Update document status (Admin/Manager only)
   async updateDocumentStatus(id: number, status: string, rejectionReason?: string): Promise<Document> {
@@ -305,7 +499,7 @@ class DocumentService {
     }
   }
 
-  // ✅ NEW: Get document statistics (Admin/Manager only)
+  // Get document statistics (Admin/Manager only)
   async getDocumentStats(): Promise<{
     total: number;
     byStatus: Record<string, number>;
@@ -321,7 +515,7 @@ class DocumentService {
     }
   }
 
-  // ✅ NEW: Bulk operations (Admin/Manager only)
+  // Bulk operations (Admin/Manager only)
   async bulkUpdateStatus(documentIds: number[], status: string, rejectionReason?: string): Promise<void> {
     try {
       const payload = {
@@ -342,7 +536,60 @@ class DocumentService {
       throw new Error(error.response?.data?.error || 'Failed to delete documents');
     }
   }
+
+  // ===== UTILITY METHODS =====
+
+  // ✅ NEW: Validate file for OCR processing
+  validateFileForOCR(file: File): { valid: boolean; error?: string } {
+    // Check file size (10MB limit)
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (file.size > maxSize) {
+      return {
+        valid: false,
+        error: 'File too large. Please select an image smaller than 10MB.'
+      };
+    }
+
+    // Check file type
+    const supportedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/bmp', 'image/tiff', 'image/gif'];
+    if (!supportedTypes.includes(file.type.toLowerCase())) {
+      return {
+        valid: false,
+        error: 'Unsupported file type. Please upload JPEG, PNG, BMP, TIFF, or GIF images.'
+      };
+    }
+
+    return { valid: true };
+  }
+
+  // ✅ NEW: Format OCR confidence as percentage
+  formatConfidence(confidence: number): string {
+    return `${(confidence * 100).toFixed(1)}%`;
+  }
+
+  // ✅ NEW: Get confidence color for UI
+  getConfidenceColor(confidence: number): string {
+    if (confidence >= 0.8) return 'text-green-600';
+    if (confidence >= 0.6) return 'text-yellow-600';
+    return 'text-red-600';
+  }
+
+  // ✅ NEW: Get confidence badge class
+  getConfidenceBadge(confidence: number): string {
+    if (confidence >= 0.8) return 'bg-green-100 text-green-800';
+    if (confidence >= 0.6) return 'bg-yellow-100 text-yellow-800';
+    return 'bg-red-100 text-red-800';
+  }
+
+  // ✅ NEW: Check if document has high-quality OCR
+  hasHighQualityOCR(document: Document): boolean {
+    return !!(document.hasOcr && document.ocrConfidence && document.ocrConfidence > 0.8);
+  }
+
+  // ✅ NEW: Check if document is AI-ready
+  isAIReady(document: Document): boolean {
+    return !!(document.embeddingGenerated || (document.hasOcr && document.ocrText && document.ocrText.length > 10));
+  }
 }
 
 export default new DocumentService();
-
