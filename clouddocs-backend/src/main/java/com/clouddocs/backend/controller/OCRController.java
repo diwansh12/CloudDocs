@@ -22,7 +22,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/ocr")
-@CrossOrigin(origins = "*")
+@CrossOrigin(origins = {"https://cloud-docs-tan.vercel.app", "http://localhost:3000"})
 public class OCRController {
     
     private static final Logger logger = LoggerFactory.getLogger(OCRController.class);
