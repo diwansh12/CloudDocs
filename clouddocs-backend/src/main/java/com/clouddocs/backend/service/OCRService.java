@@ -102,42 +102,79 @@ public class OCRService {
     }
     
 
-    /**
-     * ✅ NEW: Get OCR statistics - Add this method to fix the compilation error
-     */
-    public Map<String, Object> getOCRStatistics() {
-        log.info("📊 Generating OCR statistics");
+   // In your OCRService.java - Update or add this method
+
+public Map<String, Object> getOCRStatistics() {
+    log.info("📊 Generating OCR statistics");
+    
+    Map<String, Object> stats = new HashMap<>();
+    
+    try {
+        // ✅ SAFE: Use default values if database queries fail
+        long totalDocs = 0;
+        long ocrDocs = 0;
+        long embeddingDocs = 0;
         
-        Map<String, Object> stats = new HashMap<>();
+        try {
+            // If you have document repository access:
+            // totalDocs = documentRepository.count();
+            // ocrDocs = documentRepository.countByHasOcrTrue();
+            // embeddingDocs = documentRepository.countByEmbeddingGeneratedTrue();
+            
+            // For now, use safe defaults
+            totalDocs = 0;
+            ocrDocs = 0;
+            embeddingDocs = 0;
+            
+        } catch (Exception dbError) {
+            log.warn("Database query failed, using defaults: {}", dbError.getMessage());
+        }
         
-        // Placeholder values - you can implement actual database queries later
-        stats.put("totalDocuments", 0);
-        stats.put("documentsWithOCR", 0);
-        stats.put("documentsWithEmbeddings", 0);
-        stats.put("ocrCoverage", 0.0);
-        stats.put("averageOCRConfidence", 0.0);
-        stats.put("aiReadyDocuments", 0);
-        stats.put("supportedFormats", SUPPORTED_FORMATS);
+        // ✅ SAFE CALCULATIONS
+        double coverage = totalDocs > 0 ? (double) ocrDocs / totalDocs : 0.0;
+        double avgConfidence = 0.0; // Calculate if you have the data
+        
+        stats.put("totalDocuments", totalDocs);
+        stats.put("documentsWithOCR", ocrDocs);
+        stats.put("documentsWithEmbeddings", embeddingDocs);
+        stats.put("ocrCoverage", Math.round(coverage * 100.0) / 100.0); // Round to 2 decimals
+        stats.put("averageOCRConfidence", Math.round(avgConfidence * 100.0) / 100.0);
+        stats.put("aiReadyDocuments", embeddingDocs);
+        
+        // Additional useful info
+        stats.put("supportedFormats", Arrays.asList("JPEG", "PNG", "BMP", "TIFF", "GIF"));
         stats.put("tesseractAvailable", isTesseractAvailable());
-        stats.put("timestamp", System.currentTimeMillis());
         
         log.info("✅ OCR statistics generated successfully");
         return stats;
+        
+    } catch (Exception e) {
+        log.error("❌ OCR statistics generation failed: {}", e.getMessage(), e);
+        
+        // ✅ RETURN SAFE DEFAULTS EVEN ON ERROR
+        Map<String, Object> safeStats = new HashMap<>();
+        safeStats.put("totalDocuments", 0);
+        safeStats.put("documentsWithOCR", 0);
+        safeStats.put("documentsWithEmbeddings", 0);
+        safeStats.put("ocrCoverage", 0.0);
+        safeStats.put("averageOCRConfidence", 0.0);
+        safeStats.put("aiReadyDocuments", 0);
+        safeStats.put("error", "Statistics generation failed");
+        
+        return safeStats;
     }
-    
-    /**
-     * ✅ NEW: Helper method to check if Tesseract is available
-     */
-    private boolean isTesseractAvailable() {
-        try {
-            ITesseract tesseract = new Tesseract();
-            // Try to initialize Tesseract to check availability
-            return true;
-        } catch (Exception e) {
-            log.warn("⚠️ Tesseract not available: {}", e.getMessage());
-            return false;
-        }
+}
+
+private boolean isTesseractAvailable() {
+    try {
+        // Simple availability check
+        return true; // Adjust based on your setup
+    } catch (Exception e) {
+        log.warn("Tesseract availability check failed: {}", e.getMessage());
+        return false;
     }
+}
+
     /**
      * Enhanced document upload with OCR text extraction and AI embedding
      */
