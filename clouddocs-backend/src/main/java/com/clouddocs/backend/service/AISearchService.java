@@ -84,7 +84,7 @@ public class AISearchService {
                 .limit(limit)
                 .collect(Collectors.toList());
             
-            log.info("✅ Semantic search completed: {} relevant documents found (threshold: 0.55)", 
+            log.info("✅ Semantic search completed: {} relevant documents found (threshold: 0.50)", 
                 scoredDocuments.size());
             
             // ✅ ENHANCED: Log all similarity scores for debugging
@@ -94,7 +94,7 @@ public class AISearchService {
                     log.info("   - {}: {:.4f}", scored.document.getOriginalFilename(), scored.score)
                 );
             } else {
-                log.warn("⚠️ No documents passed the similarity threshold of 0.55");
+                log.warn("⚠️ No documents passed the similarity threshold of 0.50");
             }
             
             // Convert to DTOs and return
