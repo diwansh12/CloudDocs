@@ -37,6 +37,15 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     // Find documents by status and user
     Page<Document> findByStatusAndUploadedBy(DocumentStatus status, User user, Pageable pageable);
 
+
+     List<Document> findByEmbeddingGeneratedTrue();
+    
+    List<Document> findByHasOcrTrue();
+    
+    List<Document> findByHasOcrFalseOrHasOcrIsNull();
+    
+    Page<Document> findByHasOcrTrue(Pageable pageable);
+
     // ===== ✅ NEW: OPTIMIZED METHODS WITH JOIN FETCH TO PREVENT LAZY LOADING =====
     
     /**
@@ -388,4 +397,8 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
            "AVG(CASE WHEN d.ocrConfidence IS NOT NULL THEN d.ocrConfidence END) as avgOCRConfidence " +
            "FROM Document d WHERE d.uploadedBy.username = :username")
     Object[] getAIAndOCRStatistics(@Param("username") String username);
+
+
+    
+   
 }

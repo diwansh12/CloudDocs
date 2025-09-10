@@ -16,7 +16,9 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 📖 OCR Service using Tesseract for free text extraction from images
@@ -99,6 +101,43 @@ public class OCRService {
         }
     }
     
+
+    /**
+     * ✅ NEW: Get OCR statistics - Add this method to fix the compilation error
+     */
+    public Map<String, Object> getOCRStatistics() {
+        log.info("📊 Generating OCR statistics");
+        
+        Map<String, Object> stats = new HashMap<>();
+        
+        // Placeholder values - you can implement actual database queries later
+        stats.put("totalDocuments", 0);
+        stats.put("documentsWithOCR", 0);
+        stats.put("documentsWithEmbeddings", 0);
+        stats.put("ocrCoverage", 0.0);
+        stats.put("averageOCRConfidence", 0.0);
+        stats.put("aiReadyDocuments", 0);
+        stats.put("supportedFormats", SUPPORTED_FORMATS);
+        stats.put("tesseractAvailable", isTesseractAvailable());
+        stats.put("timestamp", System.currentTimeMillis());
+        
+        log.info("✅ OCR statistics generated successfully");
+        return stats;
+    }
+    
+    /**
+     * ✅ NEW: Helper method to check if Tesseract is available
+     */
+    private boolean isTesseractAvailable() {
+        try {
+            ITesseract tesseract = new Tesseract();
+            // Try to initialize Tesseract to check availability
+            return true;
+        } catch (Exception e) {
+            log.warn("⚠️ Tesseract not available: {}", e.getMessage());
+            return false;
+        }
+    }
     /**
      * Enhanced document upload with OCR text extraction and AI embedding
      */

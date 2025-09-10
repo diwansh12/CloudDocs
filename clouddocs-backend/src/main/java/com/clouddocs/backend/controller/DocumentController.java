@@ -14,7 +14,10 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -27,7 +30,7 @@ public class DocumentController {
 
     @Autowired
     private DocumentService documentService;
-
+    private static final Logger logger = LoggerFactory.getLogger(DocumentController.class);
     /**
      * Upload a new document
      */
@@ -201,6 +204,133 @@ public class DocumentController {
             return ResponseEntity.badRequest().body(error);
         }
     }
+
+
+    @GetMapping("/ai-ready")
+@PreAuthorize("isAuthenticated()")
+public ResponseEntity<?> getAIReadyDocuments() {
+    try {
+        logger.info("🤖 AI-ready documents requested");
+        
+        // Try to get actual AI-ready documents
+        try {
+            List<DocumentDTO> aiReadyDocs = documentService.getAIReadyDocuments();
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("documents", aiReadyDocs);
+            response.put("count", aiReadyDocs.size());
+            response.put("timestamp", System.currentTimeMillis());
+            response.put("status", "success");
+            
+            logger.info("✅ Found {} AI-ready documents", aiReadyDocs.size());
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception serviceException) {
+            logger.warn("Service method not implemented, using placeholder: {}", serviceException.getMessage());
+            
+            // Fallback response if service method doesn't exist yet
+            Map<String, Object> response = new HashMap<>();
+            response.put("documents", new ArrayList<>());
+            response.put("count", 0);
+            response.put("timestamp", System.currentTimeMillis());
+            response.put("message", "AI-ready document retrieval not yet fully implemented");
+            response.put("status", "placeholder");
+            
+            return ResponseEntity.ok(response);
+        }
+        
+    } catch (Exception e) {
+        logger.error("❌ Failed to fetch AI-ready documents: {}", e.getMessage(), e);
+        
+        Map<String, Object> errorResponse = new HashMap<>();
+        errorResponse.put("error", "Failed to fetch AI-ready documents");
+        errorResponse.put("message", e.getMessage());
+        errorResponse.put("timestamp", System.currentTimeMillis());
+        
+        return ResponseEntity.status(500).body(errorResponse);
+    }
+}
+
+/**
+ * ✅ NEW: Filter documents by OCR status
+ */
+@GetMapping("/filter-ocr")
+@PreAuthorize("isAuthenticated()")
+public ResponseEntity<?> getDocumentsByOCRStatus(@RequestParam boolean hasOCR) {
+    try {
+        logger.info("🔍 Filtering documents by OCR status: {}", hasOCR);
+        
+        List<DocumentDTO> filteredDocs;
+        try {
+            filteredDocs = documentService.getDocumentsByOCRStatus(hasOCR);
+        } catch (Exception e) {
+            logger.warn("OCR filtering not implemented, using placeholder: {}", e.getMessage());
+            filteredDocs = new ArrayList<>();
+        }
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("documents", filteredDocs);
+        response.put("count", filteredDocs.size());
+        response.put("hasOCR", hasOCR);
+        response.put("timestamp", System.currentTimeMillis());
+        
+        return ResponseEntity.ok(response);
+        
+    } catch (Exception e) {
+        logger.error("❌ Failed to filter documents by OCR status: {}", e.getMessage(), e);
+        
+        Map<String, Object> errorResponse = new HashMap<>();
+        errorResponse.put("error", "Failed to filter documents by OCR status");
+        errorResponse.put("message", e.getMessage());
+        
+        return ResponseEntity.status(500).body(errorResponse);
+    }
+}
+
+/**
+ * ✅ NEW: Get documents with OCR information
+ */
+@GetMapping("/with-ocr")
+@PreAuthorize("isAuthenticated()")
+public ResponseEntity<?> getDocumentsWithOCR(
+        @RequestParam(defaultValue = "0") int page,
+        @RequestParam(defaultValue = "20") int size,
+        @RequestParam(defaultValue = "uploadDate") String sortBy,
+        @RequestParam(defaultValue = "desc") String sortDir) {
+    
+    try {
+        logger.info("📄 Requesting documents with OCR info - page: {}, size: {}", page, size);
+        
+        try {
+            Page<DocumentDTO> documentsWithOCR = documentService.getDocumentsWithOCR(page, size, sortBy, sortDir);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("documents", documentsWithOCR.getContent());
+            response.put("currentPage", documentsWithOCR.getNumber());
+            response.put("totalItems", documentsWithOCR.getTotalElements());
+            response.put("totalPages", documentsWithOCR.getTotalPages());
+            response.put("hasNext", documentsWithOCR.hasNext());
+            response.put("hasPrevious", documentsWithOCR.hasPrevious());
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            logger.warn("OCR document retrieval not implemented, using regular documents: {}", e.getMessage());
+            
+            // Fallback to regular documents
+            return getAllDocuments(page, size, sortBy, sortDir, null, null, null);
+        }
+        
+    } catch (Exception e) {
+        logger.error("❌ Failed to fetch documents with OCR: {}", e.getMessage(), e);
+        
+        Map<String, Object> errorResponse = new HashMap<>();
+        errorResponse.put("error", "Failed to fetch documents with OCR info");
+        errorResponse.put("message", e.getMessage());
+        
+        return ResponseEntity.status(500).body(errorResponse);
+    }
+}
 
     /**
      * ✅ NEW: Revoke share link

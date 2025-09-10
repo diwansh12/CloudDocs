@@ -548,6 +548,90 @@ public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, Stri
             return Map.of("error", "Failed to get OCR statistics");
         }
     }
+
+
+    /**
+ * ✅ NEW: Get AI-ready documents (documents with embeddings)
+ */
+@Transactional(readOnly = true)
+public List<DocumentDTO> getAIReadyDocuments() {
+    try {
+        log.info("🤖 Fetching AI-ready documents");
+        
+        // Query documents that have embeddings generated
+        List<Document> aiReadyDocs = documentRepository.findByEmbeddingGeneratedTrue();
+        
+        List<DocumentDTO> result = aiReadyDocs.stream()
+            .map(this::convertToDTO)
+            .collect(Collectors.toList());
+            
+        log.info("✅ Found {} AI-ready documents", result.size());
+        return result;
+        
+    } catch (Exception e) {
+        log.error("❌ Failed to fetch AI-ready documents: {}", e.getMessage(), e);
+        // Return empty list on error
+        return new ArrayList<>();
+    }
+}
+
+/**
+ * ✅ NEW: Get documents filtered by OCR status
+ */
+@Transactional(readOnly = true)
+public List<DocumentDTO> getDocumentsByOCRStatus(boolean hasOCR) {
+    try {
+        log.info("🔍 Filtering documents by OCR status: {}", hasOCR);
+        
+        List<Document> filteredDocs;
+        if (hasOCR) {
+            filteredDocs = documentRepository.findByHasOcrTrue();
+        } else {
+            filteredDocs = documentRepository.findByHasOcrFalseOrHasOcrIsNull();
+        }
+        
+        List<DocumentDTO> result = filteredDocs.stream()
+            .map(this::convertToDTO)
+            .collect(Collectors.toList());
+            
+        log.info("✅ Found {} documents with OCR status: {}", result.size(), hasOCR);
+        return result;
+        
+    } catch (Exception e) {
+        log.error("❌ Failed to filter documents by OCR status: {}", e.getMessage(), e);
+        // Return empty list on error
+        return new ArrayList<>();
+    }
+}
+
+/**
+ * ✅ NEW: Get documents with OCR information (paginated)
+ */
+@Transactional(readOnly = true)
+public Page<DocumentDTO> getDocumentsWithOCR(int page, int size, String sortBy, String sortDir) {
+    try {
+        log.info("📄 Requesting documents with OCR info - page: {}, size: {}", page, size);
+        
+        Sort sort = sortDir.equalsIgnoreCase("desc") ? 
+                   Sort.by(sortBy).descending() : Sort.by(sortBy).ascending();
+        Pageable pageable = PageRequest.of(page, size, sort);
+        
+        // Query documents that have OCR data
+        Page<Document> documentsWithOCR = documentRepository.findByHasOcrTrue(pageable);
+        
+        Page<DocumentDTO> result = documentsWithOCR.map(this::convertToDTO);
+        
+        log.info("✅ Found {} documents with OCR info", result.getTotalElements());
+        return result;
+        
+    } catch (Exception e) {
+        log.error("❌ Failed to fetch documents with OCR: {}", e.getMessage(), e);
+        
+        // Fallback to regular documents on error
+        log.warn("Falling back to regular document query");
+        return getAllDocuments(page, size, sortBy, sortDir, null, null, null);
+    }
+}
     
     // ===== HELPER METHODS =====
     
