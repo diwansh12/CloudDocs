@@ -40,18 +40,18 @@ public class AISearchService {
      * 🔍 Perform semantic search with multi-provider AI support
      */
     public List<DocumentDTO> semanticSearch(String query, String username, int limit) {
-        log.info("🔍 Performing semantic search for query: '{}'", query);
+        log.info("🔍 Performing semantic search for query: '{}', user: '{}'", query, username);
         
         try {
             // ✅ UPDATED: Use multi-provider service for embedding generation
             List<Double> queryEmbedding = multiProviderAIService.generateEmbedding(query);
-            log.debug("✅ Query embedding generated successfully with {} dimensions", queryEmbedding.size());
+            log.info("✅ Query embedding generated successfully with {} dimensions", queryEmbedding.size());
             
             // Get all documents with embeddings for this user
             List<Document> documentsWithEmbeddings = documentRepository
                 .findByUploadedByUsernameAndEmbeddingGeneratedTrue(username);
             
-            log.debug("📄 Found {} documents with embeddings for user: {}", 
+            log.info("📄 Found {} documents with embeddings for user: {}", 
                 documentsWithEmbeddings.size(), username);
             
             if (documentsWithEmbeddings.isEmpty()) {
@@ -64,10 +64,13 @@ public class AISearchService {
                 .map(doc -> {
                     try {
                         List<Double> docEmbedding = embeddingService.jsonToEmbedding(doc.getEmbedding());
-                        double similarity = embeddingService.calculateSimilarity(queryEmbedding, docEmbedding);
+                        
+                        // ✅ FIX 2: Use dimension-safe similarity calculation
+                        double similarity = calculateSafeSimilarity(queryEmbedding, docEmbedding, doc.getOriginalFilename());
 
-                        log.info("🔍 Document: {} → Similarity: {:.3f}", 
-                doc.getOriginalFilename(), similarity);
+                        // ✅ FIX 1: Fixed similarity logging - ensure similarity variable is included
+                        log.info("🎯 SIMILARITY: Query '{}' → Document '{}' → Score: {:.4f}", 
+                            query, doc.getOriginalFilename(), similarity);
 
                         return new DocumentWithScore(doc, similarity);
                     } catch (Exception e) {
@@ -84,11 +87,22 @@ public class AISearchService {
             log.info("✅ Semantic search completed: {} relevant documents found (threshold: 0.55)", 
                 scoredDocuments.size());
             
+            // ✅ ENHANCED: Log all similarity scores for debugging
+            if (!scoredDocuments.isEmpty()) {
+                log.info("📊 ALL SIMILARITY SCORES:");
+                scoredDocuments.forEach(scored -> 
+                    log.info("   - {}: {:.4f}", scored.document.getOriginalFilename(), scored.score)
+                );
+            } else {
+                log.warn("⚠️ No documents passed the similarity threshold of 0.55");
+            }
+            
             // Convert to DTOs and return
             return scoredDocuments.stream()
                 .map(scored -> {
                     DocumentDTO dto = documentService.convertToDTO(scored.document);
                     dto.setAiScore(scored.score);
+                    dto.setSearchType("semantic");
                     return dto;
                 })
                 .collect(Collectors.toList());
@@ -102,6 +116,19 @@ public class AISearchService {
             log.error("❌ Semantic search failed unexpectedly: {}", e.getMessage(), e);
             throw new RuntimeException("Semantic search failed: " + e.getMessage(), e);
         }
+    }
+    
+    /**
+     * ✅ FIX 2: Dimension safety check to prevent similarity calculation errors
+     */
+    private double calculateSafeSimilarity(List<Double> queryEmbedding, List<Double> docEmbedding, String docName) {
+        if (queryEmbedding.size() != docEmbedding.size()) {
+            log.warn("⚠️ DIMENSION MISMATCH: Document '{}' - Query: {} dims, Document: {} dims", 
+                docName, queryEmbedding.size(), docEmbedding.size());
+            return 0.0; // Return 0 similarity for mismatched dimensions
+        }
+        
+        return embeddingService.calculateSimilarity(queryEmbedding, docEmbedding);
     }
     
     /**
@@ -225,29 +252,60 @@ public class AISearchService {
         }
     }
     
+    /**
+     * ✅ ENHANCED: Create enriched embedding content with semantic expansion
+     */
     private String createEmbeddingContent(Document doc) {
         StringBuilder content = new StringBuilder();
         
+        // Document filename with semantic expansion
         if (doc.getOriginalFilename() != null) {
             String filename = doc.getOriginalFilename().replaceAll("\\.[^.]+$", "");
             content.append("Document: ").append(filename.replace("_", " ").replace("-", " ")).append(". ");
+            
+            // Add semantic terms based on filename
+            String lowerFilename = filename.toLowerCase();
+            if (lowerFilename.contains("voter")) {
+                content.append("Voting document. Election identification. Citizen ID card. Electoral registration. ");
+            }
+            if (lowerFilename.contains("addhaar") || lowerFilename.contains("aadhaar")) {
+                content.append("National identity card. Government ID. Citizen identification. Official identity document. ");
+            }
         }
         
+        // Description with context
         if (doc.getDescription() != null && !doc.getDescription().trim().isEmpty()) {
             content.append("Description: ").append(doc.getDescription().trim()).append(". ");
+            
+            // Add semantic expansion based on description keywords
+            String lowerDesc = doc.getDescription().toLowerCase();
+            if (lowerDesc.contains("id") || lowerDesc.contains("voter")) {
+                content.append("Personal identification document. Identity verification. Official ID card. ");
+            }
         }
         
+        // Category with extensive semantic expansion  
         if (doc.getCategory() != null && !doc.getCategory().trim().isEmpty()) {
             content.append("Category: ").append(doc.getCategory().trim()).append(". ");
+            
+            String category = doc.getCategory().toLowerCase();
+            if (category.contains("national id") || category.contains("id")) {
+                content.append("Identity document. Personal identification. Official government ID. ");
+                content.append("National identity card. Citizen identification. State issued ID. ");
+                content.append("Identity verification document. Personal identity proof. Government identification. ");
+                content.append("Voter registration card. Electoral identification document. ");
+            }
         }
         
+        // Document type
         if (doc.getDocumentType() != null) {
             content.append("Type: ").append(doc.getDocumentType()).append(" document. ");
+            content.append("Official document. Government paperwork. Personal records. ");
         }
         
         String result = content.toString().trim();
-        if (result.length() < 10) {
-            result = "Document file: " + (doc.getOriginalFilename() != null ? doc.getOriginalFilename() : "untitled");
+        if (result.length() < 20) {
+            result = "Document: " + (doc.getOriginalFilename() != null ? doc.getOriginalFilename() : "untitled document");
         }
         
         return result;
@@ -316,6 +374,90 @@ public class AISearchService {
         }
     }
     
+    /**
+     * 🔄 Force regenerate ALL embeddings with current active provider
+     */
+    @Transactional
+    public void forceRegenerateAllEmbeddings(String username) {
+        log.info("🔄 Force regenerating ALL embeddings for user: {}", username);
+        
+        try {
+            // Get ALL documents for this user (regardless of embedding status)
+            List<Document> allDocuments = documentRepository.findByUploadedByUsername(username);
+            
+            log.info("📄 Regenerating embeddings for {} documents", allDocuments.size());
+            
+            if (allDocuments.isEmpty()) {
+                log.info("ℹ️ No documents found for user: {}", username);
+                return;
+            }
+            
+            // Get active provider info
+            String activeProvider = multiProviderAIService.getActiveProvider() != null 
+                ? multiProviderAIService.getActiveProvider().getProviderName() 
+                : "Unknown";
+            log.info("🤖 Using AI provider for regeneration: {}", activeProvider);
+            
+            int successCount = 0;
+            int failureCount = 0;
+            
+            for (Document doc : allDocuments) {
+                try {
+                    // Create enriched content for embedding
+                    String content = createEmbeddingContent(doc);
+                    log.debug("🔄 Processing document: {} (content length: {} chars)", 
+                        doc.getOriginalFilename(), content.length());
+                    
+                    // ✅ Generate new embedding with current active provider
+                    List<Double> embedding = multiProviderAIService.generateEmbedding(content);
+                    
+                    // Convert embedding to JSON and store
+                    String embeddingJson = embeddingService.embeddingToJson(embedding);
+                    doc.setEmbedding(embeddingJson);
+                    doc.setEmbeddingGenerated(true);
+                    
+                    // Save updated document
+                    documentRepository.save(doc);
+                    
+                    successCount++;
+                    log.info("✅ Regenerated embedding for: {} ({} dimensions)", 
+                        doc.getOriginalFilename(), embedding.size());
+                    
+                    // Rate limiting delay - 2 seconds between requests
+                    Thread.sleep(2000);
+                    
+                } catch (EmbeddingException e) {
+                    failureCount++;
+                    log.error("❌ Failed to regenerate embedding for {} using {}: {}", 
+                        doc.getOriginalFilename(), e.getProviderName(), e.getMessage());
+                    
+                    // Stop on authentication errors to prevent hammering
+                    if (e.getStatusCode() == 401 || e.getStatusCode() == 403) {
+                        log.error("🚫 Authentication error - stopping regeneration");
+                        break;
+                    }
+                    
+                } catch (InterruptedException e) {
+                    log.warn("⚠️ Thread interrupted during regeneration");
+                    Thread.currentThread().interrupt();
+                    break;
+                    
+                } catch (Exception e) {
+                    failureCount++;
+                    log.error("❌ Unexpected error regenerating embedding for {}: {}", 
+                        doc.getOriginalFilename(), e.getMessage());
+                }
+            }
+            
+            log.info("🎯 Embedding regeneration completed: {} success, {} failures", 
+                successCount, failureCount);
+                
+        } catch (Exception e) {
+            log.error("💥 Critical error in forceRegenerateAllEmbeddings: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to regenerate embeddings: " + e.getMessage(), e);
+        }
+    }
+    
     private static class DocumentWithScore {
         final Document document;
         final double score;
@@ -329,40 +471,4 @@ public class AISearchService {
             return score; 
         }
     }
-
-
-public void forceRegenerateAllEmbeddings(String username) {
-    log.info("🔄 Force regenerating ALL embeddings for user: {}", username);
-    
-    // Get ALL documents for this user (regardless of embedding status)
-    List<Document> allDocuments = documentRepository.findByUploadedByUsername(username);
-    
-    log.info("📄 Regenerating embeddings for {} documents", allDocuments.size());
-    
-    for (Document doc : allDocuments) {
-        try {
-            String content = createEmbeddingContent(doc);
-            
-            // ✅ Generate new embedding with current active provider
-            List<Double> embedding = multiProviderAIService.generateEmbedding(content);
-            
-            // Store new embedding
-            doc.setEmbedding(embeddingService.embeddingToJson(embedding));
-            doc.setEmbeddingGenerated(true);
-            documentRepository.save(doc);
-            
-            log.info("✅ Regenerated embedding for: {} ({} dimensions)", 
-                doc.getOriginalFilename(), embedding.size());
-            
-            Thread.sleep(2000); // 2 second delay for rate limiting
-            
-        } catch (Exception e) {
-            log.error("❌ Failed to regenerate embedding for {}: {}", 
-                doc.getOriginalFilename(), e.getMessage());
-        }
-    }
-    
-    log.info("🎯 Embedding regeneration complete");
-}
-
 }
