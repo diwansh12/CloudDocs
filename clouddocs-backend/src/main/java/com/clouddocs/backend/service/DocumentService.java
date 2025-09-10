@@ -86,52 +86,51 @@ public class DocumentService {
         }
     }
     
-   @Transactional(readOnly = true)
-    public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, String sortDir, 
-                                           String search, DocumentStatus status, String category) {
-        try {
-            Sort sort = sortDir.equalsIgnoreCase("desc") ? 
-                       Sort.by(sortBy).descending() : Sort.by(sortBy).ascending();
-            Pageable pageable = PageRequest.of(page, size, sort);
-            
-            Page<Document> documents;
-            
-            if (search != null && !search.trim().isEmpty()) {
-                documents = documentRepository.searchDocuments(search, pageable);
-            } else if (status != null || category != null) {
-                documents = documentRepository.findWithFilters(search, status, category, null, null, pageable);
-            } else {
-                documents = documentRepository.findAllWithUsers(pageable);
-            }
-            
-            return documents.map(this::convertToDTO);
-            
-        } catch (Exception e) {
-            System.err.println("❌ Error in getAllDocuments: " + e.getMessage());
-            e.printStackTrace();
-            // Return empty page instead of throwing exception
-            return Page.empty(PageRequest.of(page, size));
-        }
-    }
-    
-    public Page<DocumentDTO> getMyDocuments(int page, int size, String sortBy, String sortDir) {
-        User currentUser = getCurrentUser();
-        
+  @Transactional(readOnly = true)
+public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, String sortDir, 
+                                       String search, DocumentStatus status, String category) {
+    try {
         Sort sort = sortDir.equalsIgnoreCase("desc") ? 
-                   Sort.by(sortBy).descending() : 
-                   Sort.by(sortBy).ascending();
+                   Sort.by(sortBy).descending() : Sort.by(sortBy).ascending();
         Pageable pageable = PageRequest.of(page, size, sort);
         
-        Page<Document> documents = documentRepository.findByUploadedByIdOrderByUploadDateDesc(currentUser.getId(), pageable);
+        Page<Document> documents;
+        
+        if (search != null && !search.trim().isEmpty()) {
+            documents = documentRepository.searchDocumentsWithTags(search, pageable);
+        } else if (status != null || category != null) {
+            documents = documentRepository.findWithFilters(search, status, category, null, null, pageable);
+        } else {
+            documents = documentRepository.findAllWithTagsAndUsers(pageable);
+        }
+        
         return documents.map(this::convertToDTO);
+        
+    } catch (Exception e) {
+        log.error("❌ Error in getAllDocuments: {}", e.getMessage(), e);
+        return Page.empty(PageRequest.of(page, size));
     }
+}
+
+    
+    public Page<DocumentDTO> getMyDocuments(int page, int size, String sortBy, String sortDir) {
+    User currentUser = getCurrentUser();
+    
+    Sort sort = sortDir.equalsIgnoreCase("desc") ? 
+               Sort.by(sortBy).descending() : 
+               Sort.by(sortBy).ascending();
+    Pageable pageable = PageRequest.of(page, size, sort);
+    
+    Page<Document> documents = documentRepository.findByUploadedByIdWithTagsAndUsers(currentUser.getId(), pageable);
+    return documents.map(this::convertToDTO);
+}
     
     public DocumentDTO getDocumentById(Long id) {
-        Document document = documentRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Document not found with id: " + id));
-        
-        return convertToDTO(document);
-    }
+    Document document = documentRepository.findByIdWithTags(id)
+            .orElseThrow(() -> new RuntimeException("Document not found with id: " + id));
+    
+    return convertToDTO(document);
+}
     
     public DocumentDTO updateDocumentStatus(Long id, DocumentStatus status, String rejectionReason) {
         Document document = documentRepository.findById(id)

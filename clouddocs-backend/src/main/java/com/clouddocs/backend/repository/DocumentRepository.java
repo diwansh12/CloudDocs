@@ -12,6 +12,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface DocumentRepository extends JpaRepository<Document, Long> {
@@ -27,51 +28,109 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     // Find documents by uploaded user ID
     Page<Document> findByUploadedById(Long uploadedById, Pageable pageable);
 
-    // ✅ CRITICAL: JOIN FETCH to prevent lazy loading exceptions
-    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
-           "WHERE d.uploadedBy.id = :userId ORDER BY d.uploadDate DESC")
-    Page<Document> findByUploadedByIdOrderByUploadDateDesc(@Param("userId") Long userId, Pageable pageable);
-
-    // Find documents by status and user
-    Page<Document> findByStatusAndUploadedBy(DocumentStatus status, User user, Pageable pageable);
-
     // Find documents by category
     Page<Document> findByCategory(String category, Pageable pageable);
 
     // Find documents by document type
     Page<Document> findByDocumentType(String documentType, Pageable pageable);
 
-    // ===== SEARCH AND FILTER METHODS WITH JOIN FETCH =====
+    // Find documents by status and user
+    Page<Document> findByStatusAndUploadedBy(DocumentStatus status, User user, Pageable pageable);
+
+    // ===== ✅ NEW: OPTIMIZED METHODS WITH JOIN FETCH TO PREVENT LAZY LOADING =====
     
-    // ✅ CRITICAL: Search with JOIN FETCH to avoid lazy loading
+    /**
+     * ✅ SOLUTION: Fetch document by ID with tags and users to prevent LazyInitializationException
+     */
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.tags LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy WHERE d.id = :id")
+    Optional<Document> findByIdWithTags(@Param("id") Long id);
+
+    /**
+     * ✅ SOLUTION: Fetch all documents with tags and users for better performance
+     */
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.tags LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy")
+    Page<Document> findAllWithTagsAndUsers(Pageable pageable);
+
+    /**
+     * ✅ SOLUTION: Fetch user's documents with tags and users
+     */
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.tags LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+           "WHERE d.uploadedBy.id = :userId ORDER BY d.uploadDate DESC")
+    Page<Document> findByUploadedByIdWithTagsAndUsers(@Param("userId") Long userId, Pageable pageable);
+
+    /**
+     * ✅ SOLUTION: Search with tags included
+     */
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.tags LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy WHERE " +
+           "LOWER(d.filename) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+           "LOWER(d.description) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+           "LOWER(d.originalFilename) LIKE LOWER(CONCAT('%', :query, '%'))")
+    Page<Document> searchDocumentsWithTags(@Param("query") String query, Pageable pageable);
+
+    /**
+     * ✅ SOLUTION: Find pending documents with all relationships
+     */
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.tags LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+           "WHERE d.status = 'PENDING'")
+    Page<Document> findPendingDocumentsWithTags(Pageable pageable);
+
+    /**
+     * ✅ SOLUTION: Find documents with embeddings AND tags for AI search
+     */
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.tags LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+           "WHERE d.uploadedBy.username = :username AND d.embeddingGenerated = true")
+    List<Document> findByUploadedByUsernameAndEmbeddingGeneratedTrueWithTags(@Param("username") String username);
+
+    // ===== EXISTING OPTIMIZED METHODS =====
+
+    /**
+     * ✅ CRITICAL: JOIN FETCH to prevent lazy loading exceptions
+     */
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+           "WHERE d.uploadedBy.id = :userId ORDER BY d.uploadDate DESC")
+    Page<Document> findByUploadedByIdOrderByUploadDateDesc(@Param("userId") Long userId, Pageable pageable);
+
+    /**
+     * ✅ CRITICAL: Search with JOIN FETCH to avoid lazy loading
+     */
     @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy WHERE " +
            "LOWER(d.filename) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
            "LOWER(d.description) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
            "LOWER(d.originalFilename) LIKE LOWER(CONCAT('%', :query, '%'))")
     Page<Document> searchDocuments(@Param("query") String query, Pageable pageable);
 
-    // ✅ CRITICAL: Find all with JOIN FETCH
+    /**
+     * ✅ CRITICAL: Find all with JOIN FETCH
+     */
     @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy")
     Page<Document> findAllWithUsers(Pageable pageable);
 
-    // ✅ CRITICAL: Date range with JOIN FETCH
+    /**
+     * ✅ CRITICAL: Date range with JOIN FETCH
+     */
     @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
            "WHERE d.uploadDate BETWEEN :startDate AND :endDate")
     Page<Document> findByUploadDateBetween(@Param("startDate") LocalDateTime startDate, 
                                          @Param("endDate") LocalDateTime endDate, 
                                          Pageable pageable);
 
-    // ✅ CRITICAL: Pending documents with JOIN FETCH
+    /**
+     * ✅ CRITICAL: Pending documents with JOIN FETCH
+     */
     @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
            "WHERE d.status = 'PENDING'")
     Page<Document> findPendingDocuments(Pageable pageable);
 
-    // ✅ CRITICAL: Recent documents with JOIN FETCH
+    /**
+     * ✅ CRITICAL: Recent documents with JOIN FETCH
+     */
     @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
            "ORDER BY d.uploadDate DESC")
     Page<Document> findRecentDocuments(Pageable pageable);
 
-    // ✅ Advanced filter with JOIN FETCH to prevent lazy loading
+    /**
+     * ✅ Advanced filter with JOIN FETCH to prevent lazy loading
+     */
     @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy WHERE " +
            "(:query IS NULL OR :query = '' OR " +
            "LOWER(d.filename) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
@@ -107,9 +166,18 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
 
     // ===== TAGS AND CATEGORIES =====
     
-    // Find documents by tags
+    /**
+     * Find documents by tags with all relationships loaded
+     */
     @Query("SELECT DISTINCT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
-           "JOIN d.tags t WHERE t IN :tags")
+           "LEFT JOIN FETCH d.tags WHERE :tag MEMBER OF d.tags")
+    Page<Document> findByTagsContaining(@Param("tag") String tag, Pageable pageable);
+
+    /**
+     * Find documents by multiple tags with relationships loaded
+     */
+    @Query("SELECT DISTINCT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+           "LEFT JOIN FETCH d.tags WHERE EXISTS (SELECT 1 FROM d.tags t WHERE t IN :tags)")
     Page<Document> findByTagsIn(@Param("tags") List<String> tags, Pageable pageable);
 
     // Get all unique categories
@@ -165,17 +233,17 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
            "FROM Document d")
     Object[] getFileSizeStatistics();
 
-    // ===== ✅ NEW: AI SEARCH METHODS =====
+    // ===== ✅ AI SEARCH METHODS WITH JOIN FETCH OPTIMIZATION =====
     
     /**
-     * Find documents with embeddings generated for a specific user
+     * Find documents with embeddings generated for a specific user (optimized)
      */
     @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
            "WHERE d.uploadedBy.username = :username AND d.embeddingGenerated = true")
     List<Document> findByUploadedByUsernameAndEmbeddingGeneratedTrue(@Param("username") String username);
     
     /**
-     * Find documents without embeddings generated for a specific user
+     * Find documents without embeddings generated for a specific user (optimized)
      */
     @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
            "WHERE d.uploadedBy.username = :username AND (d.embeddingGenerated = false OR d.embeddingGenerated IS NULL)")
@@ -200,34 +268,33 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     long countByUploadedByUsernameAndEmbeddingGeneratedFalse(@Param("username") String username);
 
     /**
-     * Find documents by username and filename containing (case insensitive) for keyword search fallback
+     * Find documents by username and filename containing (case insensitive) for keyword search fallback (optimized)
      */
     @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
            "WHERE d.uploadedBy.username = :username AND LOWER(d.originalFilename) LIKE LOWER(CONCAT('%', :filename, '%'))")
     List<Document> findByUploadedByUsernameAndOriginalFilenameContainingIgnoreCase(@Param("username") String username, @Param("filename") String filename);
 
     /**
-     * Advanced search by username and query across multiple fields for hybrid AI search
+     * Advanced search by username and query across multiple fields for hybrid AI search (optimized)
      */
     @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
            "WHERE d.uploadedBy.username = :username AND (" +
            "LOWER(d.filename) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
            "LOWER(COALESCE(d.description, '')) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
            "LOWER(d.originalFilename) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-           "LOWER(COALESCE(d.category, '')) LIKE LOWER(CONCAT('%', :query, '%')))")
+           "LOWER(COALESCE(d.category, '')) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+           "LOWER(COALESCE(d.ocrText, '')) LIKE LOWER(CONCAT('%', :query, '%')))")
     List<Document> searchDocumentsByQuery(@Param("username") String username, @Param("query") String query);
 
-    // ===== ✅ NEW: ADDITIONAL AI HELPER METHODS =====
-
     /**
-     * Find documents by username (for general AI operations)
+     * Find documents by username (for general AI operations) (optimized)
      */
     @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
            "WHERE d.uploadedBy.username = :username ORDER BY d.uploadDate DESC")
     List<Document> findByUploadedByUsername(@Param("username") String username);
 
     /**
-     * Find recent documents without embeddings for a user (for batch processing)
+     * Find recent documents without embeddings for a user (for batch processing) (optimized)
      */
     @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
            "WHERE d.uploadedBy.username = :username AND (d.embeddingGenerated = false OR d.embeddingGenerated IS NULL) " +
@@ -240,19 +307,85 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     @Query("SELECT COUNT(d) FROM Document d WHERE d.uploadedBy.username = :username AND d.status = :status")
     long countByUploadedByUsernameAndStatus(@Param("username") String username, @Param("status") DocumentStatus status);
 
+    // ===== ✅ OCR METHODS =====
 
     /**
- * Count documents with OCR processed for a specific user
- */
-@Query("SELECT COUNT(d) FROM Document d WHERE d.uploadedBy.username = :username AND d.hasOcr = true")
-long countByUploadedByUsernameAndHasOcrTrue(@Param("username") String username);
+     * Count documents with OCR processed for a specific user
+     */
+    @Query("SELECT COUNT(d) FROM Document d WHERE d.uploadedBy.username = :username AND d.hasOcr = true")
+    long countByUploadedByUsernameAndHasOcrTrue(@Param("username") String username);
 
-/**
- * Get average OCR confidence for user's documents
- */
-@Query("SELECT AVG(d.ocrConfidence) FROM Document d WHERE d.uploadedBy.username = :username AND d.ocrConfidence IS NOT NULL")
-Double getAverageOCRConfidenceByUser(@Param("username") String username);
+    /**
+     * Get average OCR confidence for user's documents
+     */
+    @Query("SELECT AVG(d.ocrConfidence) FROM Document d WHERE d.uploadedBy.username = :username AND d.ocrConfidence IS NOT NULL")
+    Double getAverageOCRConfidenceByUser(@Param("username") String username);
 
-    
+    /**
+     * Find documents with OCR processed for a user (optimized)
+     */
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+           "WHERE d.uploadedBy.username = :username AND d.hasOcr = true ORDER BY d.uploadDate DESC")
+    List<Document> findByUploadedByUsernameAndHasOcrTrue(@Param("username") String username);
+
+    /**
+     * Find documents without OCR for a user (optimized)
+     */
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+           "WHERE d.uploadedBy.username = :username AND (d.hasOcr = false OR d.hasOcr IS NULL) " +
+           "AND d.documentType = 'image' ORDER BY d.uploadDate DESC")
+    List<Document> findImageDocumentsWithoutOCR(@Param("username") String username);
+
+    /**
+     * Search in OCR text content
+     */
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+           "WHERE d.uploadedBy.username = :username AND d.hasOcr = true AND " +
+           "LOWER(COALESCE(d.ocrText, '')) LIKE LOWER(CONCAT('%', :query, '%'))")
+    List<Document> searchInOCRText(@Param("username") String username, @Param("query") String query);
+
+    /**
+     * Find documents with high OCR confidence
+     */
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+           "WHERE d.uploadedBy.username = :username AND d.hasOcr = true AND d.ocrConfidence > :minConfidence " +
+           "ORDER BY d.ocrConfidence DESC")
+    List<Document> findHighConfidenceOCRDocuments(@Param("username") String username, @Param("minConfidence") Double minConfidence);
+
+    // ===== ✅ ADVANCED AI & OCR COMBINED METHODS =====
+
+    /**
+     * Find documents that are both AI-ready and OCR-processed
+     */
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+           "WHERE d.uploadedBy.username = :username AND d.embeddingGenerated = true AND d.hasOcr = true " +
+           "ORDER BY d.uploadDate DESC")
+    List<Document> findAIReadyDocumentsWithOCR(@Param("username") String username);
+
+    /**
+     * Count AI-ready documents with OCR
+     */
+    @Query("SELECT COUNT(d) FROM Document d WHERE d.uploadedBy.username = :username AND d.embeddingGenerated = true AND d.hasOcr = true")
+    long countAIReadyDocumentsWithOCR(@Param("username") String username);
+
+    /**
+     * Find searchable documents (has embedding OR OCR text)
+     */
+    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+           "WHERE d.uploadedBy.username = :username AND (d.embeddingGenerated = true OR d.hasOcr = true) " +
+           "ORDER BY d.uploadDate DESC")
+    List<Document> findSearchableDocuments(@Param("username") String username);
+
+    /**
+     * Get comprehensive AI and OCR statistics
+     */
+    @Query("SELECT " +
+           "COUNT(d) as totalDocuments, " +
+           "COUNT(CASE WHEN d.embeddingGenerated = true THEN 1 END) as documentsWithEmbeddings, " +
+           "COUNT(CASE WHEN d.hasOcr = true THEN 1 END) as documentsWithOCR, " +
+           "COUNT(CASE WHEN d.embeddingGenerated = true AND d.hasOcr = true THEN 1 END) as documentsWithBoth, " +
+           "COUNT(CASE WHEN d.embeddingGenerated = true OR d.hasOcr = true THEN 1 END) as searchableDocuments, " +
+           "AVG(CASE WHEN d.ocrConfidence IS NOT NULL THEN d.ocrConfidence END) as avgOCRConfidence " +
+           "FROM Document d WHERE d.uploadedBy.username = :username")
+    Object[] getAIAndOCRStatistics(@Param("username") String username);
 }
-
