@@ -56,49 +56,63 @@ public class OCRController {
         }
     }
     
-    /**
-     * ✅ NEW: OCR Statistics endpoint (this was missing and causing 500 errors)
-     */
-    @GetMapping("/stats")
-    @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<?> getOCRStatistics() {
+   // In your OCRController.java - Update the getOCRStatistics method
+
+@GetMapping("/stats")
+@PreAuthorize("isAuthenticated()")
+public ResponseEntity<?> getOCRStatistics() {
+    try {
+        logger.info("📊 OCR statistics requested");
+        
+        Map<String, Object> stats = new HashMap<>();
+        
         try {
-            logger.info("📊 OCR statistics requested");
+            // Get actual OCR statistics from service
+            Map<String, Object> serviceStats = ocrService.getOCRStatistics();
+            stats.putAll(serviceStats);
             
-            // Get actual stats from service or return placeholder
-            Map<String, Object> stats = new HashMap<>();
+        } catch (Exception serviceException) {
+            logger.warn("OCR service stats failed, using safe defaults: {}", serviceException.getMessage());
             
-            try {
-                // Try to get real stats if OCR service has this method
-                stats = ocrService.getOCRStatistics();
-            } catch (Exception e) {
-                logger.warn("Using placeholder OCR stats: {}", e.getMessage());
-                // Fallback to placeholder stats
-                stats.put("totalDocuments", 0);
-                stats.put("documentsWithOCR", 0);
-                stats.put("documentsWithEmbeddings", 0);
-                stats.put("ocrCoverage", 0.0);
-                stats.put("averageOCRConfidence", 0.0);
-                stats.put("aiReadyDocuments", 0);
-            }
-            
-            stats.put("timestamp", System.currentTimeMillis());
-            stats.put("status", "success");
-            
-            logger.info("✅ OCR statistics returned successfully");
-            return ResponseEntity.ok(stats);
-            
-        } catch (Exception e) {
-            logger.error("❌ Failed to fetch OCR statistics: {}", e.getMessage(), e);
-            
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("error", "Failed to fetch OCR statistics");
-            errorResponse.put("message", e.getMessage());
-            errorResponse.put("timestamp", System.currentTimeMillis());
-            
-            return ResponseEntity.status(500).body(errorResponse);
+            // ✅ SAFE FALLBACK: Always return valid structure
+            stats.put("totalDocuments", 0);
+            stats.put("documentsWithOCR", 0);
+            stats.put("documentsWithEmbeddings", 0);
+            stats.put("ocrCoverage", 0.0);
+            stats.put("averageOCRConfidence", 0.0);
+            stats.put("aiReadyDocuments", 0);
         }
+        
+        // ✅ CRITICAL: Always include required fields
+        stats.put("timestamp", System.currentTimeMillis());
+        stats.put("status", "success");
+        stats.put("service", "OCR Controller");
+        
+        logger.info("✅ OCR statistics returned successfully: {}", stats);
+        return ResponseEntity.ok(stats);
+        
+    } catch (Exception e) {
+        logger.error("❌ Failed to fetch OCR statistics: {}", e.getMessage(), e);
+        
+        // ✅ STRUCTURED ERROR RESPONSE
+        Map<String, Object> errorResponse = new HashMap<>();
+        errorResponse.put("error", "Failed to fetch OCR statistics");
+        errorResponse.put("message", "Service temporarily unavailable");
+        errorResponse.put("timestamp", System.currentTimeMillis());
+        errorResponse.put("status", "error");
+        
+        // ✅ SAFE DEFAULTS for frontend
+        errorResponse.put("totalDocuments", 0);
+        errorResponse.put("documentsWithOCR", 0);
+        errorResponse.put("documentsWithEmbeddings", 0);
+        errorResponse.put("ocrCoverage", 0.0);
+        errorResponse.put("averageOCRConfidence", 0.0);
+        errorResponse.put("aiReadyDocuments", 0);
+        
+        return ResponseEntity.status(500).body(errorResponse);
     }
+}
+
     
     /**
      * ✅ NEW: OCR Health Check endpoint
