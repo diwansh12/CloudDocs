@@ -35,9 +35,6 @@ public class SecurityConfig {
     @Value("${app.cors.allowed-origins:https://cloud-docs-tan.vercel.app,http://localhost:3000}")
     private String allowedOrigins;
 
-    // ✅ REMOVED: Constructor and userDetailsService field
-    // Spring will auto-detect your @Service CustomUserDetailsService bean
-
     @Bean
     public PasswordEncoder passwordEncoder() {
         return PasswordEncoderFactories.createDelegatingPasswordEncoder();
@@ -54,16 +51,16 @@ public class SecurityConfig {
         
         List<String> origins = Arrays.asList(allowedOrigins.split(","));
         for (String origin : origins) {
-            configuration.addAllowedOrigin(origin.trim());
+            configuration.addAllowedOriginPattern(origin.trim());
         }
         
         configuration.setAllowedMethods(Arrays.asList(
-            "GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"
+            "GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"
         ));
         
-        configuration.addAllowedHeader("*");
+        configuration.setAllowedHeaders(Arrays.asList("*"));
         configuration.setAllowCredentials(true);
-        configuration.setExposedHeaders(Arrays.asList("Authorization", "Content-Type"));
+        configuration.setExposedHeaders(Arrays.asList("Authorization", "Content-Type", "Content-Disposition"));
         configuration.setMaxAge(3600L);
         
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -79,30 +76,63 @@ public class SecurityConfig {
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+                // ✅ CRITICAL: Allow OPTIONS requests first
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                
+                // ✅ CRITICAL: Static resources and health endpoints
                 .requestMatchers(
                     "/favicon.ico", "/error", "/actuator/health", "/actuator/info",
                     "/static/**", "/public/**", "/uploads/**", "/health"
                 ).permitAll()
+                
+                // ✅ CRITICAL: Authentication endpoints (public)
                 .requestMatchers(
-                    "/auth/signin", "/auth/signup", "/auth/refresh",
-                    "/auth/forgot-password", "/auth/reset-password", "/public/**"
+                    "/api/auth/**", "/auth/**"
                 ).permitAll()
-                .requestMatchers("/api/users/profile/picture/**").authenticated()
+                
+                // ✅ CRITICAL: Public endpoints
+                .requestMatchers("/api/documents/shared/**").permitAll()
+                .requestMatchers("/api/users/profile/picture/**").permitAll()
+                
+                // ✅ FIXED: OCR endpoints - EXPLICIT MAPPING
+                .requestMatchers("/api/ocr/**").authenticated()
+                
+                // ✅ FIXED: All API endpoints with proper /api/ prefix
+                .requestMatchers("/api/users/**").authenticated()
+                .requestMatchers("/api/documents/**").authenticated()
+                .requestMatchers("/api/dashboard/**").authenticated()
+                .requestMatchers("/api/workflows/**").authenticated()
+                .requestMatchers("/api/notifications/**").authenticated()
+                .requestMatchers("/api/settings/**").authenticated()
+                .requestMatchers("/api/audit/**").authenticated()
+                
+                // ✅ LEGACY: Support old patterns without /api prefix (if needed)
                 .requestMatchers(
-                    "/users/**", "/workflows/**", "/documents/**", 
+                    "/users/**", "/documents/**", "/workflows/**", 
                     "/notifications/**", "/settings/**", "/audit/**"
                 ).authenticated()
+                
+                // ✅ ADMIN: Admin-only endpoints
                 .requestMatchers("/admin/**", "/actuator/**").hasRole("ADMIN")
+                
+                // ✅ TEST: Test endpoints
                 .requestMatchers("/test/**").permitAll()
+                
+                // ✅ DEFAULT: All other requests require authentication
                 .anyRequest().authenticated())
+                
             .exceptionHandling(exceptions -> exceptions
                 .authenticationEntryPoint((request, response, authException) -> {
                     response.setStatus(401);
                     response.setContentType("application/json");
                     response.setCharacterEncoding("UTF-8");
-                    response.setHeader("Access-Control-Allow-Origin", "https://cloud-docs-tan.vercel.app");
-                    response.setHeader("Access-Control-Allow-Credentials", "true");
+                    
+                    // Dynamic CORS header
+                    String origin = request.getHeader("Origin");
+                    if (origin != null && (origin.contains("vercel.app") || origin.contains("localhost"))) {
+                        response.setHeader("Access-Control-Allow-Origin", origin);
+                        response.setHeader("Access-Control-Allow-Credentials", "true");
+                    }
                     
                     String errorResponse = String.format(
                         "{\"error\":\"Unauthorized\",\"message\":\"Authentication required\",\"timestamp\":\"%s\",\"path\":\"%s\"}",
@@ -114,8 +144,13 @@ public class SecurityConfig {
                     response.setStatus(403);
                     response.setContentType("application/json");
                     response.setCharacterEncoding("UTF-8");
-                    response.setHeader("Access-Control-Allow-Origin", "https://cloud-docs-tan.vercel.app");
-                    response.setHeader("Access-Control-Allow-Credentials", "true");
+                    
+                    // Dynamic CORS header
+                    String origin = request.getHeader("Origin");
+                    if (origin != null && (origin.contains("vercel.app") || origin.contains("localhost"))) {
+                        response.setHeader("Access-Control-Allow-Origin", origin);
+                        response.setHeader("Access-Control-Allow-Credentials", "true");
+                    }
                     
                     String errorResponse = String.format(
                         "{\"error\":\"Forbidden\",\"message\":\"Access denied\",\"timestamp\":\"%s\",\"path\":\"%s\"}",
