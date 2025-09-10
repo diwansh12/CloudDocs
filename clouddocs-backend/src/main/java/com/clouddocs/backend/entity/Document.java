@@ -54,6 +54,19 @@ public class Document {
     
     @Column(name = "download_count")
     private Integer downloadCount = 0;
+
+    // ✅ OCR FIELDS - Added for AI-powered text extraction
+    @Column(name = "ocr_text", columnDefinition = "TEXT")
+    private String ocrText;
+
+    @Column(name = "ocr_confidence")
+    private Double ocrConfidence;
+
+    @Column(name = "has_ocr")
+    private Boolean hasOcr = false;
+
+    @Column(name = "ocr_processing_time")
+    private Long ocrProcessingTime;
     
     @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(name = "document_tags", joinColumns = @JoinColumn(name = "document_id"))
@@ -77,13 +90,14 @@ public class Document {
     @Column(name = "document_type")
     private String documentType;
 
-     @Column(name = "embedding", columnDefinition = "TEXT")
+    // ✅ AI EMBEDDING FIELDS - For semantic search
+    @Column(name = "embedding", columnDefinition = "TEXT")
     private String embedding; // Store as JSON string
     
     @Column(name = "embedding_generated")
     private Boolean embeddingGenerated = false;
     
-    // Constructors
+    // ✅ CONSTRUCTORS
     public Document() {
         this.uploadDate = LocalDateTime.now();
         this.lastModified = LocalDateTime.now();
@@ -101,6 +115,7 @@ public class Document {
         this.documentType = determineDocumentType(mimeType);
     }
     
+    // ✅ DOCUMENT TYPE DETECTION
     private String determineDocumentType(String mimeType) {
         if (mimeType == null) return "unknown";
         
@@ -121,7 +136,7 @@ public class Document {
         try {
             return uploadedBy != null ? uploadedBy.getFullName() : "Unknown";
         } catch (Exception e) {
-            logger.warn("Could not access uploadedBy for document {}: {}", id, e.getMessage());
+            logger.warn("Could not access uploadedBy for document {}: Using safe accessor", id);
             return "Unknown";
         }
     }
@@ -130,7 +145,7 @@ public class Document {
         try {
             return uploadedBy != null ? uploadedBy.getId() : null;
         } catch (Exception e) {
-            logger.warn("Could not access uploadedBy ID for document {}: {}", id, e.getMessage());
+            logger.warn("Could not access uploadedBy ID for document {}: Using safe accessor", id);
             return null;
         }
     }
@@ -139,7 +154,7 @@ public class Document {
         try {
             return approvedBy != null ? approvedBy.getFullName() : null;
         } catch (Exception e) {
-            logger.warn("Could not access approvedBy for document {}: {}", id, e.getMessage());
+            logger.warn("Could not access approvedBy for document {}: Using safe accessor", id);
             return null;
         }
     }
@@ -148,12 +163,12 @@ public class Document {
         try {
             return tags != null ? new ArrayList<>(tags) : new ArrayList<>();
         } catch (Exception e) {
-            logger.warn("Could not access tags for document {}: {}", id, e.getMessage());
+            logger.warn("Could not access tags for document {}: Using safe accessor", id);
             return new ArrayList<>();
         }
     }
     
-    // Standard Getters and Setters
+    // ✅ STANDARD GETTERS AND SETTERS
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     
@@ -214,7 +229,27 @@ public class Document {
     public String getDocumentType() { return documentType; }
     public void setDocumentType(String documentType) { this.documentType = documentType; }
     
-    // Utility methods
+    // ✅ OCR GETTERS AND SETTERS
+    public String getOcrText() { return ocrText; }
+    public void setOcrText(String ocrText) { this.ocrText = ocrText; }
+    
+    public Double getOcrConfidence() { return ocrConfidence; }
+    public void setOcrConfidence(Double ocrConfidence) { this.ocrConfidence = ocrConfidence; }
+    
+    public Boolean getHasOcr() { return hasOcr; }
+    public void setHasOcr(Boolean hasOcr) { this.hasOcr = hasOcr; }
+    
+    public Long getOcrProcessingTime() { return ocrProcessingTime; }
+    public void setOcrProcessingTime(Long ocrProcessingTime) { this.ocrProcessingTime = ocrProcessingTime; }
+    
+    // ✅ AI EMBEDDING GETTERS AND SETTERS
+    public String getEmbedding() { return embedding; }
+    public void setEmbedding(String embedding) { this.embedding = embedding; }
+    
+    public Boolean getEmbeddingGenerated() { return embeddingGenerated; }
+    public void setEmbeddingGenerated(Boolean embeddingGenerated) { this.embeddingGenerated = embeddingGenerated; }
+    
+    // ✅ UTILITY METHODS
     public void incrementDownloadCount() {
         this.downloadCount = (this.downloadCount == null) ? 1 : this.downloadCount + 1;
     }
@@ -227,10 +262,69 @@ public class Document {
         if (fileSize < 1024 * 1024 * 1024) return String.format("%.1f MB", fileSize / (1024.0 * 1024.0));
         return String.format("%.1f GB", fileSize / (1024.0 * 1024.0 * 1024.0));
     }
-
-     public String getEmbedding() { return embedding; }
-    public void setEmbedding(String embedding) { this.embedding = embedding; }
     
-    public Boolean getEmbeddingGenerated() { return embeddingGenerated; }
-    public void setEmbeddingGenerated(Boolean embeddingGenerated) { this.embeddingGenerated = embeddingGenerated; }
+    // ✅ OCR UTILITY METHODS
+    public boolean isOcrProcessed() {
+        return hasOcr != null && hasOcr && ocrText != null && !ocrText.trim().isEmpty();
+    }
+    
+    public String getOcrConfidenceFormatted() {
+        if (ocrConfidence == null) return "N/A";
+        return String.format("%.1f%%", ocrConfidence * 100);
+    }
+    
+    public boolean hasHighConfidenceOcr() {
+        return ocrConfidence != null && ocrConfidence > 0.7;
+    }
+    
+    // ✅ AI EMBEDDING UTILITY METHODS
+    public boolean hasEmbedding() {
+        return embeddingGenerated != null && embeddingGenerated && 
+               embedding != null && !embedding.trim().isEmpty();
+    }
+    
+    public boolean isSearchable() {
+        return hasEmbedding() || isOcrProcessed();
+    }
+    
+    // ✅ CONTENT EXTRACTION METHOD
+    public String getSearchableContent() {
+        StringBuilder content = new StringBuilder();
+        
+        // Add filename (without extension)
+        if (originalFilename != null) {
+            String nameWithoutExt = originalFilename.replaceAll("\\.[^.]+$", "");
+            content.append(nameWithoutExt.replace("_", " ").replace("-", " ")).append(" ");
+        }
+        
+        // Add description
+        if (description != null && !description.trim().isEmpty()) {
+            content.append(description.trim()).append(" ");
+        }
+        
+        // Add category
+        if (category != null && !category.trim().isEmpty()) {
+            content.append(category.trim()).append(" ");
+        }
+        
+        // Add OCR text
+        if (isOcrProcessed()) {
+            content.append(ocrText.trim()).append(" ");
+        }
+        
+        return content.toString().trim();
+    }
+    
+    @Override
+    public String toString() {
+        return "Document{" +
+                "id=" + id +
+                ", originalFilename='" + originalFilename + '\'' +
+                ", category='" + category + '\'' +
+                ", hasOcr=" + hasOcr +
+                ", embeddingGenerated=" + embeddingGenerated +
+                ", status=" + status +
+                '}';
+    }
 }
+

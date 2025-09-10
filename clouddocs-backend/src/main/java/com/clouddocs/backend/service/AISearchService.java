@@ -3,8 +3,6 @@ package com.clouddocs.backend.service;
 import com.clouddocs.backend.entity.Document;
 import com.clouddocs.backend.repository.DocumentRepository;
 import com.clouddocs.backend.dto.DocumentDTO;
-import com.clouddocs.backend.service.MultiProviderAIService;
-import com.clouddocs.backend.service.EmbeddingException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;

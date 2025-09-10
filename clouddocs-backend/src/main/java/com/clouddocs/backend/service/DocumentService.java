@@ -2,6 +2,8 @@ package com.clouddocs.backend.service;
 
 import com.clouddocs.backend.dto.DocumentDTO;
 import com.clouddocs.backend.dto.DocumentUploadRequest;
+import com.clouddocs.backend.dto.DocumentWithOCRDTO;
+import com.clouddocs.backend.dto.OCRResultDTO;
 import com.clouddocs.backend.entity.Document;
 import com.clouddocs.backend.entity.DocumentStatus;
 import com.clouddocs.backend.entity.DocumentShareLink;
@@ -9,6 +11,7 @@ import com.clouddocs.backend.entity.User;
 import com.clouddocs.backend.repository.DocumentRepository;
 import com.clouddocs.backend.repository.DocumentShareLinkRepository;
 import com.clouddocs.backend.repository.UserRepository;
+import com.clouddocs.backend.exception.UserNotFoundException;
 
 import org.hibernate.LazyInitializationException;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,7 +35,8 @@ import java.util.stream.Collectors;
 @Transactional
 public class DocumentService {
 
-     private static final Logger logger = LoggerFactory.getLogger(DocumentService.class);
+    // ✅ FIXED: Logger declaration
+    private static final Logger log = LoggerFactory.getLogger(DocumentService.class);
     
     @Autowired
     private DocumentRepository documentRepository;
@@ -48,6 +52,10 @@ public class DocumentService {
     
     @Autowired
     private AuditService auditService;
+
+    // ✅ ADDED: Missing embeddingService field
+    @Autowired
+    private AIEmbeddingService embeddingService;
     
     // ===== EXISTING METHODS =====
     
@@ -211,12 +219,12 @@ public class DocumentService {
         return documentRepository.findAllTags();
     }
     
-    @Transactional(readOnly = true)  // ✅ ADD THIS
-public Page<DocumentDTO> getPendingDocuments(int page, int size) {
-    Pageable pageable = PageRequest.of(page, size, Sort.by("uploadDate").ascending());
-    Page<Document> documents = documentRepository.findPendingDocuments(pageable);
-    return documents.map(this::convertToDTO);
-}
+    @Transactional(readOnly = true)
+    public Page<DocumentDTO> getPendingDocuments(int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("uploadDate").ascending());
+        Page<Document> documents = documentRepository.findPendingDocuments(pageable);
+        return documents.map(this::convertToDTO);
+    }
     
     // ===== NEW METHODS FOR SHARE AND METADATA =====
     
@@ -437,30 +445,150 @@ public Page<DocumentDTO> getPendingDocuments(int page, int size) {
         stats.put("byStatus", byStatus);
         
         // Count by category
-         Map<String, Long> byCategory = new HashMap<>();
-    List<Object[]> categoryStats = documentRepository.countByCategory();
-    for (Object[] row : categoryStats) {
-        String category = (String) row[0];
-        Long count = (Long) row[1];
-        byCategory.put(category, count);
+        Map<String, Long> byCategory = new HashMap<>();
+        List<Object[]> categoryStats = documentRepository.countByCategory();
+        for (Object[] row : categoryStats) {
+            String category = (String) row[0];
+            Long count = (Long) row[1];
+            byCategory.put(category, count);
+        }
+        stats.put("byCategory", byCategory);
+        
+        // Recent uploads (last 7 days)
+        LocalDateTime weekAgo = LocalDateTime.now().minusDays(7);
+        long recentUploads = documentRepository.countByUploadDateAfter(weekAgo);
+        stats.put("recentUploads", recentUploads);
+        
+        // Total downloads
+        long totalDownloads = documentRepository.sumDownloadCounts();
+        stats.put("totalDownloads", totalDownloads);
+        
+        return stats;
     }
-    stats.put("byCategory", byCategory);
     
-    // Recent uploads (last 7 days)
-    LocalDateTime weekAgo = LocalDateTime.now().minusDays(7);
-    long recentUploads = documentRepository.countByUploadDateAfter(weekAgo);
-    stats.put("recentUploads", recentUploads);
+    // ===== OCR METHODS =====
     
-    // Total downloads - ✅ NOW THIS WILL WORK
-    long totalDownloads = documentRepository.sumDownloadCounts();
-    stats.put("totalDownloads", totalDownloads);
-    
-    return stats;
-}
+    /**
+     * ✅ NEW: Save document with OCR processing results
+     */
+    @Transactional
+    public DocumentDTO saveDocumentWithOCR(DocumentWithOCRDTO documentWithOCR, String username) {
+        try {
+            User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new UserNotFoundException("User not found: " + username));
+            
+            MultipartFile file = documentWithOCR.getFile();
+            OCRResultDTO ocrResult = documentWithOCR.getOcrResult();
+            
+            // Save file to storage
+            String storedFilePath = fileStorageService.storeFile(file);
+            
+            // Create document entity
+            Document document = new Document();
+            document.setOriginalFilename(file.getOriginalFilename());
+            document.setFilename(generateStoredFilename(file.getOriginalFilename()));
+            document.setFilePath(storedFilePath);
+            document.setFileSize(file.getSize());
+            document.setMimeType(file.getContentType());
+            document.setDocumentType(determineDocumentType(file.getContentType()));
+            document.setUploadedBy(user);
+            document.setUploadDate(LocalDateTime.now());
+            document.setDescription(documentWithOCR.getDescription());
+            document.setCategory(documentWithOCR.getCategory());
+            
+            // Set OCR data
+            document.setOcrText(ocrResult.getExtractedText());
+            document.setOcrConfidence(ocrResult.getConfidence());
+            document.setHasOcr(ocrResult.isSuccess());
+            document.setOcrProcessingTime(ocrResult.getProcessingTimeMs());
+            
+            // Set AI embedding data
+            List<Double> embedding = documentWithOCR.getEmbedding();
+            if (embedding != null && !embedding.isEmpty()) {
+                document.setEmbedding(embeddingService.embeddingToJson(embedding));
+                document.setEmbeddingGenerated(true);
+            }
+            
+            // Save to database
+            Document savedDocument = documentRepository.save(document);
+            
+            log.info("✅ Saved document with OCR: {} (OCR: {}, Embedding: {})", 
+                savedDocument.getOriginalFilename(), 
+                document.getHasOcr(),
+                document.getEmbeddingGenerated());
+            
+            return convertToDTO(savedDocument);
+            
+        } catch (Exception e) {
+            log.error("❌ Failed to save document with OCR: {}", e.getMessage());
+            throw new RuntimeException("Failed to save document with OCR processing", e);
+        }
+    }
+
+    /**
+     * ✅ NEW: Get OCR statistics for user
+     */
+    public Map<String, Object> getOCRStatistics(String username) {
+        try {
+            long totalDocuments = documentRepository.countByUploadedByUsername(username);
+            long documentsWithOCR = documentRepository.countByUploadedByUsernameAndHasOcrTrue(username);
+            long documentsWithEmbeddings = documentRepository.countByUploadedByUsernameAndEmbeddingGeneratedTrue(username);
+            
+            Double averageOCRConfidence = documentRepository.getAverageOCRConfidenceByUser(username);
+            
+            Map<String, Object> stats = new HashMap<>();
+            stats.put("totalDocuments", totalDocuments);
+            stats.put("documentsWithOCR", documentsWithOCR);
+            stats.put("documentsWithEmbeddings", documentsWithEmbeddings);
+            stats.put("ocrCoverage", totalDocuments > 0 ? (double) documentsWithOCR / totalDocuments : 0.0);
+            stats.put("averageOCRConfidence", averageOCRConfidence != null ? averageOCRConfidence : 0.0);
+            
+            return stats;
+        } catch (Exception e) {
+            log.error("❌ Failed to get OCR statistics: {}", e.getMessage());
+            return Map.of("error", "Failed to get OCR statistics");
+        }
+    }
     
     // ===== HELPER METHODS =====
     
- public DocumentDTO convertToDTO(Document document) {
+    /**
+     * ✅ ADDED: Generate unique stored filename for uploaded files
+     */
+    private String generateStoredFilename(String originalFilename) {
+        String timestamp = String.valueOf(System.currentTimeMillis());
+        String uuid = UUID.randomUUID().toString().substring(0, 8);
+        String extension = "";
+        
+        if (originalFilename != null && originalFilename.contains(".")) {
+            extension = originalFilename.substring(originalFilename.lastIndexOf("."));
+        }
+        
+        return timestamp + "_" + uuid + extension;
+    }
+    
+    /**
+     * ✅ ADDED: Determine document type based on MIME type
+     */
+    private String determineDocumentType(String mimeType) {
+        if (mimeType == null) return "unknown";
+        
+        if (mimeType.startsWith("image/")) return "image";
+        if (mimeType.contains("pdf")) return "pdf";
+        if (mimeType.contains("word") || mimeType.contains("document")) return "document";
+        if (mimeType.contains("excel") || mimeType.contains("spreadsheet")) return "spreadsheet";
+        if (mimeType.contains("powerpoint") || mimeType.contains("presentation")) return "presentation";
+        if (mimeType.startsWith("text/")) return "text";
+        if (mimeType.startsWith("video/")) return "video";
+        if (mimeType.startsWith("audio/")) return "audio";
+        
+        return "file";
+    }
+    
+    /**
+     * ✅ FIXED: Convert document entity to DTO with safe lazy loading
+     */
+    public DocumentDTO convertToDTO(Document document) {
         try {
             DocumentDTO dto = new DocumentDTO();
             
@@ -486,7 +614,7 @@ public Page<DocumentDTO> getPendingDocuments(int page, int size) {
                 List<String> tags = document.getTags();
                 dto.setTags(tags != null ? new ArrayList<>(tags) : new ArrayList<>());
             } catch (LazyInitializationException e) {
-                logger.warn("⚠️ Could not load tags for document {}: Using safe accessor", document.getId());
+                log.warn("⚠️ Could not load tags for document {}: Using safe accessor", document.getId());
                 dto.setTags(document.getTagsSafe());
             }
             
@@ -500,7 +628,7 @@ public Page<DocumentDTO> getPendingDocuments(int page, int size) {
                     dto.setUploadedById(null);
                 }
             } catch (LazyInitializationException e) {
-                logger.warn("⚠️ Could not load uploadedBy for document {}: Using safe accessor", document.getId());
+                log.warn("⚠️ Could not load uploadedBy for document {}: Using safe accessor", document.getId());
                 dto.setUploadedByName(document.getUploadedByNameSafe());
                 dto.setUploadedById(document.getUploadedByIdSafe());
             }
@@ -512,7 +640,7 @@ public Page<DocumentDTO> getPendingDocuments(int page, int size) {
                     dto.setApprovalDate(document.getApprovalDate());
                 }
             } catch (LazyInitializationException e) {
-                logger.warn("⚠️ Could not load approvedBy for document {}: Using safe accessor", document.getId());
+                log.warn("⚠️ Could not load approvedBy for document {}: Using safe accessor", document.getId());
                 dto.setApprovedByName(document.getApprovedByNameSafe());
                 dto.setApprovalDate(document.getApprovalDate());
             }
@@ -520,7 +648,7 @@ public Page<DocumentDTO> getPendingDocuments(int page, int size) {
             return dto;
             
         } catch (Exception e) {
-            logger.error("❌ Error converting document {} to DTO: {}", document.getId(), e.getMessage(), e);
+            log.error("❌ Error converting document {} to DTO: {}", document.getId(), e.getMessage(), e);
             
             // Return minimal DTO on error
             DocumentDTO dto = new DocumentDTO();

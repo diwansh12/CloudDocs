@@ -239,5 +239,20 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
      */
     @Query("SELECT COUNT(d) FROM Document d WHERE d.uploadedBy.username = :username AND d.status = :status")
     long countByUploadedByUsernameAndStatus(@Param("username") String username, @Param("status") DocumentStatus status);
+
+
+    /**
+ * Count documents with OCR processed for a specific user
+ */
+@Query("SELECT COUNT(d) FROM Document d WHERE d.uploadedBy.username = :username AND d.hasOcr = true")
+long countByUploadedByUsernameAndHasOcrTrue(@Param("username") String username);
+
+/**
+ * Get average OCR confidence for user's documents
+ */
+@Query("SELECT AVG(d.ocrConfidence) FROM Document d WHERE d.uploadedBy.username = :username AND d.ocrConfidence IS NOT NULL")
+Double getAverageOCRConfidenceByUser(@Param("username") String username);
+
+    
 }
 
