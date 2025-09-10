@@ -30,6 +30,17 @@ export interface Document {
   approvedByName?: string;
   approvalDate?: string;
   rejectionReason?: string;
+
+   // ✅ NEW: OCR fields (all optional)
+  hasOcr?: boolean;
+  ocrText?: string;
+  ocrConfidence?: number;
+  ocrProcessingTime?: number;
+  
+  // ✅ NEW: AI fields (all optional)
+  embeddingGenerated?: boolean;
+  aiScore?: number;
+  searchType?: 'semantic' | 'keyword' | 'hybrid';
 }
 
 export interface DocumentUploadResponse {

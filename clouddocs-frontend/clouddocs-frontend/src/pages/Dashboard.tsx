@@ -4,22 +4,18 @@ import {
   Upload, 
   CheckCircle,
   AlertCircle,
-  ArrowUpCircle,
   RefreshCw,
   TrendingUp,
   FileText,
-  Users,
   Clock,
   Download,
   Eye,
-  Brain, // ✅ NEW: For AI features
-  Zap, // ✅ NEW: For search features
-  Sparkles, // ✅ NEW: For AI indicators
-  Search, // ✅ NEW: For search functionality
-  FileImage, // ✅ NEW: For OCR uploads
-  BarChart, // ✅ NEW: For analytics
-  Target, // ✅ NEW: For accuracy
-  Camera // ✅ NEW: For OCR scanning
+  Brain,
+  Zap,
+  Sparkles,
+  Search,
+  BarChart,
+  Camera
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -28,7 +24,17 @@ import { Input } from '../components/ui/input';
 import Sidebar from '../components/layout/Sidebar';
 import DocumentUploadModal from '../components/documents/DocumentUpload';
 import dashboardService, { DashboardStats, Document } from '../services/dashboardService';
-import documentService from '../services/documentService'; // ✅ NEW: For OCR features
+import documentService, { OCRStatistics, SearchResult } from '../services/documentService';
+
+// ✅ FIXED: Proper interfaces for type safety
+interface DashboardOCRStats {
+  totalDocuments: number;
+  documentsWithOCR: number;
+  documentsWithEmbeddings: number;
+  ocrCoverage: number;
+  averageOCRConfidence: number;
+  aiReadyDocuments: number;
+}
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -42,14 +48,14 @@ export default function Dashboard() {
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // ✅ NEW: OCR and AI State
-  const [ocrStats, setOcrStats] = useState<any>(null);
+  // ✅ NEW: OCR and AI State with proper typing
+  const [ocrStats, setOcrStats] = useState<DashboardOCRStats | null>(null);
   const [aiReadyDocuments, setAiReadyDocuments] = useState<Document[]>([]);
   const [quickSearchQuery, setQuickSearchQuery] = useState('');
   const [quickSearchResults, setQuickSearchResults] = useState<Document[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
 
-  // ✅ ENHANCED: Load dashboard data with OCR
+  // ✅ COMPLETELY FIXED: Load dashboard data with proper error handling and typing
   const loadDashboardData = async () => {
     try {
       setLoading(true);
@@ -59,30 +65,64 @@ export default function Dashboard() {
         statsData, 
         documentsData, 
         workflowsData,
-        ocrStatsData, // ✅ NEW
-        aiReadyData   // ✅ NEW
+        ocrStatsData,
+        aiReadyData
       ] = await Promise.all([
         dashboardService.getDashboardStats(),
         dashboardService.getRecentDocuments(4),
         dashboardService.getPendingWorkflows(3),
-        documentService.getOCRStatistics().catch(() => null), // ✅ NEW: OCR stats
-        documentService.getAIReadyDocuments().catch(() => []).then(docs => docs.slice(0, 3)) // ✅ NEW: AI ready docs
+        
+        // ✅ SAFE OCR STATS LOADING
+        documentService.getOCRStatistics()
+          .then((response: OCRStatistics): DashboardOCRStats => {
+            return {
+              totalDocuments: response.totalDocuments || 0,
+              documentsWithOCR: response.documentsWithOCR || 0,
+              documentsWithEmbeddings: response.documentsWithEmbeddings || 0,
+              ocrCoverage: response.ocrCoverage || 0.0,
+              averageOCRConfidence: response.averageOCRConfidence || 0.0,
+              aiReadyDocuments: response.aiReadyDocuments || 0
+            };
+          })
+          .catch((error: any): DashboardOCRStats => {
+            console.warn('OCR stats failed, using defaults:', error);
+            return {
+              totalDocuments: 0,
+              documentsWithOCR: 0,
+              documentsWithEmbeddings: 0,
+              ocrCoverage: 0.0,
+              averageOCRConfidence: 0.0,
+              aiReadyDocuments: 0
+            };
+          }),
+        
+        // ✅ SAFE AI-READY DOCUMENTS LOADING
+        documentService.getAIReadyDocuments()
+          .then((documents: Document[]): Document[] => {
+            // The service already returns Document[], so we can safely slice
+            return Array.isArray(documents) ? documents.slice(0, 3) : [];
+          })
+          .catch((error: any): Document[] => {
+            console.warn('AI-ready documents failed, using empty array:', error);
+            return [];
+          })
       ]);
 
       setStats(statsData);
       setRecentDocuments(documentsData);
       setPendingWorkflows(workflowsData);
-      setOcrStats(ocrStatsData); // ✅ NEW
-      setAiReadyDocuments(aiReadyData); // ✅ NEW
+      setOcrStats(ocrStatsData);
+      setAiReadyDocuments(aiReadyData);
+      
     } catch (err: any) {
       console.error('Error loading dashboard data:', err);
-      setError(err.message);
+      setError(err.message || 'Failed to load dashboard data');
     } finally {
       setLoading(false);
     }
   };
 
-  // ✅ NEW: Quick search functionality
+  // ✅ FIXED: Quick search functionality with proper error handling
   const handleQuickSearch = async (query: string) => {
     if (query.length < 2) {
       setQuickSearchResults([]);
@@ -91,8 +131,14 @@ export default function Dashboard() {
 
     setSearchLoading(true);
     try {
-      const results = await documentService.semanticSearch(query, 3);
-      setQuickSearchResults(results.documents);
+      const results: SearchResult = await documentService.semanticSearch(query, 3);
+      
+      // ✅ SAFE: The service returns SearchResult with documents array
+      if (results && Array.isArray(results.documents)) {
+        setQuickSearchResults(results.documents);
+      } else {
+        setQuickSearchResults([]);
+      }
     } catch (error) {
       console.error('Quick search failed:', error);
       setQuickSearchResults([]);
@@ -129,15 +175,7 @@ export default function Dashboard() {
   // Handle document download
   const handleDownload = async (document: Document) => {
     try {
-      const blob = await dashboardService.downloadDocument(document.id);
-      const url = window.URL.createObjectURL(blob);
-      const link = window.document.createElement('a');
-      link.href = url;
-      link.download = document.originalFilename;
-      window.document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+      await documentService.downloadDocument(document.id, document.originalFilename);
     } catch (err: any) {
       console.error('Download failed:', err);
     }
@@ -175,6 +213,7 @@ export default function Dashboard() {
     });
   };
 
+  // Loading state
   if (loading) {
     return (
       <div className="h-screen flex overflow-hidden bg-gray-50">
@@ -189,6 +228,7 @@ export default function Dashboard() {
     );
   }
 
+  // Error state
   if (error) {
     return (
       <div className="h-screen flex overflow-hidden bg-gray-50">
@@ -462,11 +502,11 @@ export default function Dashboard() {
                             <h4 className="font-medium text-gray-900 text-sm truncate">
                               {doc.originalFilename}
                             </h4>
-                            {/* ✅ NEW: OCR Indicator */}
-                            {(doc as any).hasOcr && (
+                            {/* ✅ SAFE: OCR Indicators with proper type checking */}
+                            {doc.hasOcr && (
                               <Eye className="w-3 h-3 text-green-600 ml-2 flex-shrink-0" />
                             )}
-                            {(doc as any).embeddingGenerated && (
+                            {doc.embeddingGenerated && (
                               <Brain className="w-3 h-3 text-purple-600 ml-1 flex-shrink-0" />
                             )}
                           </div>
@@ -535,9 +575,9 @@ export default function Dashboard() {
                             <h4 className="font-medium text-gray-900 text-sm truncate">
                               {doc.originalFilename}
                             </h4>
-                            {(doc as any).hasOcr && (
+                            {doc.hasOcr && doc.ocrConfidence && (
                               <Badge className="ml-2 bg-green-100 text-green-700 text-xs">
-                                OCR {(doc as any).ocrConfidence && `${Math.round((doc as any).ocrConfidence * 100)}%`}
+                                OCR {documentService.formatConfidence(doc.ocrConfidence)}
                               </Badge>
                             )}
                           </div>
