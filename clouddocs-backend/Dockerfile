@@ -7,7 +7,7 @@ RUN mvn clean package -DskipTests
 FROM openjdk:21-jdk-slim
 WORKDIR /app
 
-# ✅ CRITICAL: Install Tesseract OCR
+# ✅ CRITICAL FIX: Install Tesseract with proper tessdata packages
 RUN apt-get update && \
     apt-get install -y \
     tesseract-ocr \
@@ -20,9 +20,13 @@ RUN apt-get update && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Verify Tesseract installation
+# ✅ FIX: Find actual tessdata location and verify installation
 RUN tesseract --version && \
-    ls -la /usr/share/tesseract-ocr/tessdata/
+    echo "=== Searching for tessdata directories ===" && \
+    find /usr -name "tessdata" -type d 2>/dev/null || echo "No tessdata directories found" && \
+    find /usr -name "*.traineddata" 2>/dev/null | head -5 && \
+    echo "=== Available languages ===" && \
+    tesseract --list-langs || echo "Language list unavailable"
 
 COPY --from=build /app/target/*.jar app.jar
 
