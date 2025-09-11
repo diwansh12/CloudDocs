@@ -23,7 +23,7 @@ import java.util.Arrays;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/ocr")
+@RequestMapping("/ocr")
 @CrossOrigin(origins = {
     "https://cloud-docs-tan.vercel.app", 
     "http://localhost:3000",
