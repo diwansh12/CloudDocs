@@ -29,6 +29,9 @@ public class OCRService {
     
     private static final Logger log = LoggerFactory.getLogger(OCRService.class);
     
+    // ✅ SOLUTION: Move diagnostics flag to class level
+    private static boolean diagnosticsRun = false;
+    
     // Supported image formats
     private static final List<String> SUPPORTED_FORMATS = Arrays.asList(
         "image/jpeg", "image/jpg", "image/png", "image/bmp", "image/tiff", "image/gif"
@@ -36,7 +39,6 @@ public class OCRService {
     
     @Autowired
     private MultiProviderAIService aiService;
-
     private final DocumentRepository documentRepository;
     
     public OCRService(DocumentRepository documentRepository) {
@@ -44,10 +46,20 @@ public class OCRService {
     }
 
     /**
-     * ✅ UPDATED: Extract text from uploaded image file using OCR (Render-compatible)
+     * ✅ FIXED: Extract text from uploaded image file using OCR
      */
     public OCRResultDTO extractTextFromImage(MultipartFile file) {
         log.info("🔍 Starting OCR extraction for file: {}", file.getOriginalFilename());
+
+        // ✅ SOLUTION: Use class-level static variable with synchronization
+        if (!diagnosticsRun) {
+            synchronized (OCRService.class) {
+                if (!diagnosticsRun) {
+                    logTessdataDebugInfo();
+                    diagnosticsRun = true;
+                }
+            }
+        }
         
         try {
             // Validate file type
@@ -117,6 +129,8 @@ public class OCRService {
         }
     }
 
+
+
    private String detectTessdataPath() {
     // Check environment variable first
     String envPath = System.getenv("TESSDATA_PREFIX");
@@ -173,6 +187,84 @@ public class OCRService {
     
     log.error("❌ No valid tessdata directory found for OS: {}", osName);
     return null;
+}
+
+
+/**
+ * Enhanced tessdata diagnostics to find actual installation location
+ */
+private void logTessdataDebugInfo() {
+    log.info("=== TESSDATA DIAGNOSTIC REPORT ===");
+    
+    // Log environment variables
+    log.info("Environment Variables:");
+    log.info("  TESSDATA_PREFIX: {}", System.getenv("TESSDATA_PREFIX"));
+    log.info("  TESSERACT_PATH: {}", System.getenv("TESSERACT_PATH"));
+    
+    // Search for any traineddata files across the entire filesystem
+    log.info("Searching for traineddata files...");
+    String[] searchPaths = {"/usr", "/opt", "/app", "/mnt", "/var", "/tmp"};
+    
+    for (String searchPath : searchPaths) {
+        try {
+            File searchDir = new File(searchPath);
+            if (searchDir.exists() && searchDir.canRead()) {
+                searchForTrainedData(searchDir, 0, 3); // Search 3 levels deep
+            }
+        } catch (Exception e) {
+            log.debug("Cannot search {}: {}", searchPath, e.getMessage());
+        }
+    }
+    
+    // Check specific common locations
+    log.info("Checking common tessdata locations:");
+    String[] commonPaths = {
+        "/usr/share/tessdata",
+        "/usr/share/tesseract-ocr/tessdata", 
+        "/usr/share/tesseract-ocr/4.00/tessdata",
+        "/usr/local/share/tessdata",
+        "/opt/tesseract/tessdata"
+    };
+    
+    for (String path : commonPaths) {
+        File dir = new File(path);
+        log.info("  {} - exists: {}, readable: {}", 
+                path, dir.exists(), dir.canRead());
+        if (dir.exists()) {
+            File[] files = dir.listFiles();
+            if (files != null && files.length > 0) {
+                log.info("    Contents: {}", 
+                        Arrays.stream(files)
+                              .map(File::getName)
+                              .limit(5)
+                              .collect(java.util.stream.Collectors.toList()));
+            }
+        }
+    }
+    
+    log.info("=== END DIAGNOSTIC REPORT ===");
+}
+
+/**
+ * Recursively search for traineddata files
+ */
+private void searchForTrainedData(File dir, int currentDepth, int maxDepth) {
+    if (currentDepth >= maxDepth || !dir.canRead()) return;
+    
+    try {
+        File[] files = dir.listFiles();
+        if (files != null) {
+            for (File file : files) {
+                if (file.isFile() && file.getName().endsWith(".traineddata")) {
+                    log.info("Found traineddata: {}", file.getAbsolutePath());
+                } else if (file.isDirectory() && currentDepth < maxDepth - 1) {
+                    searchForTrainedData(file, currentDepth + 1, maxDepth);
+                }
+            }
+        }
+    } catch (Exception e) {
+        // Ignore permission errors during search
+    }
 }
 
 
