@@ -321,29 +321,40 @@ class DocumentService {
 
   // ===== SEARCH METHODS =====
 
-  // ✅ NEW: AI-powered semantic search (includes OCR text)
-  async semanticSearch(query: string, limit: number = 10): Promise<SearchResult> {
-    try {
-      console.log('🔍 Starting semantic search for:', query);
-      
-      const startTime = Date.now();
-      
-      const response = await api.post<SearchResult>('/search/semantic', {
-        query,
-        limit
-      });
-      
-      const processingTime = Date.now() - startTime;
-      console.log(`✅ Semantic search completed in ${processingTime}ms`);
-      
-      return {
-        ...response.data,
-        processingTime
-      };
-    } catch (error: any) {
-      throw new Error(error.response?.data?.error || 'Semantic search failed');
-    }
+async semanticSearch(query: string, limit: number = 10): Promise<SearchResult> {
+  try {
+    console.log('🔍 Starting semantic search for:', query);
+    
+    const startTime = Date.now();
+    
+    const response = await api.post('/search/semantic', {
+      query,
+      limit
+    });
+    
+    const processingTime = Date.now() - startTime;
+    console.log(`✅ Semantic search completed in ${processingTime}ms`);
+    
+    // ✅ CRITICAL: Map backend response to expected frontend structure
+    return {
+      documents: response.data?.results || [],           // Backend sends "results"
+      totalResults: response.data?.count || 0,           // Backend sends "count"
+      searchType: 'semantic' as const,                   // Add missing field
+      processingTime                                     // Calculate locally
+    };
+  } catch (error: any) {
+    console.error('❌ SEMANTIC search failed:', error?.message || 'Unknown error');
+    console.log('• Using regular search instead');
+    
+    // ✅ Return safe fallback structure
+    return {
+      documents: [],
+      totalResults: 0,
+      searchType: 'semantic' as const,
+      processingTime: 0
+    };
   }
+}
 
   // ✅ NEW: Hybrid search (semantic + keyword + OCR text)
   async hybridSearch(query: string, limit: number = 10): Promise<SearchResult> {

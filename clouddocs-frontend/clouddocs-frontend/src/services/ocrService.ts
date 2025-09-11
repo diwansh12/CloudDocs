@@ -104,29 +104,36 @@ class OCRService {
   /**
    * ✅ AI-powered semantic search (includes OCR text)
    */
-  async semanticSearch(query: string, limit: number = 10): Promise<SearchResult> {
-    try {
-      console.log('🔍 Starting semantic search for:', query);
-      
-      const startTime = Date.now();
-      
-      const response = await api.post<SearchResult>('/search/semantic', {
-        query,
-        limit
-      });
-      
-      const processingTime = Date.now() - startTime;
-      console.log(`✅ Semantic search completed in ${processingTime}ms`);
-      
-      return {
-        ...response.data,
-        processingTime
-      };
-    } catch (error: any) {
-      console.error('❌ Semantic search failed:', error);
-      throw new Error(error.response?.data?.message || 'Semantic search failed');
-    }
+// ✅ FIXED: Handle actual backend response structure
+async semanticSearch(query: string, limit: number = 10): Promise<SearchResult> {
+  try {
+    console.log('🔍 Starting semantic search for:', query);
+    
+    const startTime = Date.now();
+    
+    const response = await api.post<any>('/search/semantic', {  // Use 'any' for now
+      query,
+      limit
+    });
+    
+    const processingTime = Date.now() - startTime;
+    console.log(`✅ Semantic search completed in ${processingTime}ms`);
+    
+    // ✅ CRITICAL: Safe property access with null checks
+    const backendData = response?.data || {};
+    
+    return {
+      documents: Array.isArray(backendData.results) ? backendData.results : [],
+      totalResults: typeof backendData.count === 'number' ? backendData.count : 0,
+      searchType: 'semantic' as const,
+      processingTime
+    };
+  } catch (error: any) {
+    console.error('❌ Semantic search failed:', error);
+    throw new Error(error.response?.data?.message || 'Semantic search failed');
   }
+}
+
 
   /**
    * ✅ Hybrid search (semantic + keyword + OCR text)
