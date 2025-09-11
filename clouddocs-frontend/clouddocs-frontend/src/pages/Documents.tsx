@@ -218,7 +218,7 @@ export default function Documents() {
         setAiError('');
         loadDocuments(0, false);
       }
-    }, 500);
+    }, 1000);
 
     return () => clearTimeout(timeoutId);
   }, [searchQuery, searchMode, loadDocuments]); // ✅ CRITICAL: Added searchMode to dependencies
