@@ -1,6 +1,9 @@
 package com.clouddocs.backend.controller;
 
 import com.clouddocs.backend.service.OCRService;
+
+import jakarta.servlet.http.HttpServletRequest;
+
 import com.clouddocs.backend.service.DocumentService;
 import com.clouddocs.backend.dto.OCRResultDTO;
 import com.clouddocs.backend.dto.DocumentDTO;
@@ -46,54 +49,83 @@ public class OCRController {
 
    @PostMapping("/extract")
 @PreAuthorize("isAuthenticated()")
-public ResponseEntity<?> extractText(@RequestParam("file") MultipartFile file) {
+public ResponseEntity<?> extractText(@RequestParam("file") MultipartFile file, 
+                                    HttpServletRequest request) {
+    String filename = (file != null) ? file.getOriginalFilename() : "unknown";
+    String clientIp = getClientIpAddress(request);
+    
     try {
-        // ✅ SAFE: Get filename with null check first
-        String filename = (file != null) ? file.getOriginalFilename() : "unknown";
-        logger.info("📤 OCR extraction request for: {}", filename);
+        logger.info("🔍 OCR request from {} for file: {}", clientIp, filename);
 
-        // ✅ CRITICAL: Comprehensive file validation (includes null check)
+        // ✅ Early validation
         Map<String, Object> validationError = validateFileForExtraction(file);
         if (validationError != null) {
+            logger.warn("❌ Validation failed for {}: {}", filename, validationError);
             return ResponseEntity.badRequest().body(validationError);
         }
 
-        // ✅ Memory check before processing
-        if (!checkMemoryAvailable()) {
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+        // ✅ Connection health check
+        if (request.isAsyncStarted() || !isConnectionActive(request)) {
+            logger.warn("❌ Connection not active for file: {}", filename);
+            return ResponseEntity.status(HttpStatus.REQUEST_TIMEOUT)
                 .body(Map.of(
                     "success", false,
-                    "error", "Server overloaded",
-                    "message", "Please try again in a moment"
+                    "error", "Connection timeout",
+                    "message", "Upload connection timed out. Please try again."
                 ));
         }
 
-        // Process OCR (file is guaranteed not null by validation)
+        // ✅ Memory check
+        if (!checkMemoryAvailable()) {
+            logger.warn("❌ Insufficient memory for file: {}", filename);
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(Map.of("success", false, "error", "Server busy", 
+                    "message", "Server is processing other requests. Please try again."));
+        }
+
+        // ✅ Process OCR with monitoring
+        logger.info("🔍 Starting OCR processing for: {}", filename);
         OCRResultDTO result = ocrService.extractTextFromImage(file);
         
-        if (result == null) {
+        if (result == null || !result.isSuccess()) {
+            logger.error("❌ OCR processing failed for: {}", filename);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(Map.of(
-                    "success", false,
-                    "error", "OCR processing failed",
-                    "message", "OCR service returned null result"
-                ));
+                .body(Map.of("success", false, "error", "OCR failed", 
+                    "message", "Text extraction failed. Please try with a different image."));
         }
 
-        logger.info("✅ OCR extraction completed for: {} - Success: {}", filename, result.isSuccess());
+        logger.info("✅ OCR completed successfully for: {} ({}ms)", 
+            filename, result.getProcessingTime());
+        
         return ResponseEntity.ok(result);
 
     } catch (Exception e) {
-        // ✅ SAFE: Get filename with null check in catch block too
-        String filename = (file != null) ? file.getOriginalFilename() : "unknown";
-        logger.error("❌ OCR extraction failed for {}: {}", filename, e.getMessage(), e);
+        logger.error("❌ OCR processing error for {} from {}: {}", filename, clientIp, e.getMessage(), e);
         
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
             .body(Map.of(
                 "success", false,
-                "error", "OCR processing failed",
-                "message", "An unexpected error occurred during text extraction"
+                "error", "Processing failed",
+                "message", "An error occurred during text extraction. Please try again."
             ));
+    }
+}
+
+// Helper methods
+private String getClientIpAddress(HttpServletRequest request) {
+    String xForwardedFor = request.getHeader("X-Forwarded-For");
+    if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
+        return xForwardedFor.split(",")[0].trim();
+    }
+    return request.getRemoteAddr();
+}
+
+private boolean isConnectionActive(HttpServletRequest request) {
+    try {
+        // Check if connection is still active
+        return !request.isAsyncStarted() && request.getInputStream().available() >= 0;
+    } catch (Exception e) {
+        return false;
     }
 }
 
@@ -336,4 +368,33 @@ public ResponseEntity<?> uploadDocumentWithOCR(
             return ResponseEntity.status(500).body(errorStats);
         }
     }
+
+    @GetMapping("/network-status")
+public ResponseEntity<Map<String, Object>> networkStatus(HttpServletRequest request) {
+    Map<String, Object> status = new HashMap<>();
+    
+    try {
+        status.put("timestamp", System.currentTimeMillis());
+        status.put("clientIp", getClientIpAddress(request));
+        status.put("userAgent", request.getHeader("User-Agent"));
+        status.put("contentLength", request.getContentLength());
+        
+        // Memory info
+        Runtime runtime = Runtime.getRuntime();
+        status.put("memoryUsedMB", (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024);
+        status.put("memoryMaxMB", runtime.maxMemory() / 1024 / 1024);
+        
+        // Server info
+        status.put("activeConnections", "Available");
+        status.put("serverStatus", "OK");
+        
+        return ResponseEntity.ok(status);
+        
+    } catch (Exception e) {
+        status.put("error", e.getMessage());
+        status.put("serverStatus", "ERROR");
+        return ResponseEntity.status(500).body(status);
+    }
+}
+
 }
