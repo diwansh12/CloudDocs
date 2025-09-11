@@ -25,8 +25,17 @@ public class DocumentDTO {
     private String approvedByName;
     private LocalDateTime approvalDate;
     private String rejectionReason;
+    
+    // ✅ EXISTING: AI and search fields
     private Double aiScore;
-     private String searchType;
+    private String searchType;
+    
+    // ✅ NEW: OCR and AI-related fields
+    private Boolean hasOcr;
+    private Double ocrConfidence;
+    private Boolean embeddingGenerated;
+    private String ocrText;
+    private Integer ocrProcessingTime;
     
     // Constructors
     public DocumentDTO() {}
@@ -56,7 +65,8 @@ public class DocumentDTO {
         this.documentType = documentType;
     }
     
-    // Getters and Setters
+    // ===== EXISTING GETTERS AND SETTERS =====
+    
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     
@@ -117,7 +127,9 @@ public class DocumentDTO {
     public String getRejectionReason() { return rejectionReason; }
     public void setRejectionReason(String rejectionReason) { this.rejectionReason = rejectionReason; }
 
-     public Double getAiScore() { 
+    // ===== EXISTING: AI SEARCH FIELDS =====
+    
+    public Double getAiScore() { 
         return aiScore; 
     }
     
@@ -125,11 +137,103 @@ public class DocumentDTO {
         this.aiScore = aiScore; 
     }
 
-      public String getSearchType() {
+    public String getSearchType() {
         return searchType;
     }
     
     public void setSearchType(String searchType) {
         this.searchType = searchType;
+    }
+    
+    // ✅ NEW: OCR AND AI-RELATED GETTERS AND SETTERS
+    
+    /**
+     * Returns whether this document has OCR text extracted
+     * @return true if OCR text is available, false otherwise, null if unknown
+     */
+    public Boolean getHasOcr() { 
+        return hasOcr; 
+    }
+    
+    public void setHasOcr(Boolean hasOcr) { 
+        this.hasOcr = hasOcr; 
+    }
+    
+    /**
+     * Returns the OCR confidence score (0.0 to 1.0)
+     * @return OCR confidence level, null if no OCR performed
+     */
+    public Double getOcrConfidence() { 
+        return ocrConfidence; 
+    }
+    
+    public void setOcrConfidence(Double ocrConfidence) { 
+        this.ocrConfidence = ocrConfidence; 
+    }
+    
+    /**
+     * Returns whether embeddings have been generated for this document
+     * @return true if embeddings are available, false otherwise, null if unknown
+     */
+    public Boolean getEmbeddingGenerated() { 
+        return embeddingGenerated; 
+    }
+    
+    public void setEmbeddingGenerated(Boolean embeddingGenerated) { 
+        this.embeddingGenerated = embeddingGenerated; 
+    }
+    
+    /**
+     * Returns the extracted OCR text content
+     * @return OCR text content, null if no OCR performed
+     */
+    public String getOcrText() { 
+        return ocrText; 
+    }
+    
+    public void setOcrText(String ocrText) { 
+        this.ocrText = ocrText; 
+    }
+    
+    /**
+     * Returns the time taken to process OCR in milliseconds
+     * @return processing time in ms, null if no OCR performed
+     */
+    public Integer getOcrProcessingTime() { 
+        return ocrProcessingTime; 
+    }
+    
+    public void setOcrProcessingTime(Integer ocrProcessingTime) { 
+        this.ocrProcessingTime = ocrProcessingTime; 
+    }
+    
+    // ✅ UTILITY METHODS FOR CONVENIENCE
+    
+    /**
+     * Convenience method to check if document has high-quality OCR
+     * @return true if OCR confidence > 0.8, false otherwise
+     */
+    public boolean hasHighQualityOCR() {
+        return hasOcr != null && hasOcr && 
+               ocrConfidence != null && ocrConfidence > 0.8;
+    }
+    
+    /**
+     * Convenience method to check if document is AI-ready
+     * @return true if document has embeddings or high-quality OCR
+     */
+    public boolean isAIReady() {
+        return (embeddingGenerated != null && embeddingGenerated) || hasHighQualityOCR();
+    }
+    
+    /**
+     * Get formatted OCR confidence as percentage string
+     * @return confidence as percentage (e.g., "85.2%"), "N/A" if no OCR
+     */
+    public String getFormattedOcrConfidence() {
+        if (ocrConfidence == null) {
+            return "N/A";
+        }
+        return String.format("%.1f%%", ocrConfidence * 100);
     }
 }
