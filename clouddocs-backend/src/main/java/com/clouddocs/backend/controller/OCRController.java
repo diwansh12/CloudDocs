@@ -19,9 +19,6 @@ import java.util.Map;
 import java.util.Arrays;
 import java.util.List;
 
-/**
- * 📖 OCR Controller for FREE text extraction from images
- */
 @RestController
 @RequestMapping("/api/ocr")
 @CrossOrigin(origins = {
@@ -33,7 +30,7 @@ public class OCRController {
 
     private static final Logger logger = LoggerFactory.getLogger(OCRController.class);
     
-    // ✅ File size and type constraints
+    // ✅ File constraints
     private static final long MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
     private static final List<String> ALLOWED_CONTENT_TYPES = Arrays.asList(
         "image/jpeg", "image/jpg", "image/png", "image/bmp", "image/tiff", "image/gif"
@@ -47,157 +44,201 @@ public class OCRController {
         this.documentService = documentService;
     }
 
-    /**
-     * Extract text from image using OCR (preview only)
-     */
-    @PostMapping("/extract")
-    @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<OCRResultDTO> extractText(@RequestParam("file") MultipartFile file) {
-        try {
-            logger.info("📤 OCR extraction request for: {}", file.getOriginalFilename());
-            
-            // Validate file before processing
-            ResponseEntity<OCRResultDTO> validationResult = validateFile(file);
-            if (validationResult != null) {
-                return validationResult;
-            }
-            
-            OCRResultDTO result = ocrService.extractTextFromImage(file);
-            logger.info("✅ OCR extraction completed for: {}", file.getOriginalFilename());
-            return ResponseEntity.ok(result);
-            
-        } catch (IllegalArgumentException e) {
-            logger.warn("⚠️ Invalid request for OCR: {}", e.getMessage());
-            return ResponseEntity.badRequest()
-                    .body(new OCRResultDTO("", 0.0, 0L, file.getOriginalFilename(), false, e.getMessage()));
-        } catch (Exception e) {
-            logger.error("❌ OCR extraction failed for {}: {}", file.getOriginalFilename(), e.getMessage(), e);
-            return ResponseEntity.internalServerError()
-                    .body(new OCRResultDTO("", 0.0, 0L, file.getOriginalFilename(), false,
-                            "OCR processing failed: " + e.getMessage()));
+   @PostMapping("/extract")
+@PreAuthorize("isAuthenticated()")
+public ResponseEntity<?> extractText(@RequestParam("file") MultipartFile file) {
+    try {
+        // ✅ SAFE: Get filename with null check first
+        String filename = (file != null) ? file.getOriginalFilename() : "unknown";
+        logger.info("📤 OCR extraction request for: {}", filename);
+
+        // ✅ CRITICAL: Comprehensive file validation (includes null check)
+        Map<String, Object> validationError = validateFileForExtraction(file);
+        if (validationError != null) {
+            return ResponseEntity.badRequest().body(validationError);
         }
-    }
 
-    /**
-     * ✅ ENHANCED: Upload document with OCR processing - with comprehensive validation and error handling
-     */
-    @PostMapping("/upload")
-    @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<?> uploadDocumentWithOCR(
-            @RequestParam("file") MultipartFile file,
-            @RequestParam(value = "description", required = false) String description,
-            @RequestParam(value = "category", required = false) String category,
-            @AuthenticationPrincipal UserDetails userDetails) {
-
-        try {
-            logger.info("📤 OCR upload request for: {} from user: {}", 
-                file.getOriginalFilename(), userDetails.getUsername());
-
-            // ✅ CRITICAL: Comprehensive file validation
-            Map<String, Object> validationError = validateFileForUpload(file);
-            if (validationError != null) {
-                return ResponseEntity.badRequest().body(validationError);
-            }
-
-            // ✅ CRITICAL: Memory check before processing
-            Map<String, Object> memoryError = checkMemoryAvailability();
-            if (memoryError != null) {
-                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(memoryError);
-            }
-
-            // ✅ Force garbage collection before heavy processing
-            System.gc();
-            
-            // Process document with OCR
-            var documentWithOCR = ocrService.processDocumentWithOCR(file, description, category);
-
-            // Save document with OCR data
-            DocumentDTO savedDocument = documentService.saveDocumentWithOCR(
-                    documentWithOCR,
-                    userDetails.getUsername()
-            );
-
-            // ✅ Success response with detailed information
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("message", "Document uploaded and processed successfully");
-            response.put("document", savedDocument);
-            response.put("ocrText", documentWithOCR.getOcrResult().getExtractedText());
-            response.put("confidence", documentWithOCR.getOcrResult().getConfidence());
-            response.put("processingTime", documentWithOCR.getOcrResult().getProcessingTime());
-            response.put("embeddingGenerated", documentWithOCR.getEmbedding() != null);
-
-            logger.info("✅ OCR upload completed for: {}", file.getOriginalFilename());
-            return ResponseEntity.ok(response);
-
-        } catch (IllegalArgumentException e) {
-            logger.warn("⚠️ Invalid request for OCR upload: {}", e.getMessage());
-            return ResponseEntity.badRequest()
+        // ✅ Memory check before processing
+        if (!checkMemoryAvailable()) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(Map.of(
                     "success", false,
-                    "error", "Invalid request",
-                    "message", e.getMessage()
+                    "error", "Server overloaded",
+                    "message", "Please try again in a moment"
                 ));
-                
-        } catch (RuntimeException e) {
-            logger.error("❌ OCR upload failed for {}: {}", file.getOriginalFilename(), e.getMessage());
+        }
+
+        // Process OCR (file is guaranteed not null by validation)
+        OCRResultDTO result = ocrService.extractTextFromImage(file);
+        
+        if (result == null) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of(
+                    "success", false,
+                    "error", "OCR processing failed",
+                    "message", "OCR service returned null result"
+                ));
+        }
+
+        logger.info("✅ OCR extraction completed for: {} - Success: {}", filename, result.isSuccess());
+        return ResponseEntity.ok(result);
+
+    } catch (Exception e) {
+        // ✅ SAFE: Get filename with null check in catch block too
+        String filename = (file != null) ? file.getOriginalFilename() : "unknown";
+        logger.error("❌ OCR extraction failed for {}: {}", filename, e.getMessage(), e);
+        
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+            .body(Map.of(
+                "success", false,
+                "error", "OCR processing failed",
+                "message", "An unexpected error occurred during text extraction"
+            ));
+    }
+}
+
+
+   @PostMapping("/upload")
+@PreAuthorize("isAuthenticated()")
+public ResponseEntity<?> uploadDocumentWithOCR(
+        @RequestParam("file") MultipartFile file,
+        @RequestParam(value = "description", required = false) String description,
+        @RequestParam(value = "category", required = false) String category,
+        @AuthenticationPrincipal UserDetails userDetails) {
+
+    try {
+        // ✅ SAFE: Get filename with null check first
+        String filename = (file != null) ? file.getOriginalFilename() : "unknown";
+        String username = (userDetails != null) ? userDetails.getUsername() : "unknown user";
+        
+        logger.info("📤 OCR upload request for: {} from user: {}", filename, username);
+
+        // ✅ CRITICAL: Validate user authentication
+        if (userDetails == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(Map.of("success", false, "error", "User not authenticated"));
+        }
+
+        // ✅ CRITICAL: Comprehensive file validation (includes null check)
+        Map<String, Object> validationError = validateFileForUpload(file);
+        if (validationError != null) {
+            return ResponseEntity.badRequest().body(validationError);
+        }
+
+        // ✅ CRITICAL: Memory check before processing
+        if (!checkMemoryAvailable()) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(Map.of(
+                    "success", false,
+                    "error", "Server overloaded",
+                    "message", "Server is processing other requests. Please try again."
+                ));
+        }
+
+        // ✅ Force garbage collection before heavy processing
+        System.gc();
+        
+        // Process document with OCR (file is guaranteed not null by validation)
+        var documentWithOCR = ocrService.processDocumentWithOCR(file, description, category);
+        if (documentWithOCR == null) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of(
                     "success", false,
                     "error", "Processing failed",
-                    "message", "Document processing failed: " + e.getMessage()
-                ));
-                
-        } catch (Exception e) {
-            logger.error("❌ Unexpected error during OCR upload for {}: {}", file.getOriginalFilename(), e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(Map.of(
-                    "success", false,
-                    "error", "Internal server error",
-                    "message", "An unexpected error occurred. Please try again later."
+                    "message", "Document processing returned null result"
                 ));
         }
+
+        // Save document with OCR data
+        DocumentDTO savedDocument = documentService.saveDocumentWithOCR(
+                documentWithOCR,
+                userDetails.getUsername()
+        );
+
+        // ✅ Success response with detailed information
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("message", "Document uploaded and processed successfully");
+        response.put("document", savedDocument);
+        response.put("ocrText", documentWithOCR.getOcrResult().getExtractedText());
+        response.put("confidence", documentWithOCR.getOcrResult().getConfidence());
+        response.put("processingTime", documentWithOCR.getOcrResult().getProcessingTime());
+        response.put("embeddingGenerated", documentWithOCR.getEmbedding() != null);
+
+        logger.info("✅ OCR upload completed for: {}", filename);
+        return ResponseEntity.ok(response);
+
+    } catch (Exception e) {
+        // ✅ SAFE: Get filename with null check in catch block
+        String filename = (file != null) ? file.getOriginalFilename() : "unknown";
+        logger.error("❌ OCR upload failed for {}: {}", filename, e.getMessage(), e);
+        
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+            .body(Map.of(
+                "success", false,
+                "error", "Upload processing failed",
+                "message", "An unexpected error occurred during upload processing"
+            ));
+    }
+}
+
+
+    /**
+     * ✅ ENHANCED: Comprehensive file validation for extraction
+     */
+    private Map<String, Object> validateFileForExtraction(MultipartFile file) {
+        if (file == null) {
+            logger.warn("❌ File parameter is null");
+            return Map.of(
+                "success", false,
+                "error", "Missing file",
+                "message", "No file was provided in the request"
+            );
+        }
+
+        if (file.isEmpty()) {
+            logger.warn("❌ File is empty: {}", file.getOriginalFilename());
+            return Map.of(
+                "success", false,
+                "error", "Empty file",
+                "message", "The uploaded file is empty"
+            );
+        }
+
+        String contentType = file.getContentType();
+        if (contentType == null || !ALLOWED_CONTENT_TYPES.contains(contentType.toLowerCase())) {
+            logger.warn("❌ Invalid file type: {}", contentType);
+            return Map.of(
+                "success", false,
+                "error", "Invalid file type",
+                "message", "Please upload an image file (JPEG, PNG, BMP, TIFF, or GIF)",
+                "allowedTypes", ALLOWED_CONTENT_TYPES
+            );
+        }
+
+        if (file.getSize() > MAX_FILE_SIZE) {
+            logger.warn("❌ File too large: {} bytes", file.getSize());
+            return Map.of(
+                "success", false,
+                "error", "File too large",
+                "message", String.format("File size (%.1fMB) exceeds maximum limit of %.1fMB", 
+                    file.getSize() / 1024.0 / 1024.0, MAX_FILE_SIZE / 1024.0 / 1024.0)
+            );
+        }
+
+        return null; // No validation errors
     }
 
     /**
      * ✅ ENHANCED: Comprehensive file validation for uploads
      */
     private Map<String, Object> validateFileForUpload(MultipartFile file) {
-        // Check if file exists
-        if (file == null || file.isEmpty()) {
-            logger.warn("Upload validation failed: Empty file");
-            return Map.of(
-                "success", false,
-                "error", "Empty file",
-                "message", "Please select a file to upload"
-            );
+        Map<String, Object> extractionError = validateFileForExtraction(file);
+        if (extractionError != null) {
+            return extractionError;
         }
 
-        // Check file size
-        if (file.getSize() > MAX_FILE_SIZE) {
-            logger.warn("Upload validation failed: File too large - {} bytes", file.getSize());
-            return Map.of(
-                "success", false,
-                "error", "File too large",
-                "message", String.format("File size (%.1fMB) exceeds maximum limit of %.1fMB", 
-                    file.getSize() / 1024.0 / 1024.0, MAX_FILE_SIZE / 1024.0 / 1024.0),
-                "maxSize", MAX_FILE_SIZE
-            );
-        }
-
-        // Check file type
-        String contentType = file.getContentType();
-        if (contentType == null || !ALLOWED_CONTENT_TYPES.contains(contentType.toLowerCase())) {
-            logger.warn("Upload validation failed: Unsupported file type - {}", contentType);
-            return Map.of(
-                "success", false,
-                "error", "Unsupported file type",
-                "message", "Please upload an image file (JPEG, PNG, BMP, TIFF, or GIF)",
-                "allowedTypes", ALLOWED_CONTENT_TYPES
-            );
-        }
-
-        // Check filename
+        // Additional validation for upload
         String filename = file.getOriginalFilename();
         if (filename == null || filename.trim().isEmpty()) {
             return Map.of(
@@ -211,95 +252,26 @@ public class OCRController {
     }
 
     /**
-     * ✅ CRITICAL: Memory availability check to prevent crashes
+     * ✅ CRITICAL: Memory availability check
      */
-    private Map<String, Object> checkMemoryAvailability() {
+    private boolean checkMemoryAvailable() {
         try {
             Runtime runtime = Runtime.getRuntime();
             long maxMemory = runtime.maxMemory();
-            long totalMemory = runtime.totalMemory();
-            long freeMemory = runtime.freeMemory();
-            long usedMemory = totalMemory - freeMemory;
+            long usedMemory = runtime.totalMemory() - runtime.freeMemory();
             double memoryUsagePercent = (double) usedMemory / maxMemory * 100;
 
-            logger.debug("Memory status: Used={:.1f}MB, Max={:.1f}MB, Usage={:.1f}%", 
-                usedMemory / 1024.0 / 1024.0, maxMemory / 1024.0 / 1024.0, memoryUsagePercent);
-
-            // Reject if memory usage is too high
-            if (memoryUsagePercent > 85) {
-                logger.warn("Upload rejected: High memory usage - {:.1f}%", memoryUsagePercent);
-                return Map.of(
-                    "success", false,
-                    "error", "Server overloaded",
-                    "message", "Server is currently processing other requests. Please try again in a moment.",
-                    "retryAfter", 30
-                );
-            }
-
-            return null; // Memory OK
+            logger.debug("Memory usage: {:.1f}%", memoryUsagePercent);
+            return memoryUsagePercent < 85; // Allow processing if under 85%
+            
         } catch (Exception e) {
             logger.warn("Memory check failed: {}", e.getMessage());
-            return null; // Allow processing if check fails
+            return true; // Allow processing if check fails
         }
     }
 
     /**
-     * ✅ Helper method for backward compatibility
-     */
-    private ResponseEntity<OCRResultDTO> validateFile(MultipartFile file) {
-        if (file == null || file.isEmpty()) {
-            return ResponseEntity.badRequest()
-                .body(new OCRResultDTO("", 0.0, 0L, "unknown", false, "File is empty"));
-        }
-
-        String contentType = file.getContentType();
-        if (contentType == null || !ALLOWED_CONTENT_TYPES.contains(contentType.toLowerCase())) {
-            return ResponseEntity.badRequest()
-                .body(new OCRResultDTO("", 0.0, 0L, file.getOriginalFilename(), false, 
-                    "Unsupported file type: " + contentType));
-        }
-
-        return null; // No validation errors
-    }
-
-    /**
-     * Fetch OCR statistics
-     */
-    @GetMapping("/stats")
-    @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<Map<String, Object>> getOCRStatistics(@AuthenticationPrincipal UserDetails userDetails) {
-        Map<String, Object> stats = new HashMap<>();
-        try {
-            String username = userDetails.getUsername();
-            stats.putAll(ocrService.getOCRStatistics(username));
-
-            stats.put("timestamp", System.currentTimeMillis());
-            stats.put("status", "success");
-            stats.put("service", "OCR Controller");
-
-            return ResponseEntity.ok(stats);
-
-        } catch (Exception e) {
-            logger.error("❌ Failed to fetch OCR statistics: {}", e.getMessage(), e);
-            
-            stats.put("totalDocuments", 0);
-            stats.put("documentsWithOCR", 0);
-            stats.put("documentsWithEmbeddings", 0);
-            stats.put("ocrCoverage", 0.0);
-            stats.put("averageOCRConfidence", 0.0);
-            stats.put("aiReadyDocuments", 0);
-            stats.put("error", "Failed to fetch OCR statistics");
-            stats.put("message", "Service temporarily unavailable");
-            stats.put("timestamp", System.currentTimeMillis());
-            stats.put("status", "error");
-            stats.put("service", "OCR Controller");
-
-            return ResponseEntity.status(500).body(stats);
-        }
-    }
-
-    /**
-     * ✅ OCR Health Check endpoint
+     * ✅ Enhanced health check with detailed status
      */
     @GetMapping("/health")
     public ResponseEntity<Map<String, Object>> healthCheck() {
@@ -308,10 +280,10 @@ public class OCRController {
             health.put("status", "UP");
             health.put("service", "OCR Controller");
             health.put("timestamp", System.currentTimeMillis());
-            health.put("message", "OCR endpoints are responding");
-            health.put("ocrServiceAvailable", (ocrService != null));
+            health.put("ocrServiceAvailable", ocrService != null);
+            health.put("documentServiceAvailable", documentService != null);
             
-            // Add memory status to health check
+            // Memory status
             Runtime runtime = Runtime.getRuntime();
             long maxMemory = runtime.maxMemory();
             long usedMemory = runtime.totalMemory() - runtime.freeMemory();
@@ -323,12 +295,45 @@ public class OCRController {
             return ResponseEntity.ok(health);
 
         } catch (Exception e) {
-            logger.error("❌ OCR health check failed: {}", e.getMessage(), e);
-            return ResponseEntity.status(500).body(Map.of(
-                    "status", "DOWN",
-                    "error", e.getMessage(),
-                    "timestamp", System.currentTimeMillis()
-            ));
+            logger.error("❌ Health check failed: {}", e.getMessage(), e);
+            health.put("status", "DOWN");
+            health.put("error", e.getMessage());
+            health.put("timestamp", System.currentTimeMillis());
+            
+            return ResponseEntity.status(500).body(health);
+        }
+    }
+
+    /**
+     * ✅ OCR Statistics endpoint
+     */
+    @GetMapping("/stats")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Map<String, Object>> getOCRStatistics(@AuthenticationPrincipal UserDetails userDetails) {
+        try {
+            if (userDetails == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "User not authenticated"));
+            }
+
+            String username = userDetails.getUsername();
+            Map<String, Object> stats = ocrService.getOCRStatistics(username);
+            
+            stats.put("timestamp", System.currentTimeMillis());
+            stats.put("status", "success");
+            
+            return ResponseEntity.ok(stats);
+
+        } catch (Exception e) {
+            logger.error("❌ Failed to fetch OCR statistics: {}", e.getMessage(), e);
+            
+            Map<String, Object> errorStats = new HashMap<>();
+            errorStats.put("error", "Failed to fetch OCR statistics");
+            errorStats.put("message", "Service temporarily unavailable");
+            errorStats.put("timestamp", System.currentTimeMillis());
+            errorStats.put("status", "error");
+            
+            return ResponseEntity.status(500).body(errorStats);
         }
     }
 }
