@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Search,
@@ -20,8 +20,7 @@ import {
   Brain,
   Zap,
   Eye,
-  FileSearch,
-  Target
+  ChevronDown
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -47,10 +46,11 @@ export default function Documents() {
   const [isAiSearch, setIsAiSearch] = useState(false);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
 
-  // ✅ FIXED: Search mode states
+  // ✅ FIXED: Search mode states with proper refs
   const [searchMode, setSearchMode] = useState<'regular' | 'semantic' | 'hybrid' | 'ocr'>('semantic');
   const [ocrStats, setOcrStats] = useState<any>(null);
   const [showSearchModes, setShowSearchModes] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(0);
@@ -221,15 +221,15 @@ export default function Documents() {
     }, 1500);
 
     return () => clearTimeout(timeoutId);
-  }, [searchQuery, searchMode, loadDocuments]); // ✅ CRITICAL: Added searchMode to dependencies
+  }, [searchQuery, searchMode, loadDocuments]);
 
   // ✅ FIXED: Search mode change handler that actually works
-  const handleSearchModeChange = useCallback(async (newMode: 'regular' | 'semantic' | 'hybrid' | 'ocr') => {
+  const handleSearchModeChange = useCallback((newMode: 'regular' | 'semantic' | 'hybrid' | 'ocr') => {
     console.log(`🔄 Changing search mode from ${searchMode} to ${newMode}`);
 
     // Update the search mode state
     setSearchMode(newMode);
-    setShowSearchModes(false); // Close dropdown
+    setShowSearchModes(false); // Close dropdown immediately
     setAiError(''); // Clear previous errors
     setError('');
 
@@ -237,33 +237,22 @@ export default function Documents() {
     if (searchQuery.trim()) {
       console.log(`🔍 Reloading documents with ${newMode} mode for query: "${searchQuery}"`);
       setCurrentPage(0); // Reset to first page
-      await loadDocuments(0, newMode !== 'regular');
+      // Use setTimeout to ensure state is updated before loading
+      setTimeout(() => {
+        loadDocuments(0, newMode !== 'regular');
+      }, 100);
     } else {
       // No search query, just reload regular documents
-      await loadDocuments(0, false);
+      setTimeout(() => {
+        loadDocuments(0, false);
+      }, 100);
     }
   }, [searchMode, searchQuery, loadDocuments]);
 
-  // ✅ DEBUG: Log search mode changes
-  useEffect(() => {
-    console.log(`🎯 Search mode changed to: ${searchMode}`);
-  }, [searchMode]);
-
-  // ✅ DEBUG: Log search query changes
-  useEffect(() => {
-    console.log(`🔍 Search query changed to: "${searchQuery}"`);
-  }, [searchQuery]);
-
-  // ✅ Check AI status and load OCR stats on component mount
-  useEffect(() => {
-    checkAIStatus();
-    loadOCRStats();
-  }, []);
-
-  // ✅ Close search modes dropdown when clicking outside
+  // ✅ FIXED: Close search modes dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (showSearchModes) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setShowSearchModes(false);
       }
     };
@@ -272,7 +261,13 @@ export default function Documents() {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showSearchModes]);
+  }, []);
+
+  // Check AI status and load OCR stats on component mount
+  useEffect(() => {
+    checkAIStatus();
+    loadOCRStats();
+  }, []);
 
   const checkAIStatus = async () => {
     try {
@@ -283,7 +278,6 @@ export default function Documents() {
     }
   };
 
-  // ✅ Load OCR statistics
   const loadOCRStats = async () => {
     try {
       const stats = await documentService.getOCRStatistics();
@@ -293,14 +287,13 @@ export default function Documents() {
     }
   };
 
-  // ✅ Generate embeddings function
   const handleGenerateEmbeddings = async () => {
     try {
       setEmbeddingLoading(true);
       const message = await aiService.generateEmbeddings();
       alert(message + ' You can now use AI search!');
       await checkAIStatus();
-      await loadOCRStats(); // Refresh OCR stats too
+      await loadOCRStats();
     } catch (error: any) {
       alert(`Failed to generate embeddings: ${error.message}`);
     } finally {
@@ -308,13 +301,11 @@ export default function Documents() {
     }
   };
 
-  // Handle upload success
   const handleUploadSuccess = () => {
     loadDocuments(currentPage, isAiSearch);
-    loadOCRStats(); // Refresh stats after upload
+    loadOCRStats();
   };
 
-  // Handle document download
   const handleDownload = async (doc: Document) => {
     try {
       await documentService.downloadDocument(doc.id, doc.originalFilename);
@@ -323,7 +314,6 @@ export default function Documents() {
     }
   };
 
-  // Get status color
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'APPROVED':
@@ -339,7 +329,6 @@ export default function Documents() {
     }
   };
 
-  // Get file icon based on document type or mime type
   const getFileIcon = (doc: Document) => {
     const type = doc.documentType || doc.mimeType;
 
@@ -355,12 +344,10 @@ export default function Documents() {
     return File;
   };
 
-  // Handle document click
   const handleDocumentClick = (documentId: number) => {
     navigate(`/documents/${documentId}`);
   };
 
-  // ✅ Clear AI search and return to regular search
   const clearAISearch = () => {
     setAiDocuments([]);
     setIsAiSearch(false);
@@ -369,7 +356,6 @@ export default function Documents() {
     loadDocuments(0, false);
   };
 
-  // Clear all filters
   const clearFilters = () => {
     setSearchQuery('');
     setSelectedStatus('');
@@ -379,11 +365,9 @@ export default function Documents() {
     setIsAiSearch(false);
   };
 
-  // ✅ Get current documents to display
   const currentDocuments = isAiSearch ? aiDocuments : documents;
   const currentLoading = aiLoading || loading;
 
-  // Render pagination
   const renderPagination = () => {
     if (totalPages <= 1 || isAiSearch) return null;
 
@@ -437,9 +421,9 @@ export default function Documents() {
     <div className="flex h-screen bg-gray-50">
       <Sidebar />
 
-      <main className="flex-1 flex flex-col">
-        {/* ✅ ENHANCED Header with OCR Search Features */}
-        <header className="bg-white border-b border-gray-200 px-8 py-6">
+      <main className="flex-1 flex flex-col overflow-hidden">
+        {/* ✅ FIXED: Header with improved positioning */}
+        <header className="bg-white border-b border-gray-200 px-8 py-6 flex-shrink-0">
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl text-gray-900 mb-1">Document Management</h1>
@@ -448,7 +432,7 @@ export default function Documents() {
                   {currentLoading ? 'Loading...' : `${totalItems} documents total`}
                 </p>
 
-                {/* ✅ AI Status Indicator */}
+                {/* AI Status Indicator */}
                 {aiEnabled && (
                   <div className="flex items-center space-x-2">
                     <div className="flex items-center px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium">
@@ -456,7 +440,6 @@ export default function Documents() {
                       AI Search Enabled
                     </div>
 
-                    {/* ✅ Generate Embeddings Button */}
                     <Button
                       size="sm"
                       variant="outline"
@@ -476,28 +459,35 @@ export default function Documents() {
               </div>
             </div>
 
-            {/* ✅ ENHANCED: Search Controls with Mode Selector */}
             <div className="flex items-center space-x-4">
-              {/* Search Mode Toggle */}
-              <div className="relative">
+              {/* ✅ FIXED: Search Mode Dropdown with improved positioning */}
+              <div className="relative" ref={dropdownRef}>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setShowSearchModes(!showSearchModes)}
-                  className="flex items-center"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('🎯 Toggle dropdown clicked');
+                    setShowSearchModes(!showSearchModes);
+                  }}
+                  className="flex items-center gap-2 min-w-[140px] justify-between"
                 >
-                  {searchMode === 'semantic' && <Brain className="w-4 h-4 mr-1" />}
-                  {searchMode === 'hybrid' && <Zap className="w-4 h-4 mr-1" />}
-                  {searchMode === 'ocr' && <Eye className="w-4 h-4 mr-1" />}
-                  {searchMode === 'regular' && <Search className="w-4 h-4 mr-1" />}
-                  {searchMode.charAt(0).toUpperCase() + searchMode.slice(1)}
+                  <div className="flex items-center gap-2">
+                    {searchMode === 'semantic' && <Brain className="w-4 h-4 text-purple-600" />}
+                    {searchMode === 'hybrid' && <Zap className="w-4 h-4 text-blue-600" />}
+                    {searchMode === 'ocr' && <Eye className="w-4 h-4 text-green-600" />}
+                    {searchMode === 'regular' && <Search className="w-4 h-4 text-gray-600" />}
+                    <span className="capitalize">{searchMode}</span>
+                  </div>
+                  <ChevronDown className={`w-4 h-4 transition-transform ${showSearchModes ? 'rotate-180' : ''}`} />
                 </Button>
 
-                {/* ✅ FIXED: Search Mode Dropdown */}
+                {/* ✅ FIXED: Dropdown Menu with proper positioning and z-index */}
                 {showSearchModes && (
-                  <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                  <div className="absolute top-full right-0 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
                     <div className="p-2">
-                      <div className="text-xs font-medium text-gray-500 mb-2">Search Modes</div>
+                      <div className="text-xs font-medium text-gray-500 mb-2 px-2">Search Modes</div>
 
                       {[
                         {
@@ -531,25 +521,26 @@ export default function Documents() {
                       ].map(({ mode, icon: Icon, label, desc, color }) => (
                         <button
                           key={mode}
+                          type="button"
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
                             console.log(`🎯 Clicked ${mode} mode button`);
                             handleSearchModeChange(mode as any);
                           }}
-                          className={`w-full flex items-center p-2 rounded hover:bg-gray-50 transition-colors ${
-                            searchMode === mode ? 'bg-blue-100 border-l-2 border-blue-500' : ''
+                          className={`w-full flex items-center p-3 rounded-md hover:bg-gray-50 transition-colors text-left ${
+                            searchMode === mode ? 'bg-blue-50 border-l-4 border-blue-500' : 'border-l-4 border-transparent'
                           }`}
                         >
-                          <Icon className={`w-4 h-4 mr-3 ${searchMode === mode ? 'text-blue-600' : color}`} />
-                          <div className="text-left">
+                          <Icon className={`w-4 h-4 mr-3 flex-shrink-0 ${searchMode === mode ? 'text-blue-600' : color}`} />
+                          <div className="flex-1 min-w-0">
                             <div className={`text-sm font-medium ${searchMode === mode ? 'text-blue-900' : 'text-gray-900'}`}>
                               {label}
                             </div>
-                            <div className="text-xs text-gray-500">{desc}</div>
+                            <div className="text-xs text-gray-500 mt-0.5">{desc}</div>
                           </div>
                           {searchMode === mode && (
-                            <div className="ml-auto w-2 h-2 bg-blue-500 rounded-full"></div>
+                            <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></div>
                           )}
                         </button>
                       ))}
@@ -558,7 +549,7 @@ export default function Documents() {
                 )}
               </div>
 
-              {/* Enhanced Search Input */}
+              {/* Search Input */}
               <div className="relative">
                 {searchQuery && searchMode !== 'regular' && (
                   <div className="absolute -top-6 left-3 text-xs font-medium flex items-center">
@@ -601,7 +592,7 @@ export default function Documents() {
                 )}
               </div>
 
-              {/* ✅ OCR Stats Display */}
+              {/* OCR Stats Display */}
               {ocrStats && (
                 <div className="text-xs text-gray-600 bg-gray-100 px-3 py-2 rounded-lg">
                   📊 {ocrStats.documentsWithOCR}/{ocrStats.totalDocuments} with OCR
@@ -632,7 +623,7 @@ export default function Documents() {
             </div>
           </div>
 
-          {/* ✅ AI Error Display */}
+          {/* AI Error Display */}
           {aiError && (
             <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
               <div className="flex items-center">
@@ -694,8 +685,8 @@ export default function Documents() {
           )}
         </header>
 
-        {/* ✅ ENHANCED Content Section */}
-        <section className="flex-1 px-8 py-6">
+        {/* ✅ FIXED: Content Section with proper scrolling */}
+        <section className="flex-1 px-8 py-6 overflow-auto">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="bg-gray-100 p-1 rounded-lg mb-8">
               <TabsTrigger
@@ -719,7 +710,7 @@ export default function Documents() {
             </TabsList>
 
             <TabsContent value={activeTab} className="mt-0">
-              {/* ✅ ENHANCED: Search Results Header */}
+              {/* Search Results Header */}
               {isAiSearch && aiDocuments.length > 0 && (
                 <div className="mb-6 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-lg">
                   <div className="flex items-center justify-between">
@@ -738,7 +729,6 @@ export default function Documents() {
                       </span>
                     </div>
                     <div className="flex items-center space-x-2">
-                      {/* Search mode indicator */}
                       <Badge variant="outline" className="text-xs">
                         {searchMode.charAt(0).toUpperCase() + searchMode.slice(1)} Mode
                       </Badge>
@@ -816,7 +806,7 @@ export default function Documents() {
                         >
                           <CardContent className="p-6">
                             <div className="flex flex-col items-center text-center space-y-4">
-                              {/* ✅ ENHANCED: Badges Section */}
+                              {/* Badges Section */}
                               <div className="w-full flex justify-between items-start mb-2">
                                 <div className="flex flex-wrap gap-1">
                                   {/* AI Score Badge */}
@@ -827,7 +817,7 @@ export default function Documents() {
                                     </Badge>
                                   )}
 
-                                  {/* ✅ OCR Badge */}
+                                  {/* OCR Badge */}
                                   {(doc as any).hasOcr && (
                                     <Badge className="bg-green-100 text-green-700 border-green-200 text-xs">
                                       <Eye className="w-3 h-3 mr-1" />
@@ -838,7 +828,7 @@ export default function Documents() {
                                     </Badge>
                                   )}
 
-                                  {/* ✅ AI Ready Badge */}
+                                  {/* AI Ready Badge */}
                                   {(doc as any).embeddingGenerated && (
                                     <Badge className="bg-blue-100 text-blue-700 border-blue-200 text-xs">
                                       <Brain className="w-3 h-3 mr-1" />
@@ -848,7 +838,7 @@ export default function Documents() {
                                 </div>
                               </div>
 
-                              {/* ✅ ENHANCED: File Icon with OCR indication */}
+                              {/* File Icon with OCR indication */}
                               <div className={`w-16 h-16 rounded-lg flex items-center justify-center transition-colors duration-200 relative ${(doc as any).hasOcr
                                 ? 'bg-green-50 group-hover:bg-green-100'
                                 : isAiSearch
@@ -862,7 +852,7 @@ export default function Documents() {
                                     : 'text-gray-600 group-hover:text-blue-600'
                                   }`} />
 
-                                {/* ✅ OCR Indicator Dot */}
+                                {/* OCR Indicator Dot */}
                                 {(doc as any).hasOcr && (
                                   <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full flex items-center justify-center">
                                     <Eye className="w-2 h-2 text-white" />
@@ -894,7 +884,7 @@ export default function Documents() {
                                   by {doc.uploadedByName}
                                 </p>
 
-                                {/* ✅ OCR Text Preview (for OCR searches) */}
+                                {/* OCR Text Preview (for OCR searches) */}
                                 {searchMode === 'ocr' && (doc as any).ocrText && searchQuery && (
                                   <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded border-l-2 border-green-400 mt-2">
                                     <div className="font-medium text-green-700 mb-1">📄 OCR Match:</div>
@@ -929,7 +919,7 @@ export default function Documents() {
                     })}
                   </div>
 
-                  {/* ✅ Only show pagination for regular search */}
+                  {/* Only show pagination for regular search */}
                   {!isAiSearch && renderPagination()}
                 </>
               )}
