@@ -7,7 +7,7 @@ RUN mvn clean package -DskipTests
 FROM openjdk:21-jdk-slim
 WORKDIR /app
 
-# ✅ ENHANCED: Install Tesseract with comprehensive tessdata setup
+# Install Tesseract
 RUN apt-get update && \
     apt-get install -y \
     tesseract-ocr \
@@ -21,7 +21,7 @@ RUN apt-get update && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# ✅ CRITICAL: Comprehensive tessdata location detection and setup
+# Setup tessdata
 RUN echo "=== TESSDATA SETUP AND VERIFICATION ===" && \
     echo "Tesseract version:" && \
     tesseract --version && \
@@ -52,26 +52,20 @@ RUN echo "=== TESSDATA SETUP AND VERIFICATION ===" && \
     echo "=== Final tessdata verification ===" && \
     ls -la /usr/share/tessdata/ && \
     echo "=== Testing tesseract with new tessdata location ===" && \
-    export TESSDATA_PREFIX=/usr/share && \
+    export TESSDATA_PREFIX=/usr/share/tessdata && \
     tesseract --list-langs && \
     echo "✅ Tessdata setup completed successfully"
 
-# ✅ Set correct environment variables
-ENV TESSDATA_PREFIX=/usr/share
+# ✅ FIXED: Point to the directory containing the traineddata files
+ENV TESSDATA_PREFIX=/usr/share/tessdata
 ENV TESSERACT_PATH=/usr/bin/tesseract
 
-# Copy JAR file
 COPY --from=build /app/target/*.jar app.jar
-
-# Create uploads directory (temporary until persistent storage configured)
 RUN mkdir -p /app/uploads && chmod 755 /app/uploads
 
-# Expose port
 EXPOSE 10000
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD curl -f http://localhost:10000/api/health || exit 1
 
-# Start application
 ENTRYPOINT ["java", "-jar", "app.jar"]
