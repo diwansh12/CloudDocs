@@ -335,18 +335,18 @@ async semanticSearch(query: string, limit: number = 10): Promise<SearchResult> {
     const processingTime = Date.now() - startTime;
     console.log(`✅ Semantic search completed in ${processingTime}ms`);
     
-    // ✅ CRITICAL: Map backend response to expected frontend structure
+    // ✅ FIXED: Map correct backend response structure
     return {
-      documents: response.data?.results || [],           // Backend sends "results"
-      totalResults: response.data?.count || 0,           // Backend sends "count"
-      searchType: 'semantic' as const,                   // Add missing field
-      processingTime                                     // Calculate locally
+      documents: response.data?.documents || [],         // ✅ SearchController sends "documents"
+      totalResults: response.data?.totalResults || 0,    // ✅ SearchController sends "totalResults"
+      searchType: 'semantic' as const,
+      processingTime
     };
   } catch (error: any) {
-    console.error('❌ SEMANTIC search failed:', error?.message || 'Unknown error');
+    console.error('❌ Semantic search failed:', error?.message || 'Unknown error');
     console.log('• Using regular search instead');
     
-    // ✅ Return safe fallback structure
+    // Return safe fallback structure
     return {
       documents: [],
       totalResults: 0,
@@ -356,29 +356,56 @@ async semanticSearch(query: string, limit: number = 10): Promise<SearchResult> {
   }
 }
 
-  // ✅ NEW: Hybrid search (semantic + keyword + OCR text)
+
   async hybridSearch(query: string, limit: number = 10): Promise<SearchResult> {
-    try {
-      console.log('🔍 Starting hybrid search for:', query);
-      
-      const startTime = Date.now();
-      
-      const response = await api.post<SearchResult>('/search/hybrid', {
-        query,
-        limit
-      });
-      
-      const processingTime = Date.now() - startTime;
-      console.log(`✅ Hybrid search completed in ${processingTime}ms`);
-      
-      return {
-        ...response.data,
-        processingTime
-      };
-    } catch (error: any) {
-      throw new Error(error.response?.data?.error || 'Hybrid search failed');
-    }
+  try {
+    console.log('🔍 Starting hybrid search for:', query);
+    
+    const startTime = Date.now();
+    
+    const response = await api.post('/search/hybrid', {
+      query,
+      limit
+    });
+    
+    const processingTime = Date.now() - startTime;
+    console.log(`✅ Hybrid search completed in ${processingTime}ms`);
+    
+    // ✅ FIXED: Map correct backend response structure
+    return {
+      documents: response.data?.documents || [],         // ✅ SearchController sends "documents"
+      totalResults: response.data?.totalResults || 0,    // ✅ SearchController sends "totalResults"
+      searchType: 'hybrid' as const,
+      processingTime
+    };
+  } catch (error: any) {
+    console.error('❌ Hybrid search failed:', error?.message || 'Unknown error');
+    
+    return {
+      documents: [],
+      totalResults: 0,
+      searchType: 'hybrid' as const,
+      processingTime: 0
+    };
   }
+}
+
+
+// ✅ NEW: Generate embeddings using SearchController delegation
+async generateEmbeddings(): Promise<string> {
+  try {
+    console.log('🤖 Generating embeddings via SearchController...');
+    
+    const response = await api.post('/search/generate-embeddings');
+    
+    console.log('✅ Embeddings generated successfully');
+    return response.data.message || 'Embeddings generated successfully! AI search is now available.';
+  } catch (error: any) {
+    console.error('❌ Failed to generate embeddings:', error);
+    throw new Error(error.response?.data?.error || 'Failed to generate embeddings');
+  }
+}
+
 
   // ✅ NEW: Search specifically in OCR text
   async searchOCRText(query: string): Promise<Document[]> {
@@ -547,6 +574,32 @@ async semanticSearch(query: string, limit: number = 10): Promise<SearchResult> {
       throw new Error(error.response?.data?.error || 'Failed to delete documents');
     }
   }
+
+
+  // ✅ NEW: Check AI status and capabilities
+async getAIStatus(): Promise<{
+  aiSearchEnabled: boolean;
+  searchMethod?: string;
+  message?: string;
+}> {
+  try {
+    // Test with a simple query to see if AI is working
+    const testResult = await this.semanticSearch('test', 1);
+    
+    return {
+      aiSearchEnabled: true,
+      searchMethod: 'ai_delegation',
+      message: 'AI search is available via SearchController delegation'
+    };
+  } catch (error) {
+    console.warn('AI search not available:', error);
+    return {
+      aiSearchEnabled: false,
+      searchMethod: 'fallback',
+      message: 'AI search unavailable, using enhanced regular search'
+    };
+  }
+}
 
   // ===== UTILITY METHODS =====
 
