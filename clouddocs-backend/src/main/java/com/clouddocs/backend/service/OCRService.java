@@ -117,59 +117,64 @@ public class OCRService {
         }
     }
 
-    /**
-     * ✅ NEW: Detect tessdata path for both Windows and Linux environments
-     */
-    private String detectTessdataPath() {
-        // Check environment variable first (for production/Linux)
-        String envPath = System.getenv("TESSDATA_PREFIX");
-        if (envPath != null && !envPath.isEmpty()) {
-            File tessDataDir = new File(envPath, "tessdata");
-            File engFile = new File(tessDataDir, "eng.traineddata");
-            if (tessDataDir.exists() && engFile.exists()) {
-                log.info("✅ Using TESSDATA_PREFIX: {}", envPath);
-                return envPath;
-            }
-            log.warn("⚠️ TESSDATA_PREFIX set but tessdata not found at: {}", envPath);
+   private String detectTessdataPath() {
+    // Check environment variable first
+    String envPath = System.getenv("TESSDATA_PREFIX");
+    if (envPath != null && !envPath.isEmpty()) {
+        File tessDataDir = new File(envPath, "tessdata");
+        File engFile = new File(tessDataDir, "eng.traineddata");
+        if (tessDataDir.exists() && engFile.exists()) {
+            log.info("✅ Using TESSDATA_PREFIX: {}", envPath);
+            return envPath;
         }
-        
-        // Detect OS and try appropriate locations
-        String osName = System.getProperty("os.name").toLowerCase();
-        String[] locations;
-        
-        if (osName.contains("windows")) {
-            // Windows locations
-            locations = new String[]{
-                "C:\\Program Files\\Tesseract-OCR",
-                "C:\\Program Files (x86)\\Tesseract-OCR",
-                "C:\\tesseract",
-                System.getProperty("user.home") + "\\tesseract"
-            };
-        } else {
-            // Linux/Unix locations (Render deployment)
-            locations = new String[]{
-                "/usr/share/tesseract-ocr/4.00",  // Most common Render location
-                "/usr/share/tesseract-ocr",
-                "/usr/share",
-                "/app/tessdata"
-            };
-        }
-        
-        // Check each location
-        for (String location : locations) {
-            File tessDataDir = new File(location, "tessdata");
-            File engFile = new File(tessDataDir, "eng.traineddata");
-            
-            if (tessDataDir.exists() && engFile.exists()) {
-                log.info("✅ Auto-detected tessdata at: {} (OS: {})", location, osName);
-                return location;
-            }
-        }
-        
-        log.error("❌ No valid tessdata directory found for OS: {}", osName);
-        log.error("Searched locations: {}", Arrays.toString(locations));
-        return null;
+        log.warn("⚠️ TESSDATA_PREFIX set but tessdata not found at: {}", envPath);
     }
+    
+    String osName = System.getProperty("os.name").toLowerCase();
+    String[] locations;
+    
+    if (osName.contains("windows")) {
+        locations = new String[]{
+            "C:\\Program Files\\Tesseract-OCR",
+            "C:\\Program Files (x86)\\Tesseract-OCR",
+            "C:\\tesseract"
+        };
+    } else {
+        // ✅ UPDATED: Add most common Linux locations first
+        locations = new String[]{
+            "/usr/share/tessdata",                    // Most common location
+            "/usr/local/share/tessdata",             // Compiled from source
+            "/usr/share/tesseract-ocr/tessdata",     // Alternative location  
+            "/usr/share/tesseract-ocr/4.00",        // Version-specific
+            "/usr/share/tesseract-ocr",              // General location
+            "/usr/share",                            // Fallback
+            "/app/tessdata"                          // Custom app location
+        };
+    }
+    
+    // Check each location
+    for (String location : locations) {
+        File tessDataDir = new File(location, "tessdata");
+        File engFile = new File(tessDataDir, "eng.traineddata");
+        
+        if (tessDataDir.exists() && engFile.exists()) {
+            log.info("✅ Auto-detected tessdata at: {} (OS: {})", location, osName);
+            return location;
+        }
+        
+        // Also check if location itself is tessdata directory
+        File directEngFile = new File(location, "eng.traineddata");
+        if (directEngFile.exists()) {
+            String parentPath = new File(location).getParent();
+            log.info("✅ Found tessdata directly at: {} (parent: {})", location, parentPath);
+            return parentPath;
+        }
+    }
+    
+    log.error("❌ No valid tessdata directory found for OS: {}", osName);
+    return null;
+}
+
 
     /**
      * ✅ UPDATED: Check if Tesseract is properly configured

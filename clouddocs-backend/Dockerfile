@@ -7,7 +7,7 @@ RUN mvn clean package -DskipTests
 FROM openjdk:21-jdk-slim
 WORKDIR /app
 
-# ✅ CRITICAL FIX: Install Tesseract with proper tessdata packages
+# ✅ Install Tesseract with language packages
 RUN apt-get update && \
     apt-get install -y \
     tesseract-ocr \
@@ -20,23 +20,35 @@ RUN apt-get update && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# ✅ FIX: Find actual tessdata location and verify installation
-RUN tesseract --version && \
-    echo "=== Searching for tessdata directories ===" && \
-    find /usr -name "tessdata" -type d 2>/dev/null || echo "No tessdata directories found" && \
-    find /usr -name "*.traineddata" 2>/dev/null | head -5 && \
-    echo "=== Available languages ===" && \
-    tesseract --list-langs || echo "Language list unavailable"
+# ✅ CRITICAL FIX: Set correct tessdata environment variables
+ENV TESSDATA_PREFIX=/usr/share
+ENV TESSERACT_PATH=/usr/bin/tesseract
 
+# ✅ Verify tessdata installation and show actual locations
+RUN echo "=== Tesseract Version ===" && \
+    tesseract --version && \
+    echo "=== Available Languages ===" && \
+    tesseract --list-langs && \
+    echo "=== Tessdata Locations ===" && \
+    find /usr -name "*.traineddata" -type f 2>/dev/null | head -10 && \
+    echo "=== Tessdata Directory Structure ===" && \
+    ls -la /usr/share/tessdata/ 2>/dev/null || ls -la /usr/share/tesseract-ocr/tessdata/ 2>/dev/null || echo "Standard tessdata not found" && \
+    echo "=== Environment Variables ===" && \
+    echo "TESSDATA_PREFIX=$TESSDATA_PREFIX" && \
+    echo "TESSERACT_PATH=$TESSERACT_PATH"
+
+# Copy JAR file
 COPY --from=build /app/target/*.jar app.jar
 
 # Create uploads directory
 RUN mkdir -p /app/uploads && chmod 755 /app/uploads
 
-EXPOSE 8080
+# Expose port (use 10000 to match your backend)
+EXPOSE 10000
 
-# Health check
+# Health check (update port to 10000)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD curl -f http://localhost:8080/api/health || exit 1
+  CMD curl -f http://localhost:10000/api/health || exit 1
 
+# Start application
 ENTRYPOINT ["java", "-jar", "app.jar"]
