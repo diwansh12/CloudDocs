@@ -374,47 +374,59 @@ public class OCRService {
         return stats;
     }
     
-    public DocumentWithOCRDTO processDocumentWithOCR(MultipartFile file, String description, String category) {
-        log.info("📄 Processing document with OCR: {}", file.getOriginalFilename());
+  public DocumentWithOCRDTO processDocumentWithOCR(MultipartFile file, String description, String category) {
+    log.info("📄 Processing document with OCR: {}", file.getOriginalFilename());
+    
+    try {
+        // ✅ Force garbage collection before processing
+        System.gc();
         
-        try {
-            OCRResultDTO ocrResult = extractTextFromImage(file);
-            
-            if (!ocrResult.isSuccess() || ocrResult.getExtractedText().length() < 10) {
-                log.warn("⚠️ OCR extraction yielded minimal text for: {}", file.getOriginalFilename());
-            }
-            
-            String embeddingContent = createEmbeddingContent(
-                file.getOriginalFilename(), 
-                description, 
-                category, 
-                ocrResult.getExtractedText()
-            );
-            
-            List<Double> embedding = null;
-            if (embeddingContent.length() > 20) {
-                try {
-                    embedding = aiService.generateEmbedding(embeddingContent);
-                    log.info("✅ Generated embedding with {} dimensions", embedding.size());
-                } catch (Exception e) {
-                    log.warn("⚠️ Failed to generate embedding: {}", e.getMessage());
-                }
-            }
-            
-            return new DocumentWithOCRDTO(
-                file,
-                ocrResult,
-                embedding,
-                embeddingContent,
-                description,
-                category
-            );
-            
-        } catch (Exception e) {
-            log.error("❌ Document processing with OCR failed: {}", e.getMessage());
-            throw new RuntimeException("Document OCR processing failed", e);
+        // Process OCR with smaller image if needed
+        OCRResultDTO ocrResult = extractTextFromImage(file);
+        
+        if (!ocrResult.isSuccess() || ocrResult.getExtractedText().length() < 10) {
+            log.warn("⚠️ OCR extraction yielded minimal text for: {}", file.getOriginalFilename());
         }
+        
+        String embeddingContent = createEmbeddingContent(
+            file.getOriginalFilename(), 
+            description, 
+            category, 
+            ocrResult.getExtractedText()
+        );
+        
+        List<Double> embedding = null;
+        
+        // ✅ Only generate embedding for reasonably sized content
+        if (embeddingContent.length() > 20 && embeddingContent.length() < 8000) {
+            try {
+                embedding = aiService.generateEmbedding(embeddingContent);
+                log.info("✅ Generated embedding with {} dimensions", embedding.size());
+            } catch (Exception e) {
+                log.warn("⚠️ Failed to generate embedding: {}", e.getMessage());
+            }
+        } else {
+            log.info("⚠️ Skipping embedding generation for content of length: {}", embeddingContent.length());
+        }
+        
+        // ✅ Force cleanup
+        System.gc();
+        
+        return new DocumentWithOCRDTO(
+            file,
+            ocrResult,
+            embedding,
+            embeddingContent,
+            description,
+            category
+        );
+        
+    } catch (Exception e) {
+        log.error("❌ Document processing with OCR failed: {}", e.getMessage());
+        throw new RuntimeException("Document OCR processing failed", e);
     }
+}
+
     
     private boolean isImageFile(MultipartFile file) {
         String contentType = file.getContentType();

@@ -23,7 +23,13 @@ public class OCRResultDTO {
         this.filename = filename;
         this.success = success;
     }
-  // ✅ ADD: Custom isSuccess() method for better API compatibility
+
+    // ✅ ADD: Custom getter for backward compatibility
+    public Long getProcessingTime() {
+        return this.processingTimeMs;
+    }
+
+    // ✅ ADD: Custom isSuccess() method for better API compatibility
     public boolean isSuccess() {
         return Boolean.TRUE.equals(this.success);
     }
