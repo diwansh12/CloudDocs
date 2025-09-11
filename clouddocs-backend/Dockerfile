@@ -1,14 +1,18 @@
 FROM maven:3.9.8-eclipse-temurin-21 AS build
 WORKDIR /app
-COPY clouddocs-backend/pom.xml ./
+
+# Copy pom.xml from the correct path
+COPY pom.xml ./
 RUN mvn dependency:go-offline -B
-COPY clouddocs-backend/src ./src
+
+# Copy source code
+COPY src ./src
 RUN mvn clean package -DskipTests -B
 
 FROM openjdk:21-jdk-slim
 WORKDIR /app
 
-# Install Tesseract
+# Install Tesseract with proper setup
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     tesseract-ocr \
@@ -18,44 +22,35 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# ✅ CRITICAL FIX: Correct tessdata path configuration
+# ✅ CRITICAL FIX: Setup tessdata correctly
 RUN echo "=== FIXING TESSDATA PATH ===" && \
-    echo "Finding tessdata files..." && \
-    find /usr -name "*.traineddata" -type f 2>/dev/null | head -5 && \
-    echo "Ensuring tessdata is accessible..." && \
+    mkdir -p /usr/share/tessdata && \
     if [ -d "/usr/share/tesseract-ocr/tessdata" ]; then \
-        echo "Found tessdata in /usr/share/tesseract-ocr/tessdata"; \
-        mkdir -p /usr/share/tessdata && \
-        cp -v /usr/share/tesseract-ocr/tessdata/*.traineddata /usr/share/tessdata/ && \
-        echo "Copied traineddata files to /usr/share/tessdata/"; \
+        cp -v /usr/share/tesseract-ocr/tessdata/*.traineddata /usr/share/tessdata/ 2>/dev/null || true; \
+        echo "Copied tessdata files"; \
     fi && \
-    echo "Downloading required files if missing..." && \
     if [ ! -f "/usr/share/tessdata/eng.traineddata" ]; then \
-        mkdir -p /usr/share/tessdata && \
-        wget -O /usr/share/tessdata/eng.traineddata \
+        wget -q -O /usr/share/tessdata/eng.traineddata \
         https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata; \
     fi && \
     if [ ! -f "/usr/share/tessdata/osd.traineddata" ]; then \
-        wget -O /usr/share/tessdata/osd.traineddata \
+        wget -q -O /usr/share/tessdata/osd.traineddata \
         https://github.com/tesseract-ocr/tessdata/raw/main/osd.traineddata; \
     fi && \
     chmod -R 755 /usr/share/tessdata && \
-    echo "Final tessdata verification:" && \
-    ls -la /usr/share/tessdata/ && \
-    echo "Testing Tesseract configuration:" && \
-    export TESSDATA_PREFIX=/usr/share/tessdata && \
-    tesseract --list-langs
+    ls -la /usr/share/tessdata/
 
-# ✅ CRITICAL: Set TESSDATA_PREFIX to the tessdata directory itself
+# ✅ CORRECTED: Set TESSDATA_PREFIX to tessdata directory
 ENV TESSDATA_PREFIX=/usr/share/tessdata
 ENV TESSERACT_PATH=/usr/bin/tesseract
+ENV SPRING_PROFILES_ACTIVE=production
 
 COPY --from=build /app/target/*.jar app.jar
 RUN mkdir -p /app/uploads && chmod 755 /app/uploads
 
 EXPOSE 10000
 
-# Memory-optimized JVM settings
+# Memory-optimized JVM settings for Render
 ENTRYPOINT ["java", \
     "-server", \
     "-XX:+UseG1GC", \
