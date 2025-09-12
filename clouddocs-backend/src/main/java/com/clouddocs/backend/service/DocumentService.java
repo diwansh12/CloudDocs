@@ -20,6 +20,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +28,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import jakarta.persistence.EntityNotFoundException;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -35,7 +37,6 @@ import java.util.stream.Collectors;
 @Transactional
 public class DocumentService {
 
-    // ✅ FIXED: Logger declaration
     private static final Logger log = LoggerFactory.getLogger(DocumentService.class);
     
     @Autowired
@@ -53,11 +54,10 @@ public class DocumentService {
     @Autowired
     private AuditService auditService;
 
-    // ✅ ADDED: Missing embeddingService field
     @Autowired
     private AIEmbeddingService embeddingService;
     
-    // ===== EXISTING METHODS =====
+    // ===== EXISTING METHODS (UNCHANGED) =====
     
     public DocumentDTO uploadDocument(MultipartFile file, DocumentUploadRequest request) {
         try {
@@ -86,52 +86,51 @@ public class DocumentService {
         }
     }
     
-  @Transactional(readOnly = true)
-public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, String sortDir, 
-                                       String search, DocumentStatus status, String category) {
-    try {
+    @Transactional(readOnly = true)
+    public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, String sortDir, 
+                                           String search, DocumentStatus status, String category) {
+        try {
+            Sort sort = sortDir.equalsIgnoreCase("desc") ? 
+                       Sort.by(sortBy).descending() : Sort.by(sortBy).ascending();
+            Pageable pageable = PageRequest.of(page, size, sort);
+            
+            Page<Document> documents;
+            
+            if (search != null && !search.trim().isEmpty()) {
+                documents = documentRepository.searchDocumentsWithTags(search, pageable);
+            } else if (status != null || category != null) {
+                documents = documentRepository.findWithFilters(search, status, category, null, null, pageable);
+            } else {
+                documents = documentRepository.findAllWithTagsAndUsers(pageable);
+            }
+            
+            return documents.map(this::convertToDTO);
+            
+        } catch (Exception e) {
+            log.error("❌ Error in getAllDocuments: {}", e.getMessage(), e);
+            return Page.empty(PageRequest.of(page, size));
+        }
+    }
+
+    public Page<DocumentDTO> getMyDocuments(int page, int size, String sortBy, String sortDir) {
+        User currentUser = getCurrentUser();
+        
         Sort sort = sortDir.equalsIgnoreCase("desc") ? 
-                   Sort.by(sortBy).descending() : Sort.by(sortBy).ascending();
+                   Sort.by(sortBy).descending() : 
+                   Sort.by(sortBy).ascending();
         Pageable pageable = PageRequest.of(page, size, sort);
         
-        Page<Document> documents;
-        
-        if (search != null && !search.trim().isEmpty()) {
-            documents = documentRepository.searchDocumentsWithTags(search, pageable);
-        } else if (status != null || category != null) {
-            documents = documentRepository.findWithFilters(search, status, category, null, null, pageable);
-        } else {
-            documents = documentRepository.findAllWithTagsAndUsers(pageable);
-        }
-        
+        Page<Document> documents = documentRepository.findByUploadedByIdWithTagsAndUsers(currentUser.getId(), pageable);
         return documents.map(this::convertToDTO);
-        
-    } catch (Exception e) {
-        log.error("❌ Error in getAllDocuments: {}", e.getMessage(), e);
-        return Page.empty(PageRequest.of(page, size));
     }
-}
-
-    
-    public Page<DocumentDTO> getMyDocuments(int page, int size, String sortBy, String sortDir) {
-    User currentUser = getCurrentUser();
-    
-    Sort sort = sortDir.equalsIgnoreCase("desc") ? 
-               Sort.by(sortBy).descending() : 
-               Sort.by(sortBy).ascending();
-    Pageable pageable = PageRequest.of(page, size, sort);
-    
-    Page<Document> documents = documentRepository.findByUploadedByIdWithTagsAndUsers(currentUser.getId(), pageable);
-    return documents.map(this::convertToDTO);
-}
-    
+        
     public DocumentDTO getDocumentById(Long id) {
-    Document document = documentRepository.findByIdWithTags(id)
-            .orElseThrow(() -> new RuntimeException("Document not found with id: " + id));
-    
-    return convertToDTO(document);
-}
-    
+        Document document = documentRepository.findByIdWithTags(id)
+                .orElseThrow(() -> new RuntimeException("Document not found with id: " + id));
+        
+        return convertToDTO(document);
+    }
+        
     public DocumentDTO updateDocumentStatus(Long id, DocumentStatus status, String rejectionReason) {
         Document document = documentRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Document not found with id: " + id));
@@ -174,20 +173,160 @@ public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, Stri
         return fileStorageService.loadFileAsResource(document.getFilePath());
     }
     
+    // ===== UPDATED: SOFT DELETE IMPLEMENTATION =====
+    
+    /**
+     * ✅ UPDATED: Soft delete implementation - solves FK constraint issues
+     */
+    @Transactional
     public void deleteDocument(Long id) {
-        Document document = documentRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Document not found with id: " + id));
-        
-        User currentUser = getCurrentUser();
-        
-        if (!canDeleteDocument(document, currentUser)) {
-            throw new RuntimeException("You don't have permission to delete this document");
+        try {
+            log.info("🗑️ Starting soft deletion for document ID: {}", id);
+            
+            Document document = documentRepository.findById(id)
+                    .orElseThrow(() -> new EntityNotFoundException("Document not found with id: " + id));
+            
+            User currentUser = getCurrentUser();
+            
+            if (!canDeleteDocument(document, currentUser)) {
+                throw new SecurityException("You don't have permission to delete this document");
+            }
+            
+            // ✅ Check if already deleted
+            if (Boolean.TRUE.equals(document.getDeleted())) {
+                throw new IllegalStateException("Document is already deleted");
+            }
+            
+            // ✅ Soft delete - just mark as deleted instead of physical deletion
+            document.setDeleted(true);
+            document.setDeletedAt(LocalDateTime.now());
+            document.setDeletedBy(currentUser.getUsername());
+            
+            documentRepository.save(document);
+            
+            // ✅ Log audit
+            auditService.logDocumentDeletion(document, currentUser);
+            
+            log.info("✅ Document {} soft deleted successfully by {}", 
+                     document.getOriginalFilename(), currentUser.getUsername());
+            
+        } catch (EntityNotFoundException | SecurityException | IllegalStateException e) {
+            log.error("❌ Delete validation failed for document {}: {}", id, e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            log.error("❌ Failed to soft delete document {}: {}", id, e.getMessage(), e);
+            throw new RuntimeException("Failed to delete document: " + e.getMessage(), e);
         }
-        
-        fileStorageService.deleteFile(document.getFilePath());
-        auditService.logDocumentDeletion(document, currentUser);
-        documentRepository.delete(document);
     }
+    
+    /**
+     * ✅ NEW: Restore soft deleted document
+     */
+    @Transactional
+    public DocumentDTO restoreDocument(Long id) {
+        try {
+            log.info("🔄 Restoring document ID: {}", id);
+            
+            Document document = documentRepository.findByIdIncludingDeleted(id)
+                    .orElseThrow(() -> new EntityNotFoundException("Document not found with id: " + id));
+            
+            User currentUser = getCurrentUser();
+            
+            if (!canRestoreDocument(document, currentUser)) {
+                throw new SecurityException("You don't have permission to restore this document");
+            }
+            
+            if (!Boolean.TRUE.equals(document.getDeleted())) {
+                throw new IllegalStateException("Document is not deleted");
+            }
+            
+            // ✅ Restore document
+            document.setDeleted(false);
+            document.setDeletedAt(null);
+            document.setDeletedBy(null);
+            
+            document = documentRepository.save(document);
+            
+            // ✅ Log audit
+            auditService.logDocumentRestoration(document, currentUser);
+            
+            log.info("✅ Document {} restored successfully by {}", 
+                     document.getOriginalFilename(), currentUser.getUsername());
+            
+            return convertToDTO(document);
+            
+        } catch (Exception e) {
+            log.error("❌ Failed to restore document {}: {}", id, e.getMessage(), e);
+            throw e;
+        }
+    }
+    
+    /**
+     * ✅ NEW: Get deleted documents (trash)
+     */
+    @Transactional(readOnly = true)
+    public Page<DocumentDTO> getDeletedDocuments(Pageable pageable) {
+        try {
+            Page<Document> deletedDocs = documentRepository.findDeletedDocuments(pageable);
+            return deletedDocs.map(this::convertToDTO);
+        } catch (Exception e) {
+            log.error("❌ Failed to fetch deleted documents: {}", e.getMessage(), e);
+            return Page.empty(pageable);
+        }
+    }
+    
+    /**
+     * ✅ NEW: Permanently delete document (Admin only)
+     */
+    @Transactional
+    @PreAuthorize("hasRole('ADMIN')")
+    public void permanentlyDeleteDocument(Long id) {
+        try {
+            log.info("🗑️ Permanently deleting document ID: {}", id);
+            
+            Document document = documentRepository.findDeletedById(id)
+                    .orElseThrow(() -> new EntityNotFoundException("Deleted document not found with id: " + id));
+            
+            // ✅ Delete physical file
+            try {
+                fileStorageService.deleteFile(document.getFilePath());
+                log.info("📁 Physical file deleted: {}", document.getFilePath());
+            } catch (Exception e) {
+                log.warn("⚠️ Failed to delete physical file: {}", e.getMessage());
+            }
+            
+            // ✅ Delete from database
+            documentRepository.delete(document);
+            
+            log.info("✅ Document {} permanently deleted", document.getOriginalFilename());
+            
+        } catch (Exception e) {
+            log.error("❌ Failed to permanently delete document {}: {}", id, e.getMessage(), e);
+            throw e;
+        }
+    }
+    
+    /**
+     * ✅ NEW: Check if user can restore document
+     */
+    public boolean canRestoreDocument(Document document, User user) {
+        return canDeleteDocument(document, user); // Same permissions as delete
+    }
+    
+    /**
+     * ✅ NEW: Helper method for permission checking (for @PreAuthorize)
+     */
+    public boolean isDocumentOwner(Long documentId, Long userId) {
+        try {
+            Document document = documentRepository.findById(documentId).orElse(null);
+            return document != null && document.getUploadedBy().getId().equals(userId);
+        } catch (Exception e) {
+            log.error("Error checking document ownership: {}", e.getMessage());
+            return false;
+        }
+    }
+    
+    // ===== KEEP ALL YOUR EXISTING METHODS =====
     
     public DocumentDTO updateDocument(Long id, DocumentUploadRequest request) {
         Document document = documentRepository.findById(id)
@@ -225,11 +364,8 @@ public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, Stri
         return documents.map(this::convertToDTO);
     }
     
-    // ===== NEW METHODS FOR SHARE AND METADATA =====
+    // ===== SHARE AND METADATA METHODS (UNCHANGED) =====
     
-    /**
-     * ✅ NEW: Update document metadata
-     */
     public DocumentDTO updateDocumentMetadata(Long id, Map<String, Object> metadata) {
         Document document = documentRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Document not found with id: " + id));
@@ -240,7 +376,6 @@ public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, Stri
             throw new RuntimeException("You don't have permission to update this document");
         }
         
-        // Update metadata fields
         if (metadata.containsKey("title")) {
             document.setOriginalFilename((String) metadata.get("title"));
         }
@@ -264,9 +399,6 @@ public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, Stri
         return convertToDTO(document);
     }
     
-    /**
-     * ✅ NEW: Generate share link
-     */
     public Map<String, Object> generateShareLink(Long id, Map<String, Object> options) {
         Document document = documentRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Document not found with id: " + id));
@@ -277,16 +409,13 @@ public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, Stri
             throw new RuntimeException("You don't have permission to share this document");
         }
         
-        // Extract options
         Integer expiryHours = (Integer) options.getOrDefault("expiryHours", 24);
         Boolean allowDownload = (Boolean) options.getOrDefault("allowDownload", true);
         String password = (String) options.get("password");
         
-        // Generate unique share ID
         String shareId = UUID.randomUUID().toString();
         LocalDateTime expiresAt = LocalDateTime.now().plusHours(expiryHours);
         
-        // Create share link entity
         DocumentShareLink shareLink = new DocumentShareLink();
         shareLink.setDocument(document);
         shareLink.setShareId(shareId);
@@ -300,8 +429,7 @@ public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, Stri
         
         shareLink = shareLinksRepository.save(shareLink);
         
-        // Generate public URL
-        String baseUrl = "https://cloud-docs-tan.vercel.app/"; // Configure this
+        String baseUrl = "https://cloud-docs-tan.vercel.app/";
         String shareUrl = baseUrl + "/shared/" + shareId;
         
         Map<String, Object> response = new HashMap<>();
@@ -314,9 +442,6 @@ public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, Stri
         return response;
     }
     
-    /**
-     * ✅ NEW: Get existing share links
-     */
     public List<Map<String, Object>> getShareLinks(Long documentId) {
         Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new RuntimeException("Document not found with id: " + documentId));
@@ -342,9 +467,6 @@ public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, Stri
         }).collect(Collectors.toList());
     }
     
-    /**
-     * ✅ NEW: Revoke share link
-     */
     public void revokeShareLink(Long documentId, String shareId) {
         DocumentShareLink shareLink = shareLinksRepository.findByShareIdAndActiveTrue(shareId)
                 .orElseThrow(() -> new RuntimeException("Share link not found or already revoked"));
@@ -363,24 +485,18 @@ public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, Stri
         auditService.logShareLinkRevoked(shareLink.getDocument(), currentUser, shareId);
     }
     
-    /**
-     * ✅ NEW: Access shared document (public)
-     */
     public DocumentDTO accessSharedDocument(String shareId, String password) {
         DocumentShareLink shareLink = shareLinksRepository.findByShareIdAndActiveTrue(shareId)
                 .orElseThrow(() -> new RuntimeException("Share link not found or expired"));
         
-        // Check if link is expired
         if (shareLink.getExpiresAt().isBefore(LocalDateTime.now())) {
             throw new RuntimeException("Share link has expired");
         }
         
-        // Check password if required
         if (shareLink.getPassword() != null && !shareLink.getPassword().equals(password)) {
             throw new RuntimeException("Invalid password");
         }
         
-        // Increment access count
         shareLink.setAccessCount(shareLink.getAccessCount() + 1);
         shareLink.setLastAccessedAt(LocalDateTime.now());
         shareLinksRepository.save(shareLink);
@@ -388,29 +504,22 @@ public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, Stri
         return convertToDTO(shareLink.getDocument());
     }
     
-    /**
-     * ✅ NEW: Download shared document (public)
-     */
     public Resource downloadSharedDocument(String shareId, String password) {
         DocumentShareLink shareLink = shareLinksRepository.findByShareIdAndActiveTrue(shareId)
                 .orElseThrow(() -> new RuntimeException("Share link not found or expired"));
         
-        // Check if link is expired
         if (shareLink.getExpiresAt().isBefore(LocalDateTime.now())) {
             throw new RuntimeException("Share link has expired");
         }
         
-        // Check if download is allowed
         if (!shareLink.getAllowDownload()) {
             throw new RuntimeException("Download not allowed for this share link");
         }
         
-        // Check password if required
         if (shareLink.getPassword() != null && !shareLink.getPassword().equals(password)) {
             throw new RuntimeException("Invalid password");
         }
         
-        // Increment access count
         shareLink.setAccessCount(shareLink.getAccessCount() + 1);
         shareLink.setLastAccessedAt(LocalDateTime.now());
         shareLinksRepository.save(shareLink);
@@ -418,24 +527,16 @@ public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, Stri
         return fileStorageService.loadFileAsResource(shareLink.getDocument().getFilePath());
     }
     
-    /**
-     * ✅ NEW: Get shared document info (public)
-     */
     public DocumentDTO getSharedDocumentInfo(String shareId, String password) {
         return accessSharedDocument(shareId, password);
     }
     
-    /**
-     * ✅ NEW: Get document statistics
-     */
     public Map<String, Object> getDocumentStatistics() {
         Map<String, Object> stats = new HashMap<>();
         
-        // Basic counts
         long totalDocuments = documentRepository.count();
         stats.put("total", totalDocuments);
         
-        // Count by status
         Map<String, Long> byStatus = new HashMap<>();
         for (DocumentStatus status : DocumentStatus.values()) {
             long count = documentRepository.countByStatus(status);
@@ -443,7 +544,6 @@ public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, Stri
         }
         stats.put("byStatus", byStatus);
         
-        // Count by category
         Map<String, Long> byCategory = new HashMap<>();
         List<Object[]> categoryStats = documentRepository.countByCategory();
         for (Object[] row : categoryStats) {
@@ -453,23 +553,18 @@ public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, Stri
         }
         stats.put("byCategory", byCategory);
         
-        // Recent uploads (last 7 days)
         LocalDateTime weekAgo = LocalDateTime.now().minusDays(7);
         long recentUploads = documentRepository.countByUploadDateAfter(weekAgo);
         stats.put("recentUploads", recentUploads);
         
-        // Total downloads
         long totalDownloads = documentRepository.sumDownloadCounts();
         stats.put("totalDownloads", totalDownloads);
         
         return stats;
     }
     
-    // ===== OCR METHODS =====
+    // ===== OCR METHODS (UNCHANGED) =====
     
-    /**
-     * ✅ NEW: Save document with OCR processing results
-     */
     @Transactional
     public DocumentDTO saveDocumentWithOCR(DocumentWithOCRDTO documentWithOCR, String username) {
         try {
@@ -479,10 +574,8 @@ public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, Stri
             MultipartFile file = documentWithOCR.getFile();
             OCRResultDTO ocrResult = documentWithOCR.getOcrResult();
             
-            // Save file to storage
             String storedFilePath = fileStorageService.storeFile(file);
             
-            // Create document entity
             Document document = new Document();
             document.setOriginalFilename(file.getOriginalFilename());
             document.setFilename(generateStoredFilename(file.getOriginalFilename()));
@@ -495,20 +588,17 @@ public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, Stri
             document.setDescription(documentWithOCR.getDescription());
             document.setCategory(documentWithOCR.getCategory());
             
-            // Set OCR data
             document.setOcrText(ocrResult.getExtractedText());
             document.setOcrConfidence(ocrResult.getConfidence());
             document.setHasOcr(ocrResult.isSuccess());
             document.setOcrProcessingTime(ocrResult.getProcessingTimeMs());
             
-            // Set AI embedding data
             List<Double> embedding = documentWithOCR.getEmbedding();
             if (embedding != null && !embedding.isEmpty()) {
                 document.setEmbedding(embeddingService.embeddingToJson(embedding));
                 document.setEmbeddingGenerated(true);
             }
             
-            // Save to database
             Document savedDocument = documentRepository.save(document);
             
             log.info("✅ Saved document with OCR: {} (OCR: {}, Embedding: {})", 
@@ -524,9 +614,6 @@ public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, Stri
         }
     }
 
-    /**
-     * ✅ NEW: Get OCR statistics for user
-     */
     public Map<String, Object> getOCRStatistics(String username) {
         try {
             long totalDocuments = documentRepository.countByUploadedByUsername(username);
@@ -549,95 +636,77 @@ public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, Stri
         }
     }
 
-
-    /**
- * ✅ NEW: Get AI-ready documents (documents with embeddings)
- */
-@Transactional(readOnly = true)
-public List<DocumentDTO> getAIReadyDocuments() {
-    try {
-        log.info("🤖 Fetching AI-ready documents");
-        
-        // Query documents that have embeddings generated
-        List<Document> aiReadyDocs = documentRepository.findByEmbeddingGeneratedTrue();
-        
-        List<DocumentDTO> result = aiReadyDocs.stream()
-            .map(this::convertToDTO)
-            .collect(Collectors.toList());
+    @Transactional(readOnly = true)
+    public List<DocumentDTO> getAIReadyDocuments() {
+        try {
+            log.info("🤖 Fetching AI-ready documents");
             
-        log.info("✅ Found {} AI-ready documents", result.size());
-        return result;
-        
-    } catch (Exception e) {
-        log.error("❌ Failed to fetch AI-ready documents: {}", e.getMessage(), e);
-        // Return empty list on error
-        return new ArrayList<>();
-    }
-}
-
-/**
- * ✅ NEW: Get documents filtered by OCR status
- */
-@Transactional(readOnly = true)
-public List<DocumentDTO> getDocumentsByOCRStatus(boolean hasOCR) {
-    try {
-        log.info("🔍 Filtering documents by OCR status: {}", hasOCR);
-        
-        List<Document> filteredDocs;
-        if (hasOCR) {
-            filteredDocs = documentRepository.findByHasOcrTrue();
-        } else {
-            filteredDocs = documentRepository.findByHasOcrFalseOrHasOcrIsNull();
+            List<Document> aiReadyDocs = documentRepository.findByEmbeddingGeneratedTrue();
+            
+            List<DocumentDTO> result = aiReadyDocs.stream()
+                .map(this::convertToDTO)
+                .collect(Collectors.toList());
+                
+            log.info("✅ Found {} AI-ready documents", result.size());
+            return result;
+            
+        } catch (Exception e) {
+            log.error("❌ Failed to fetch AI-ready documents: {}", e.getMessage(), e);
+            return new ArrayList<>();
         }
-        
-        List<DocumentDTO> result = filteredDocs.stream()
-            .map(this::convertToDTO)
-            .collect(Collectors.toList());
-            
-        log.info("✅ Found {} documents with OCR status: {}", result.size(), hasOCR);
-        return result;
-        
-    } catch (Exception e) {
-        log.error("❌ Failed to filter documents by OCR status: {}", e.getMessage(), e);
-        // Return empty list on error
-        return new ArrayList<>();
     }
-}
 
-/**
- * ✅ NEW: Get documents with OCR information (paginated)
- */
-@Transactional(readOnly = true)
-public Page<DocumentDTO> getDocumentsWithOCR(int page, int size, String sortBy, String sortDir) {
-    try {
-        log.info("📄 Requesting documents with OCR info - page: {}, size: {}", page, size);
-        
-        Sort sort = sortDir.equalsIgnoreCase("desc") ? 
-                   Sort.by(sortBy).descending() : Sort.by(sortBy).ascending();
-        Pageable pageable = PageRequest.of(page, size, sort);
-        
-        // Query documents that have OCR data
-        Page<Document> documentsWithOCR = documentRepository.findByHasOcrTrue(pageable);
-        
-        Page<DocumentDTO> result = documentsWithOCR.map(this::convertToDTO);
-        
-        log.info("✅ Found {} documents with OCR info", result.getTotalElements());
-        return result;
-        
-    } catch (Exception e) {
-        log.error("❌ Failed to fetch documents with OCR: {}", e.getMessage(), e);
-        
-        // Fallback to regular documents on error
-        log.warn("Falling back to regular document query");
-        return getAllDocuments(page, size, sortBy, sortDir, null, null, null);
+    @Transactional(readOnly = true)
+    public List<DocumentDTO> getDocumentsByOCRStatus(boolean hasOCR) {
+        try {
+            log.info("🔍 Filtering documents by OCR status: {}", hasOCR);
+            
+            List<Document> filteredDocs;
+            if (hasOCR) {
+                filteredDocs = documentRepository.findByHasOcrTrue();
+            } else {
+                filteredDocs = documentRepository.findByHasOcrFalseOrHasOcrIsNull();
+            }
+            
+            List<DocumentDTO> result = filteredDocs.stream()
+                .map(this::convertToDTO)
+                .collect(Collectors.toList());
+                
+            log.info("✅ Found {} documents with OCR status: {}", result.size(), hasOCR);
+            return result;
+            
+        } catch (Exception e) {
+            log.error("❌ Failed to filter documents by OCR status: {}", e.getMessage(), e);
+            return new ArrayList<>();
+        }
     }
-}
+
+    @Transactional(readOnly = true)
+    public Page<DocumentDTO> getDocumentsWithOCR(int page, int size, String sortBy, String sortDir) {
+        try {
+            log.info("📄 Requesting documents with OCR info - page: {}, size: {}", page, size);
+            
+            Sort sort = sortDir.equalsIgnoreCase("desc") ? 
+                       Sort.by(sortBy).descending() : Sort.by(sortBy).ascending();
+            Pageable pageable = PageRequest.of(page, size, sort);
+            
+            Page<Document> documentsWithOCR = documentRepository.findByHasOcrTrue(pageable);
+            
+            Page<DocumentDTO> result = documentsWithOCR.map(this::convertToDTO);
+            
+            log.info("✅ Found {} documents with OCR info", result.getTotalElements());
+            return result;
+            
+        } catch (Exception e) {
+            log.error("❌ Failed to fetch documents with OCR: {}", e.getMessage(), e);
+            
+            log.warn("Falling back to regular document query");
+            return getAllDocuments(page, size, sortBy, sortDir, null, null, null);
+        }
+    }
     
     // ===== HELPER METHODS =====
     
-    /**
-     * ✅ ADDED: Generate unique stored filename for uploaded files
-     */
     private String generateStoredFilename(String originalFilename) {
         String timestamp = String.valueOf(System.currentTimeMillis());
         String uuid = UUID.randomUUID().toString().substring(0, 8);
@@ -650,9 +719,6 @@ public Page<DocumentDTO> getDocumentsWithOCR(int page, int size, String sortBy, 
         return timestamp + "_" + uuid + extension;
     }
     
-    /**
-     * ✅ ADDED: Determine document type based on MIME type
-     */
     private String determineDocumentType(String mimeType) {
         if (mimeType == null) return "unknown";
         
@@ -668,14 +734,10 @@ public Page<DocumentDTO> getDocumentsWithOCR(int page, int size, String sortBy, 
         return "file";
     }
     
-    /**
-     * ✅ FIXED: Convert document entity to DTO with safe lazy loading
-     */
     public DocumentDTO convertToDTO(Document document) {
         try {
             DocumentDTO dto = new DocumentDTO();
             
-            // Basic fields - no lazy loading issues
             dto.setId(document.getId());
             dto.setFilename(document.getFilename());
             dto.setOriginalFilename(document.getOriginalFilename());
@@ -692,7 +754,6 @@ public Page<DocumentDTO> getDocumentsWithOCR(int page, int size, String sortBy, 
             dto.setDocumentType(document.getDocumentType());
             dto.setRejectionReason(document.getRejectionReason());
             
-            // ✅ Safe handling of lazy-loaded tags collection
             try {
                 List<String> tags = document.getTags();
                 dto.setTags(tags != null ? new ArrayList<>(tags) : new ArrayList<>());
@@ -701,7 +762,6 @@ public Page<DocumentDTO> getDocumentsWithOCR(int page, int size, String sortBy, 
                 dto.setTags(document.getTagsSafe());
             }
             
-            // ✅ Safe handling of lazy-loaded uploadedBy relationship
             try {
                 if (document.getUploadedBy() != null) {
                     dto.setUploadedByName(document.getUploadedBy().getFullName());
@@ -716,7 +776,6 @@ public Page<DocumentDTO> getDocumentsWithOCR(int page, int size, String sortBy, 
                 dto.setUploadedById(document.getUploadedByIdSafe());
             }
             
-            // ✅ Safe handling of lazy-loaded approvedBy relationship
             try {
                 if (document.getApprovedBy() != null) {
                     dto.setApprovedByName(document.getApprovedBy().getFullName());
@@ -733,7 +792,6 @@ public Page<DocumentDTO> getDocumentsWithOCR(int page, int size, String sortBy, 
         } catch (Exception e) {
             log.error("❌ Error converting document {} to DTO: {}", document.getId(), e.getMessage(), e);
             
-            // Return minimal DTO on error
             DocumentDTO dto = new DocumentDTO();
             dto.setId(document.getId());
             dto.setFilename(document.getFilename());
@@ -765,7 +823,6 @@ public Page<DocumentDTO> getDocumentsWithOCR(int page, int size, String sortBy, 
                document.getUploadedBy().getId().equals(user.getId());
     }
     
-    // ✅ NEW: Helper methods for share permissions
     private boolean canShareDocument(Document document, User user) {
         return user.getRole().name().equals("ADMIN") || 
                user.getRole().name().equals("MANAGER") ||

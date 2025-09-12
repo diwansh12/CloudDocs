@@ -97,6 +97,15 @@ public class Document {
     @Column(name = "embedding_generated")
     private Boolean embeddingGenerated = false;
     
+     @Column(name = "deleted", nullable = false)
+    private Boolean deleted = false;
+    
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+    
+    @Column(name = "deleted_by")
+    private String deletedBy;
+
     // ✅ CONSTRUCTORS
     public Document() {
         this.uploadDate = LocalDateTime.now();
@@ -228,6 +237,33 @@ public class Document {
     
     public String getDocumentType() { return documentType; }
     public void setDocumentType(String documentType) { this.documentType = documentType; }
+
+    // ✅ ADD THESE MISSING GETTERS AND SETTERS
+
+public Boolean getDeleted() {
+    return deleted;
+}
+
+public void setDeleted(Boolean deleted) {
+    this.deleted = deleted;
+}
+
+public LocalDateTime getDeletedAt() {
+    return deletedAt;
+}
+
+public void setDeletedAt(LocalDateTime deletedAt) {
+    this.deletedAt = deletedAt;
+}
+
+public String getDeletedBy() {
+    return deletedBy;
+}
+
+public void setDeletedBy(String deletedBy) {
+    this.deletedBy = deletedBy;
+}
+
     
     // ✅ OCR GETTERS AND SETTERS
     public String getOcrText() { return ocrText; }
@@ -286,7 +322,24 @@ public class Document {
     public boolean isSearchable() {
         return hasEmbedding() || isOcrProcessed();
     }
+
+      public boolean isDeleted() {
+        return deleted != null && deleted;
+    }
     
+    public void markAsDeleted(String deletedBy) {
+        this.deleted = true;
+        this.deletedAt = LocalDateTime.now();
+        this.deletedBy = deletedBy;
+    }
+    
+    public void restore() {
+        this.deleted = false;
+        this.deletedAt = null;
+        this.deletedBy = null;
+    }
+    
+
     // ✅ CONTENT EXTRACTION METHOD
     public String getSearchableContent() {
         StringBuilder content = new StringBuilder();

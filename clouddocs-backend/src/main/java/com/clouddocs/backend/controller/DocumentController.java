@@ -10,6 +10,8 @@ import jakarta.persistence.EntityNotFoundException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.AccessDeniedException;
@@ -21,12 +23,17 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.transaction.annotation.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Pageable;
+import org.springframework.security.core.Authentication;
+
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.time.LocalDateTime;
+
 
 @RestController
 @RequestMapping("/documents")
@@ -454,40 +461,77 @@ public ResponseEntity<?> getDocumentsWithOCR(
         }
     }
 
-    /**
-     * Delete document
-     */
-   @DeleteMapping("/{id}")
-@PreAuthorize("hasRole('ADMIN') or @documentService.isDocumentOwner(#id, authentication.principal.id)")
-public ResponseEntity<?> deleteDocument(@PathVariable Long id) {
-    try {
-        documentService.deleteDocument(id);
-        
-        Map<String, Object> response = new HashMap<>();
-        response.put("message", "Document deleted successfully");
-        response.put("documentId", id);
-        response.put("deletedAt", System.currentTimeMillis());
-        
-        return ResponseEntity.ok(response);
-        
-    } catch (EntityNotFoundException e) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-            .body(Map.of("error", "Document not found", "documentId", id));
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN') or @documentService.isDocumentOwner(#id, authentication.principal.id)")
+    public ResponseEntity<Map<String, Object>> deleteDocument(@PathVariable Long id, Authentication auth) {
+        try {
+            logger.info("🗑️ Soft delete request for document ID: {} by user: {}", id, auth.getName());
             
-    } catch (AccessDeniedException e) {
-        return ResponseEntity.status(HttpStatus.FORBIDDEN)
-            .body(Map.of("error", "You don't have permission to delete this document", "documentId", id));
+            documentService.deleteDocument(id);
             
-    } catch (IllegalStateException e) {
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-            .body(Map.of("error", "Document cannot be deleted: " + e.getMessage(), "documentId", id));
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", "Document moved to trash successfully");
+            response.put("documentId", id);
+            response.put("action", "soft_delete");
+            response.put("timestamp", LocalDateTime.now());
             
-    } catch (Exception e) {
-        logger.error("Failed to delete document {}: {}", id, e.getMessage(), e);
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-            .body(Map.of("error", "Failed to delete document", "documentId", id));
+            return ResponseEntity.ok(response);
+            
+        } catch (EntityNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", "Document not found", "documentId", id));
+                
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(Map.of("error", "Access denied", "documentId", id));
+                
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(Map.of("error", e.getMessage(), "documentId", id));
+                
+        } catch (Exception e) {
+            logger.error("❌ Failed to delete document {}: {}", id, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("error", "Failed to delete document", "documentId", id));
+        }
     }
-}
+    
+    /**
+     * ✅ NEW: Restore deleted document
+     */
+    @PutMapping("/{id}/restore")
+    @PreAuthorize("hasRole('ADMIN') or @documentService.isDocumentOwner(#id, authentication.principal.id)")
+    public ResponseEntity<Map<String, Object>> restoreDocument(@PathVariable Long id) {
+        try {
+            documentService.restoreDocument(id);
+            
+            return ResponseEntity.ok(Map.of(
+                "message", "Document restored successfully",
+                "documentId", id,
+                "action", "restore"
+            ));
+            
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                .body(Map.of("error", e.getMessage(), "documentId", id));
+        }
+    }
+    
+    /**
+     * ✅ NEW: Get deleted documents (trash)
+     */
+    @GetMapping("/trash")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    public ResponseEntity<Page<DocumentDTO>> getDeletedDocuments(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        
+        Pageable pageable = PageRequest.of(page, size, Sort.by("deletedAt").descending());
+        Page<DocumentDTO> deletedDocs = documentService.getDeletedDocuments(pageable);
+        
+        return ResponseEntity.ok(deletedDocs);
+    }
+
     /**
      * Update document (legacy endpoint - redirects to metadata update)
      */

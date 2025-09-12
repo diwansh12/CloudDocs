@@ -246,4 +246,31 @@ public class AuditService {
         logWorkflowAction(String.format("System Cleanup: %s (%d items)", operation, itemsProcessed), 
                          null, "system");
     }
+
+
+public void logDocumentRestoration(Document document, User user) {
+    try {
+        String details = String.format("Document Restored: %s by %s", 
+                                     document.getOriginalFilename(), 
+                                     user.getUsername());
+        
+        // ✅ Use Lombok @Builder pattern with correct field names
+        AuditLog auditLog = AuditLog.builder()
+                .activity("Document Restored")  // ✅ Use 'activity' not 'action'
+                .linkedItem(document.getOriginalFilename())  // ✅ Use 'linkedItem' not 'details'
+                .user(user.getUsername())  // ✅ Use 'user' not 'username'
+                .status(AuditLog.Status.SUCCESS)  // ✅ Use the enum
+                .build();  // ✅ timestamp is set automatically in the builder
+        
+        auditLogRepository.save(auditLog);
+        
+        log.info("AUDIT: User {} restored document: {}", 
+                user.getFullName(), document.getOriginalFilename());
+                
+    } catch (Exception e) {
+        log.error("Failed to create audit log for document restoration: {}", e.getMessage());
+    }
+}
+
+
 }

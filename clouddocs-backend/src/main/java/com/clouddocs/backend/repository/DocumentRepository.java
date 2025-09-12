@@ -38,43 +38,53 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     Page<Document> findByStatusAndUploadedBy(DocumentStatus status, User user, Pageable pageable);
 
 
-     List<Document> findByEmbeddingGeneratedTrue();
+     @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+       "WHERE d.deleted = false AND d.embeddingGenerated = true")
+List<Document> findByEmbeddingGeneratedTrue();
     
-    List<Document> findByHasOcrTrue();
+   @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+       "WHERE d.deleted = false AND d.hasOcr = true")
+List<Document> findByHasOcrTrue();
     
-    List<Document> findByHasOcrFalseOrHasOcrIsNull();
+ @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+       "WHERE d.deleted = false AND (d.hasOcr = false OR d.hasOcr IS NULL)")
+List<Document> findByHasOcrFalseOrHasOcrIsNull();
     
-    Page<Document> findByHasOcrTrue(Pageable pageable);
+ @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+       "WHERE d.deleted = false AND d.hasOcr = true")
+Page<Document> findByHasOcrTrue(Pageable pageable);
 
     // ===== ✅ NEW: OPTIMIZED METHODS WITH JOIN FETCH TO PREVENT LAZY LOADING =====
     
     /**
      * ✅ SOLUTION: Fetch document by ID with tags and users to prevent LazyInitializationException
      */
-    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.tags LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy WHERE d.id = :id")
-    Optional<Document> findByIdWithTags(@Param("id") Long id);
-
+   @Query("SELECT d FROM Document d LEFT JOIN FETCH d.tags LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+       "WHERE d.id = :id AND d.deleted = false")
+Optional<Document> findByIdWithTags(@Param("id") Long id);
     /**
      * ✅ SOLUTION: Fetch all documents with tags and users for better performance
      */
-    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.tags LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy")
-    Page<Document> findAllWithTagsAndUsers(Pageable pageable);
+   @Query("SELECT d FROM Document d LEFT JOIN FETCH d.tags LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy WHERE d.deleted = false")
+Page<Document> findAllWithTagsAndUsers(Pageable pageable);
+
 
     /**
      * ✅ SOLUTION: Fetch user's documents with tags and users
      */
-    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.tags LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
-           "WHERE d.uploadedBy.id = :userId ORDER BY d.uploadDate DESC")
-    Page<Document> findByUploadedByIdWithTagsAndUsers(@Param("userId") Long userId, Pageable pageable);
+ @Query("SELECT d FROM Document d LEFT JOIN FETCH d.tags LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+       "WHERE d.uploadedBy.id = :userId AND d.deleted = false ORDER BY d.uploadDate DESC")
+Page<Document> findByUploadedByIdWithTagsAndUsers(@Param("userId") Long userId, Pageable pageable);
 
     /**
      * ✅ SOLUTION: Search with tags included
      */
-    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.tags LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy WHERE " +
-           "LOWER(d.filename) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-           "LOWER(d.description) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-           "LOWER(d.originalFilename) LIKE LOWER(CONCAT('%', :query, '%'))")
-    Page<Document> searchDocumentsWithTags(@Param("query") String query, Pageable pageable);
+   @Query("SELECT d FROM Document d LEFT JOIN FETCH d.tags LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy WHERE " +
+       "d.deleted = false AND (" +
+       "LOWER(d.filename) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+       "LOWER(d.description) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+       "LOWER(d.originalFilename) LIKE LOWER(CONCAT('%', :query, '%')))")
+Page<Document> searchDocumentsWithTags(@Param("query") String query, Pageable pageable);
 
     /**
      * ✅ SOLUTION: Find pending documents with all relationships
@@ -126,10 +136,9 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     /**
      * ✅ CRITICAL: Pending documents with JOIN FETCH
      */
-    @Query("SELECT d FROM Document d LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
-           "WHERE d.status = 'PENDING'")
-    Page<Document> findPendingDocuments(Pageable pageable);
-
+  @Query("SELECT d FROM Document d LEFT JOIN FETCH d.tags LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy " +
+       "WHERE d.status = 'PENDING' AND d.deleted = false")
+Page<Document> findPendingDocuments(Pageable pageable);
     /**
      * ✅ CRITICAL: Recent documents with JOIN FETCH
      */
@@ -158,8 +167,8 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     // ===== COUNT METHODS =====
     
     // Count documents by status
-    long countByStatus(DocumentStatus status);
-
+ @Query("SELECT COUNT(d) FROM Document d WHERE d.status = :status AND d.deleted = false")
+long countByStatus(@Param("status") DocumentStatus status);
     // Count documents by user
     long countByUploadedBy(User user);
 
@@ -261,14 +270,15 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     /**
      * Count total documents by username
      */
-    @Query("SELECT COUNT(d) FROM Document d WHERE d.uploadedBy.username = :username")
-    long countByUploadedByUsername(@Param("username") String username);
+   @Query("SELECT COUNT(d) FROM Document d WHERE d.uploadedBy.username = :username AND d.deleted = false")
+long countByUploadedByUsername(@Param("username") String username);
 
     /**
      * Count documents with embeddings generated for a specific user
      */
-    @Query("SELECT COUNT(d) FROM Document d WHERE d.uploadedBy.username = :username AND d.embeddingGenerated = true")
-    long countByUploadedByUsernameAndEmbeddingGeneratedTrue(@Param("username") String username);
+   @Query("SELECT COUNT(d) FROM Document d WHERE d.uploadedBy.username = :username AND d.embeddingGenerated = true AND d.deleted = false")
+long countByUploadedByUsernameAndEmbeddingGeneratedTrue(@Param("username") String username);
+
 
     /**
      * Count documents without embeddings generated for a specific user
@@ -321,9 +331,8 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     /**
      * Count documents with OCR processed for a specific user
      */
-    @Query("SELECT COUNT(d) FROM Document d WHERE d.uploadedBy.username = :username AND d.hasOcr = true")
-    long countByUploadedByUsernameAndHasOcrTrue(@Param("username") String username);
-
+   @Query("SELECT COUNT(d) FROM Document d WHERE d.uploadedBy.username = :username AND d.hasOcr = true AND d.deleted = false")
+long countByUploadedByUsernameAndHasOcrTrue(@Param("username") String username);
     /**
      * Get average OCR confidence for user's documents
      */
@@ -397,6 +406,24 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
            "AVG(CASE WHEN d.ocrConfidence IS NOT NULL THEN d.ocrConfidence END) as avgOCRConfidence " +
            "FROM Document d WHERE d.uploadedBy.username = :username")
     Object[] getAIAndOCRStatistics(@Param("username") String username);
+
+    /**
+ * ✅ Find deleted documents (for trash/recycle bin)
+ */
+@Query("SELECT d FROM Document d LEFT JOIN FETCH d.tags LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy WHERE d.deleted = true")
+Page<Document> findDeletedDocuments(Pageable pageable);
+
+/**
+ * ✅ Find deleted document by ID
+ */
+@Query("SELECT d FROM Document d LEFT JOIN FETCH d.tags LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy WHERE d.id = :id AND d.deleted = true")
+Optional<Document> findDeletedById(@Param("id") Long id);
+
+/**
+ * ✅ Find document by ID including deleted ones (for admin operations)
+ */
+@Query("SELECT d FROM Document d LEFT JOIN FETCH d.tags LEFT JOIN FETCH d.uploadedBy LEFT JOIN FETCH d.approvedBy WHERE d.id = :id")
+Optional<Document> findByIdIncludingDeleted(@Param("id") Long id);
 
 
     
