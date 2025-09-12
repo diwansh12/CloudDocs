@@ -269,14 +269,16 @@ export default function Documents() {
     loadOCRStats();
   }, []);
 
-  const checkAIStatus = async () => {
-    try {
-      const status = await aiService.getAIStatus();
-      setAiEnabled(status.aiSearchEnabled || false);
-    } catch (error) {
-      setAiEnabled(false);
-    }
-  };
+ const checkAIStatus = async () => {
+  try {
+    const status = await aiService.getAIStatus();
+    setAiEnabled(true);
+    console.log('🚀 Portfolio Mode: AI features enabled for all users');
+  } catch (error) {
+    console.warn('AI features may be limited, but still showing as available for portfolio demo');
+    setAiEnabled(true);
+  }
+};
 
   const loadOCRStats = async () => {
     try {
