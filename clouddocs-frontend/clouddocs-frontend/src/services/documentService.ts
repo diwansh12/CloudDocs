@@ -268,12 +268,73 @@ class DocumentService {
     }
   }
 
-  // Delete document
-  async deleteDocument(id: number): Promise<void> {
+   async deleteDocument(id: number): Promise<{ message: string; deletedDocumentId: number }> {
     try {
-      await api.delete(`/documents/${id}`);
+      console.log(`🗑️ Deleting document with ID: ${id}`);
+      
+      const response = await api.delete(`/documents/${id}`);
+      
+      console.log(`✅ Document ${id} deleted successfully`);
+      
+      return {
+        message: response.data?.message || 'Document deleted successfully',
+        deletedDocumentId: id
+      };
     } catch (error: any) {
-      throw new Error(error.response?.data?.error || 'Failed to delete document');
+      console.error(`❌ Failed to delete document ${id}:`, error);
+      
+      // Enhanced error messages based on status codes
+      if (error.response?.status === 404) {
+        throw new Error('Document not found. It may have already been deleted.');
+      } else if (error.response?.status === 403) {
+        throw new Error('You don\'t have permission to delete this document.');
+      } else if (error.response?.status === 409) {
+        throw new Error('Document cannot be deleted because it is currently being processed.');
+      } else {
+        throw new Error(error.response?.data?.error || 'Failed to delete document');
+      }
+    }
+  }
+
+  // ✅ NEW: Bulk delete multiple documents
+  async bulkDeleteDocuments(documentIds: number[]): Promise<{ 
+    deletedCount: number; 
+    failedCount: number; 
+    failedDocuments?: { id: number; error: string }[] 
+  }> {
+    try {
+      console.log(`🗑️ Bulk deleting ${documentIds.length} documents`);
+      
+      const response = await api.delete('/documents/bulk', { 
+        data: { documentIds } 
+      });
+      
+      console.log(`✅ Bulk delete completed:`, response.data);
+      
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Bulk delete failed:', error);
+      throw new Error(error.response?.data?.error || 'Failed to delete documents');
+    }
+  }
+
+  // ✅ NEW: Soft delete document (if your backend supports it)
+  async softDeleteDocument(id: number): Promise<Document> {
+    try {
+      const response = await api.put(`/documents/${id}/soft-delete`);
+      return response.data.document;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Failed to soft delete document');
+    }
+  }
+
+  // ✅ NEW: Restore soft deleted document
+  async restoreDocument(id: number): Promise<Document> {
+    try {
+      const response = await api.put(`/documents/${id}/restore`);
+      return response.data.document;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Failed to restore document');
     }
   }
 

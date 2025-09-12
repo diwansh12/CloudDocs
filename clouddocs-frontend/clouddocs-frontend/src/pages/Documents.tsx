@@ -20,6 +20,8 @@ import {
   Brain,
   Zap,
   Eye,
+  Trash2,
+  MoreVertical,
   ChevronDown
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
@@ -31,6 +33,7 @@ import Sidebar from '../components/layout/Sidebar';
 import DocumentUploadModal from '../components/documents/DocumentUpload';
 import documentService, { Document, DocumentsResponse } from '../services/documentService';
 import { aiService } from '../services/aiService';
+import { DeleteConfirmationModal } from '../components/ui/delete-confirmation-modal';
 
 export default function Documents() {
   const [activeTab, setActiveTab] = useState('all');
@@ -45,6 +48,10 @@ export default function Documents() {
   const [aiEnabled, setAiEnabled] = useState(false);
   const [isAiSearch, setIsAiSearch] = useState(false);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
+
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [documentToDelete, setDocumentToDelete] = useState<Document | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Search mode states with proper refs
   const [searchMode, setSearchMode] = useState<'regular' | 'semantic' | 'hybrid' | 'ocr'>('semantic');
@@ -269,16 +276,16 @@ export default function Documents() {
     loadOCRStats();
   }, []);
 
- const checkAIStatus = async () => {
-  try {
-    const status = await aiService.getAIStatus();
-    setAiEnabled(true);
-    console.log('🚀 Portfolio Mode: AI features enabled for all users');
-  } catch (error) {
-    console.warn('AI features may be limited, but still showing as available for portfolio demo');
-    setAiEnabled(true);
-  }
-};
+  const checkAIStatus = async () => {
+    try {
+      const status = await aiService.getAIStatus();
+      setAiEnabled(true);
+      console.log('🚀 Portfolio Mode: AI features enabled for all users');
+    } catch (error) {
+      console.warn('AI features may be limited, but still showing as available for portfolio demo');
+      setAiEnabled(true);
+    }
+  };
 
   const loadOCRStats = async () => {
     try {
@@ -288,6 +295,52 @@ export default function Documents() {
       console.error('Failed to load OCR stats:', error);
     }
   };
+
+
+  const handleDeleteDocument = async () => {
+      if (!documentToDelete) return;
+
+      setIsDeleting(true);
+      try {
+        await documentService.deleteDocument(documentToDelete.id);
+
+        // Update the documents list by removing the deleted document
+        if (isAiSearch) {
+          setAiDocuments(prev => prev.filter(doc => doc.id !== documentToDelete.id));
+        } else {
+          setDocuments(prev => prev.filter(doc => doc.id !== documentToDelete.id));
+        }
+
+        // Update total count
+        setTotalItems(prev => prev - 1);
+
+        // Close modal and reset state
+        setDeleteModalOpen(false);
+        setDocumentToDelete(null);
+
+        console.log(`✅ Document "${documentToDelete.originalFilename}" deleted successfully`);
+
+        // Show success message (optional)
+        // You could add a toast notification here
+
+      } catch (error: any) {
+        console.error('❌ Failed to delete document:', error);
+        alert(`Failed to delete document: ${error.message}`);
+      } finally {
+        setIsDeleting(false);
+      }
+    };
+
+    const openDeleteModal = (document: Document) => {
+      setDocumentToDelete(document);
+      setDeleteModalOpen(true);
+    };
+
+    const closeDeleteModal = () => {
+      if (isDeleting) return; // Prevent closing while deleting
+      setDeleteModalOpen(false);
+      setDocumentToDelete(null);
+    };
 
   const handleGenerateEmbeddings = async () => {
     try {
@@ -543,9 +596,8 @@ export default function Documents() {
                               console.log(`🎯 Clicked ${mode} mode button`);
                               handleSearchModeChange(mode as any);
                             }}
-                            className={`w-full flex items-center p-3 rounded-md hover:bg-gray-50 transition-colors text-left ${
-                              searchMode === mode ? 'bg-blue-50 border-l-4 border-blue-500' : 'border-l-4 border-transparent'
-                            }`}
+                            className={`w-full flex items-center p-3 rounded-md hover:bg-gray-50 transition-colors text-left ${searchMode === mode ? 'bg-blue-50 border-l-4 border-blue-500' : 'border-l-4 border-transparent'
+                              }`}
                           >
                             <Icon className={`w-4 h-4 mr-3 flex-shrink-0 ${searchMode === mode ? 'text-blue-600' : color}`} />
                             <div className="flex-1 min-w-0">
@@ -611,7 +663,7 @@ export default function Documents() {
                 {ocrStats && (
                   <div className="text-xs text-gray-600 bg-gray-100 px-3 py-2 rounded-lg whitespace-nowrap">
                     <span className="hidden sm:inline">📊 </span>
-                    {ocrStats.documentsWithOCR}/{ocrStats.totalDocuments} 
+                    {ocrStats.documentsWithOCR}/{ocrStats.totalDocuments}
                     <span className="hidden sm:inline"> with OCR</span>
                     <span className="sm:hidden"> OCR</span>
                     {ocrStats.averageOCRConfidence > 0 && (
@@ -835,7 +887,7 @@ export default function Documents() {
                         >
                           <CardContent className="p-4 sm:p-6">
                             <div className="flex flex-col items-center text-center space-y-3 sm:space-y-4">
-                              {/* Badges Section */}
+                              {/* ✅ UPDATED: Badges Section with Delete Button */}
                               <div className="w-full flex justify-between items-start mb-2">
                                 <div className="flex flex-wrap gap-1">
                                   {/* AI Score Badge */}
@@ -864,6 +916,22 @@ export default function Documents() {
                                       AI Ready
                                     </Badge>
                                   )}
+                                </div>
+
+                                {/* ✅ NEW: Delete Button (Top-Right Corner) */}
+                                <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation(); // Prevent card click
+                                      openDeleteModal(doc);
+                                    }}
+                                    className="h-8 w-8 p-0 hover:bg-red-50"
+                                    title={`Delete ${doc.originalFilename}`}
+                                  >
+                                    <Trash2 className="w-4 h-4 text-red-600" />
+                                  </Button>
                                 </div>
                               </div>
 
@@ -926,8 +994,8 @@ export default function Documents() {
                                   </div>
                                 )}
 
-                                {/* Download button */}
-                                <div className="flex justify-center pt-2">
+                                {/* ✅ UPDATED: Action Buttons (Download + Delete) */}
+                                <div className="flex justify-center items-center gap-2 pt-2">
                                   <Button
                                     size="sm"
                                     variant="ghost"
@@ -936,8 +1004,21 @@ export default function Documents() {
                                       handleDownload(doc);
                                     }}
                                     className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                    title="Download document"
                                   >
                                     <Download className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openDeleteModal(doc);
+                                    }}
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50"
+                                    title="Delete document"
+                                  >
+                                    <Trash2 className="w-4 h-4 text-red-600" />
                                   </Button>
                                 </div>
                               </div>
@@ -947,6 +1028,7 @@ export default function Documents() {
                       );
                     })}
                   </div>
+
 
                   {/* Only show pagination for regular search */}
                   {!isAiSearch && renderPagination()}
@@ -963,6 +1045,16 @@ export default function Documents() {
           </Tabs>
         </section>
       </main>
+
+      <DeleteConfirmationModal
+  isOpen={deleteModalOpen}
+  onClose={closeDeleteModal}
+  onConfirm={handleDeleteDocument}
+  isDeleting={isDeleting}
+  itemName={documentToDelete?.originalFilename || ''}
+  itemType="document"
+/>
+
 
       {/* Upload Modal */}
       <DocumentUploadModal
