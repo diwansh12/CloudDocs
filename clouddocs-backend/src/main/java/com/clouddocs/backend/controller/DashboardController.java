@@ -37,122 +37,125 @@ public class DashboardController {
     private UserRepository userRepository;
 
     @GetMapping("/stats")
-    public ResponseEntity<Map<String, Object>> getDashboardStats() {
-        try {
-            logger.info("🔍 Getting dashboard stats");
-            
-            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-            if (authentication == null) {
-                return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
-            }
-
-            boolean isAdmin = authentication.getAuthorities().stream()
-                    .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN") || 
-                                    auth.getAuthority().equals("ROLE_MANAGER"));
-            
-            Map<String, Object> stats = new HashMap<>();
-            
-            if (isAdmin) {
-                stats.put("totalDocuments", documentRepository.count());
-                stats.put("pendingDocuments", documentRepository.countByStatus(DocumentStatus.PENDING));
-                stats.put("approvedDocuments", documentRepository.countByStatus(DocumentStatus.APPROVED));
-                stats.put("rejectedDocuments", documentRepository.countByStatus(DocumentStatus.REJECTED));
-                stats.put("totalUsers", userRepository.count());
-                
-                LocalDateTime weekAgo = LocalDateTime.now().minusDays(7);
-                stats.put("recentUploads", documentRepository.findByUploadDateBetween(
-                    weekAgo, LocalDateTime.now(), PageRequest.of(0, Integer.MAX_VALUE)).getTotalElements());
-            } else {
-                UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
-                Long userId = userPrincipal.getId();
-                
-                long userDocs = documentRepository.countByUploadedById(userId);
-                long userPending = documentRepository.countByUploadedByIdAndStatus(userId, DocumentStatus.PENDING);
-                long userApproved = documentRepository.countByUploadedByIdAndStatus(userId, DocumentStatus.APPROVED);
-                
-                stats.put("totalDocuments", userDocs);
-                stats.put("pendingDocuments", userPending);
-                stats.put("approvedDocuments", userApproved);
-                stats.put("rejectedDocuments", 0L);
-                stats.put("totalUsers", 1L);
-                stats.put("recentUploads", userDocs);
-            }
-            
-            logger.info("✅ Dashboard stats retrieved successfully");
-            return ResponseEntity.ok(stats);
-            
-        } catch (Exception e) {
-            logger.error("❌ Error getting dashboard stats: {}", e.getMessage(), e);
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", "Failed to fetch dashboard statistics: " + e.getMessage());
-            return ResponseEntity.status(500).body(error);
+public ResponseEntity<Map<String, Object>> getDashboardStats() {
+    try {
+        logger.info("🔍 Getting dashboard stats");
+        
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
         }
+
+        boolean isAdmin = authentication.getAuthorities().stream()
+                .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN") || 
+                                auth.getAuthority().equals("ROLE_MANAGER"));
+        
+        Map<String, Object> stats = new HashMap<>();
+        
+        if (isAdmin) {
+            // ✅ FIXED: Use methods that exclude deleted documents
+            stats.put("totalDocuments", documentRepository.countByDeletedFalse());
+            stats.put("pendingDocuments", documentRepository.countByStatusAndDeletedFalse(DocumentStatus.PENDING));
+            stats.put("approvedDocuments", documentRepository.countByStatusAndDeletedFalse(DocumentStatus.APPROVED));
+            stats.put("rejectedDocuments", documentRepository.countByStatusAndDeletedFalse(DocumentStatus.REJECTED));
+            stats.put("totalUsers", userRepository.count());
+            
+            LocalDateTime weekAgo = LocalDateTime.now().minusDays(7);
+            stats.put("recentUploads", documentRepository.countByUploadDateAfterAndDeletedFalse(weekAgo));
+        } else {
+            UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
+            Long userId = userPrincipal.getId();
+            
+            // ✅ FIXED: Use methods that exclude deleted documents for users
+            long userDocs = documentRepository.countByUploadedByIdAndDeletedFalse(userId);
+            long userPending = documentRepository.countByUploadedByIdAndStatusAndDeletedFalse(userId, DocumentStatus.PENDING);
+            long userApproved = documentRepository.countByUploadedByIdAndStatusAndDeletedFalse(userId, DocumentStatus.APPROVED);
+            
+            stats.put("totalDocuments", userDocs);
+            stats.put("pendingDocuments", userPending);
+            stats.put("approvedDocuments", userApproved);
+            stats.put("rejectedDocuments", 0L);
+            stats.put("totalUsers", 1L);
+            stats.put("recentUploads", userDocs);
+        }
+        
+        logger.info("✅ Dashboard stats retrieved successfully");
+        return ResponseEntity.ok(stats);
+        
+    } catch (Exception e) {
+        logger.error("❌ Error getting dashboard stats: {}", e.getMessage(), e);
+        Map<String, Object> error = new HashMap<>();
+        error.put("error", "Failed to fetch dashboard statistics: " + e.getMessage());
+        return ResponseEntity.status(500).body(error);
     }
+}
 
     /**
      * ✅ COMPLETELY REWRITTEN: Safe recent documents endpoint
      */
-    @GetMapping("/recent-documents")
-    @Transactional(readOnly = true)
-    public ResponseEntity<List<Map<String, Object>>> getRecentDocuments(
-            @RequestParam(defaultValue = "4") int limit) {
-        try {
-            logger.info("🔍 Getting recent documents with limit: {}", limit);
-            
-            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-            if (authentication == null) {
-                logger.warn("⚠️ No authentication found");
-                return ResponseEntity.status(401).body(new ArrayList<>());
-            }
-
-            boolean isAdmin = authentication.getAuthorities().stream()
-                    .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN") || 
-                                    auth.getAuthority().equals("ROLE_MANAGER"));
-            
-            Page<Document> documents;
-            
-            if (isAdmin) {
-                logger.debug("🔍 Loading recent documents for admin/manager");
-                documents = documentRepository.findRecentDocuments(PageRequest.of(0, limit));
-            } else {
-                UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
-                logger.debug("🔍 Loading recent documents for user: {}", userPrincipal.getId());
-                documents = documentRepository.findByUploadedByIdOrderByUploadDateDesc(
-                    userPrincipal.getId(), PageRequest.of(0, limit));
-            }
-            
-            // ✅ SAFE DTO conversion within transaction
-            List<Map<String, Object>> documentDTOs = new ArrayList<>();
-            
-            for (Document doc : documents.getContent()) {
-                try {
-                    Map<String, Object> dto = createSafeDocumentDTO(doc);
-                    documentDTOs.add(dto);
-                } catch (Exception e) {
-                    logger.warn("⚠️ Error converting document {}: {}", doc.getId(), e.getMessage());
-                    // Add minimal DTO on error
-                    Map<String, Object> minimalDto = new HashMap<>();
-                    minimalDto.put("id", doc.getId());
-                    minimalDto.put("filename", doc.getFilename());
-                    minimalDto.put("status", doc.getStatus().toString());
-                    minimalDto.put("uploadDate", doc.getUploadDate().toString());
-                    minimalDto.put("uploadedByName", "Unknown");
-                    minimalDto.put("tags", new ArrayList<>());
-                    documentDTOs.add(minimalDto);
-                }
-            }
-            
-            logger.info("✅ Successfully loaded {} recent documents", documentDTOs.size());
-            return ResponseEntity.ok(documentDTOs);
-            
-        } catch (Exception e) {
-            logger.error("❌ Error getting recent documents: {}", e.getMessage(), e);
-            
-            // Return empty list instead of error to prevent frontend crashes
-            List<Map<String, Object>> emptyList = new ArrayList<>();
-            return ResponseEntity.ok(emptyList);
+  @GetMapping("/recent-documents")
+@Transactional(readOnly = true)
+public ResponseEntity<List<Map<String, Object>>> getRecentDocuments(
+        @RequestParam(defaultValue = "4") int limit) {
+    try {
+        logger.info("🔍 Getting recent documents with limit: {}", limit);
+        
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            logger.warn("⚠️ No authentication found");
+            return ResponseEntity.status(401).body(new ArrayList<>());
         }
+
+        boolean isAdmin = authentication.getAuthorities().stream()
+                .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN") || 
+                                auth.getAuthority().equals("ROLE_MANAGER"));
+        
+        Page<Document> documents;
+        
+        if (isAdmin) {
+            logger.debug("🔍 Loading recent documents for admin/manager");
+            // ✅ FIXED: Use method that excludes deleted documents
+            documents = documentRepository.findRecentDocumentsExcludingDeleted(PageRequest.of(0, limit));
+        } else {
+            UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
+            logger.debug("🔍 Loading recent documents for user: {}", userPrincipal.getId());
+            // ✅ FIXED: Use method that excludes deleted documents
+            documents = documentRepository.findByUploadedByIdOrderByUploadDateDescExcludingDeleted(
+                userPrincipal.getId(), PageRequest.of(0, limit));
+        }
+        
+        // ✅ SAFE DTO conversion within transaction
+        List<Map<String, Object>> documentDTOs = new ArrayList<>();
+        
+        for (Document doc : documents.getContent()) {
+            try {
+                Map<String, Object> dto = createSafeDocumentDTO(doc);
+                documentDTOs.add(dto);
+            } catch (Exception e) {
+                logger.warn("⚠️ Error converting document {}: {}", doc.getId(), e.getMessage());
+                // Add minimal DTO on error
+                Map<String, Object> minimalDto = new HashMap<>();
+                minimalDto.put("id", doc.getId());
+                minimalDto.put("filename", doc.getFilename());
+                minimalDto.put("status", doc.getStatus().toString());
+                minimalDto.put("uploadDate", doc.getUploadDate().toString());
+                minimalDto.put("uploadedByName", "Unknown");
+                minimalDto.put("tags", new ArrayList<>());
+                documentDTOs.add(minimalDto);
+            }
+        }
+        
+        logger.info("✅ Successfully loaded {} recent documents", documentDTOs.size());
+        return ResponseEntity.ok(documentDTOs);
+        
+    } catch (Exception e) {
+        logger.error("❌ Error getting recent documents: {}", e.getMessage(), e);
+        
+        // Return empty list instead of error to prevent frontend crashes
+        List<Map<String, Object>> emptyList = new ArrayList<>();
+        return ResponseEntity.ok(emptyList);
     }
+}
 
     /**
      * ✅ SAFE DTO creation method - handles all lazy loading exceptions
