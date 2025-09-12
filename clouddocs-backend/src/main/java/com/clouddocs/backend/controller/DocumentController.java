@@ -4,10 +4,15 @@ import com.clouddocs.backend.dto.DocumentDTO;
 import com.clouddocs.backend.dto.DocumentUploadRequest;
 import com.clouddocs.backend.entity.DocumentStatus;
 import com.clouddocs.backend.service.DocumentService;
+
+import jakarta.persistence.EntityNotFoundException;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -452,24 +457,37 @@ public ResponseEntity<?> getDocumentsWithOCR(
     /**
      * Delete document
      */
-    @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN') or @documentService.getDocumentById(#id).uploadedById == authentication.principal.id")
-    public ResponseEntity<?> deleteDocument(@PathVariable Long id) {
-        try {
-            documentService.deleteDocument(id);
+   @DeleteMapping("/{id}")
+@PreAuthorize("hasRole('ADMIN') or @documentService.isDocumentOwner(#id, authentication.principal.id)")
+public ResponseEntity<?> deleteDocument(@PathVariable Long id) {
+    try {
+        documentService.deleteDocument(id);
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", "Document deleted successfully");
+        response.put("documentId", id);
+        response.put("deletedAt", System.currentTimeMillis());
+        
+        return ResponseEntity.ok(response);
+        
+    } catch (EntityNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+            .body(Map.of("error", "Document not found", "documentId", id));
             
-            Map<String, String> response = new HashMap<>();
-            response.put("message", "Document deleted successfully");
+    } catch (AccessDeniedException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+            .body(Map.of("error", "You don't have permission to delete this document", "documentId", id));
             
-            return ResponseEntity.ok(response);
+    } catch (IllegalStateException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+            .body(Map.of("error", "Document cannot be deleted: " + e.getMessage(), "documentId", id));
             
-        } catch (Exception e) {
-            Map<String, String> error = new HashMap<>();
-            error.put("error", e.getMessage());
-            return ResponseEntity.badRequest().body(error);
-        }
+    } catch (Exception e) {
+        logger.error("Failed to delete document {}: {}", id, e.getMessage(), e);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+            .body(Map.of("error", "Failed to delete document", "documentId", id));
     }
-
+}
     /**
      * Update document (legacy endpoint - redirects to metadata update)
      */
@@ -654,38 +672,81 @@ public ResponseEntity<?> getDocumentsWithOCR(
     /**
      * ✅ NEW: Bulk delete documents (Admin/Manager only)
      */
-    @DeleteMapping("/bulk")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
-    public ResponseEntity<?> bulkDeleteDocuments(@RequestBody Map<String, Object> request) {
-        try {
-            @SuppressWarnings("unchecked")
-            List<Long> documentIds = (List<Long>) request.get("documentIds");
+   @DeleteMapping("/bulk")
+@PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+@Transactional
+public ResponseEntity<?> bulkDeleteDocuments(@RequestBody Map<String, Object> request) {
+    try {
+        @SuppressWarnings("unchecked")
+        List<Long> documentIds = (List<Long>) request.get("documentIds");
+        
+        // ✅ Validate input
+        if (documentIds == null || documentIds.isEmpty()) {
+            return ResponseEntity.badRequest()
+                .body(Map.of("error", "No document IDs provided"));
+        }
+        
+        List<Map<String, Object>> results = new ArrayList<>();
+        int successCount = 0;
+        int errorCount = 0;
+        
+        for (Long id : documentIds) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("documentId", id);
             
-            int successCount = 0;
-            int errorCount = 0;
-            
-            for (Long id : documentIds) {
-                try {
-                    documentService.deleteDocument(id);
-                    successCount++;
-                } catch (Exception e) {
-                    errorCount++;
-                }
+            try {
+                documentService.deleteDocument(id);
+                result.put("status", "success");
+                result.put("message", "Deleted successfully");
+                successCount++;
+                
+            } catch (EntityNotFoundException e) {
+                result.put("status", "failed");
+                result.put("error", "Document not found");
+                errorCount++;
+                
+            } catch (AccessDeniedException e) {
+                result.put("status", "failed");
+                result.put("error", "Access denied");
+                errorCount++;
+                
+            } catch (Exception e) {
+                result.put("status", "failed");
+                result.put("error", e.getMessage());
+                errorCount++;
+                logger.error("Failed to delete document {}: {}", id, e.getMessage());
             }
             
-            Map<String, Object> results = new HashMap<>();
-            results.put("message", String.format("Bulk deletion completed: %d successful, %d failed", 
-                       successCount, errorCount));
-            results.put("successCount", successCount);
-            results.put("errorCount", errorCount);
-            
-            return ResponseEntity.ok(results);
-            
-        } catch (Exception e) {
-            Map<String, String> error = new HashMap<>();
-            error.put("error", "Bulk deletion failed: " + e.getMessage());
-            return ResponseEntity.badRequest().body(error);
+            results.add(result);
         }
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", String.format("Bulk deletion completed: %d successful, %d failed", 
+                   successCount, errorCount));
+        response.put("totalProcessed", documentIds.size());
+        response.put("successCount", successCount);
+        response.put("errorCount", errorCount);
+        response.put("results", results); // ✅ Detailed per-document results
+        response.put("processedAt", System.currentTimeMillis());
+        
+        // ✅ Return appropriate status based on results
+        if (errorCount == 0) {
+            return ResponseEntity.ok(response);
+        } else if (successCount == 0) {
+            return ResponseEntity.badRequest().body(response);
+        } else {
+            return ResponseEntity.status(HttpStatus.MULTI_STATUS).body(response);
+        }
+        
+    } catch (ClassCastException e) {
+        return ResponseEntity.badRequest()
+            .body(Map.of("error", "Invalid request format. Expected 'documentIds' array"));
+            
+    } catch (Exception e) {
+        logger.error("Bulk deletion failed: {}", e.getMessage(), e);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+            .body(Map.of("error", "Bulk deletion failed: " + e.getMessage()));
     }
+}
 
 }
