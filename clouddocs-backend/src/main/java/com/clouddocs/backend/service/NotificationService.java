@@ -3,9 +3,6 @@ package com.clouddocs.backend.service;
 import com.clouddocs.backend.entity.*;
 import com.clouddocs.backend.repository.NotificationRepository;
 import com.clouddocs.backend.repository.UserNotificationSettingsRepository;
-import com.google.firebase.messaging.FirebaseMessaging;
-import com.google.firebase.messaging.Message;
-// ✅ NO MORE TWILIO IMPORTS
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,8 +13,6 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalTime;
-import java.util.HashMap;
-import java.util.Map;
 
 @Service
 public class NotificationService {
@@ -35,8 +30,6 @@ public class NotificationService {
     
     @Value("${app.email.from:noreply@clouddocs.com}")
     private String fromEmail;
-    
-    // ❌ REMOVED: Twilio phone number field
     
     @Value("${app.base-url:https://cloud-docs-tan.vercel.app/}")
     private String baseUrl;
@@ -90,9 +83,6 @@ public class NotificationService {
             return false;
         }
     }
-
-    // ❌ REMOVE: sendTestSms method - DELETE COMPLETELY
-    // public boolean sendTestSms(User user, String title, String message) { ... }
 
     // ✅ KEEP: All your workflow notification methods
     public void notifyTaskAssigned(User user, WorkflowTask task) {
@@ -231,7 +221,7 @@ public class NotificationService {
         logger.info("Overdue task notification sent to user: {}", user.getUsername());
     }
 
-    // ✅ UPDATED: Multi-channel notification sender WITHOUT SMS
+    // ✅ UPDATED: Multi-channel notification sender (EMAIL ONLY - No Firebase)
     @Async
     private void sendMultiChannelNotification(User user, Notification notification) {
         try {
@@ -244,7 +234,7 @@ public class NotificationService {
                 return;
             }
             
-            // ✅ KEEP: Email notifications
+            // ✅ KEEP: Email notifications only
             if (canSendEmail(user, settings)) {
                 boolean emailSent = sendEmailNotification(user, notification);
                 if (hasEnhancedFields(notification)) {
@@ -252,21 +242,7 @@ public class NotificationService {
                 }
             }
             
-            // ❌ REMOVED: SMS notifications
-            // if (canSendSms(user, settings)) {
-            //     boolean smsSent = sendSmsNotification(user, notification);
-            //     if (hasEnhancedFields(notification)) {
-            //         notification.setSentViaSms(smsSent);
-            //     }
-            // }
-            
-            // ✅ KEEP: Push notifications (if using Firebase)
-            if (canSendPush(user, settings)) {
-                boolean pushSent = sendPushNotification(user, notification);
-                if (hasEnhancedFields(notification)) {
-                    notification.setSentViaPush(pushSent);
-                }
-            }
+           
             
             notificationRepository.save(notification);
             
@@ -275,7 +251,7 @@ public class NotificationService {
         }
     }
 
-    // ✅ KEEP: Email notification method
+    // ✅ KEEP: Email notification method (unchanged)
     private boolean sendEmailNotification(User user, Notification notification) {
         if (mailSender == null || user.getEmail() == null || user.getEmail().isBlank()) {
             logger.debug("Skipping email notification - no mail sender or user email");
@@ -299,54 +275,9 @@ public class NotificationService {
         }
     }
 
-    // ❌ REMOVE: sendSmsNotification method - DELETE COMPLETELY
-    // private boolean sendSmsNotification(User user, Notification notification) {
-    //     // DELETE THIS ENTIRE METHOD
-    // }
+    
 
-    // ✅ KEEP: Push notification method (if using Firebase)
-    private boolean sendPushNotification(User user, Notification notification) {
-        UserNotificationSettings settings = getUserSettings(user);
-        if (settings == null || settings.getFcmToken() == null || settings.getFcmToken().isBlank()) {
-            logger.debug("Skipping push notification - no FCM token for user: {}", user.getUsername());
-            return false;
-        }
-        
-        try {
-            Map<String, String> data = new HashMap<>();
-            data.put("notificationId", notification.getId().toString());
-            
-            if (hasEnhancedFields(notification)) {
-                data.put("type", notification.getType().name());
-                if (notification.getWorkflowId() != null) {
-                    data.put("workflowId", notification.getWorkflowId().toString());
-                    data.put("clickAction", baseUrl + "/workflow/" + notification.getWorkflowId());
-                }
-            }
-
-            com.google.firebase.messaging.Notification fcmNotification = 
-                com.google.firebase.messaging.Notification.builder()
-                    .setTitle(notification.getTitle())
-                    .setBody(truncate(notification.getBody(), 100))
-                    .build();
-
-            Message message = Message.builder()
-                .setToken(settings.getFcmToken())
-                .setNotification(fcmNotification)
-                .putAllData(data)
-                .build();
-
-            String response = FirebaseMessaging.getInstance().send(message);
-            logger.info("✅ Push notification sent: {}", response);
-            return true;
-            
-        } catch (Exception e) {
-            logger.error("❌ Failed to send push notification to user: {}", user.getUsername(), e);
-            return false;
-        }
-    }
-
-    // ✅ UPDATED: Helper methods WITHOUT SMS support
+    // ✅ UPDATED: Helper methods (Firebase push removed)
     private UserNotificationSettings getUserSettings(User user) {
         if (settingsRepository == null) return null;
         return settingsRepository.findByUser(user).orElse(null);
@@ -360,17 +291,7 @@ public class NotificationService {
         return settings.getEmailEnabled() != null ? settings.getEmailEnabled() : true;
     }
     
-    // ❌ REMOVE: canSendSms method - DELETE COMPLETELY
-    // private boolean canSendSms(User user, UserNotificationSettings settings) {
-    //     // DELETE THIS METHOD
-    // }
-    
-    private boolean canSendPush(User user, UserNotificationSettings settings) {
-        if (settings == null || settings.getFcmToken() == null || settings.getFcmToken().isBlank()) {
-            return false;
-        }
-        return settings.getPushEnabled() != null ? settings.getPushEnabled() : true;
-    }
+   
     
     // ✅ KEEP: All your existing helper methods
     private boolean isQuietHours(UserNotificationSettings settings) {

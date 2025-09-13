@@ -117,12 +117,7 @@
     <artifactId>spring-boot-starter-mail</artifactId>
 </dependency>
 
-<!-- Push Notifications (Firebase Admin SDK) -->
-<dependency>
-    <groupId>com.google.firebase</groupId>
-    <artifactId>firebase-admin</artifactId>
-    <version>9.1.1</version>
-</dependency>
+
 
 <!-- Async processing support -->
 <dependency>
@@ -162,6 +157,12 @@
 <dependency>
     <groupId>com.fasterxml.jackson.core</groupId>
     <artifactId>jackson-databind</artifactId>
+</dependency>
+
+<dependency>
+    <groupId>jakarta.annotation</groupId>
+    <artifactId>jakarta.annotation-api</artifactId>
+    <version>2.1.1</version>
 </dependency>
 
 <dependency>
