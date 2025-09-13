@@ -21,7 +21,7 @@ class OCRService {
       formData.append('file', file);
 
       const response = await api.uploadFile<OCRResult>('/ocr/extract', formData, {
-        timeout: 45000, // Extended timeout for OCR processing
+        timeout: 180000, // Extended timeout for OCR processing
         onUploadProgress: (progressEvent) => {
           const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total!);
           console.log(`📤 OCR Upload Progress: ${progress}%`);
@@ -68,7 +68,7 @@ class OCRService {
       }
 
       const response = await api.uploadFile<DocumentWithOCR>('/ocr/upload', formData, {
-        timeout: 60000, // Extended timeout for OCR + AI processing
+        timeout: 240000, // Extended timeout for OCR + AI processing
         onUploadProgress: (progressEvent) => {
           const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total!);
           console.log(`📤 OCR Document Upload Progress: ${progress}%`);
