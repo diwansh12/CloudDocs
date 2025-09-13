@@ -117,13 +117,6 @@
     <artifactId>spring-boot-starter-mail</artifactId>
 </dependency>
 
-<!-- SMS Support (Twilio) -->
-<dependency>
-    <groupId>com.twilio.sdk</groupId>
-    <artifactId>twilio</artifactId>
-    <version>9.14.1</version>
-</dependency>
-
 <!-- Push Notifications (Firebase Admin SDK) -->
 <dependency>
     <groupId>com.google.firebase</groupId>
@@ -192,18 +185,6 @@
     <version>2.9.0</version>
 </dependency>
 
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-data-redis</artifactId>
-</dependency>
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-cache</artifactId>
-</dependency>
-<dependency>
-    <groupId>org.apache.commons</groupId>
-    <artifactId>commons-pool2</artifactId>
-</dependency>
 
 
 
