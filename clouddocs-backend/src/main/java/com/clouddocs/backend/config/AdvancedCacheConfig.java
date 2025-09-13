@@ -8,6 +8,7 @@ import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;  // ✅ ADD THIS IMPORT
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
 import org.springframework.data.redis.cache.RedisCacheManager;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
@@ -23,6 +24,7 @@ import java.util.Map;
 public class AdvancedCacheConfig {
     
     @Bean
+    @Primary  // ✅ ADD THIS ANNOTATION
     public CacheManager cacheManager(RedisConnectionFactory connectionFactory) {
         // ✅ FIXED: Use GenericJackson2JsonRedisSerializer to avoid deprecated methods
         ObjectMapper objectMapper = createObjectMapper();
@@ -38,32 +40,16 @@ public class AdvancedCacheConfig {
                 .fromSerializer(jsonSerializer))
             .disableCachingNullValues();
         
-        // Specific cache configurations with different TTL
+        // Portfolio-optimized cache configurations (shorter TTL for free tier)
         Map<String, RedisCacheConfiguration> cacheConfigurations = new HashMap<>();
         
-        // Documents cache - 2 hours (frequently accessed)
-        cacheConfigurations.put("documents", defaultConfig
-            .entryTtl(Duration.ofHours(2)));
-            
-        // User cache - 1 hour
-        cacheConfigurations.put("users", defaultConfig
-            .entryTtl(Duration.ofHours(1)));
-            
-        // Workflows cache - 15 minutes (changes frequently)
-        cacheConfigurations.put("workflows", defaultConfig
-            .entryTtl(Duration.ofMinutes(15)));
-            
-        // OCR results cache - 24 hours (expensive to recompute)
-        cacheConfigurations.put("ocr-results", defaultConfig
-            .entryTtl(Duration.ofHours(24)));
-            
-        // AI classifications cache - 7 days (rarely changes)
-        cacheConfigurations.put("ai-classifications", defaultConfig
-            .entryTtl(Duration.ofDays(7)));
-            
-        // Dashboard stats cache - 10 minutes
-        cacheConfigurations.put("dashboard-stats", defaultConfig
-            .entryTtl(Duration.ofMinutes(10)));
+        // Optimized for 30MB Redis limit
+        cacheConfigurations.put("documents", defaultConfig.entryTtl(Duration.ofMinutes(30)));
+        cacheConfigurations.put("users", defaultConfig.entryTtl(Duration.ofMinutes(15)));
+        cacheConfigurations.put("workflows", defaultConfig.entryTtl(Duration.ofMinutes(10)));
+        cacheConfigurations.put("ocr-results", defaultConfig.entryTtl(Duration.ofHours(2)));
+        cacheConfigurations.put("ai-classifications", defaultConfig.entryTtl(Duration.ofHours(6)));
+        cacheConfigurations.put("dashboard-stats", defaultConfig.entryTtl(Duration.ofMinutes(5)));
         
         return RedisCacheManager.builder(connectionFactory)
             .cacheDefaults(defaultConfig)
@@ -121,9 +107,7 @@ public class AdvancedCacheConfig {
         return new Jackson2JsonRedisSerializer<>(objectMapper, Object.class);
     }
     
-    /**
-     * ✅ NEW: Cache configuration for high-performance scenarios
-     */
+    // ✅ KEEP: Secondary cache manager (no @Primary annotation)
     @Bean("highPerformanceCacheManager")
     public CacheManager highPerformanceCacheManager(RedisConnectionFactory connectionFactory) {
         // Use faster but less type-safe serialization for high-performance scenarios
