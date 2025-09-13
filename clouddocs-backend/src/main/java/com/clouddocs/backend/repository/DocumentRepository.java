@@ -6,9 +6,11 @@ import com.clouddocs.backend.entity.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -16,6 +18,40 @@ import java.util.Optional;
 
 @Repository
 public interface DocumentRepository extends JpaRepository<Document, Long> {
+
+
+
+        /**
+     * ✅ FIX: Increment download count for a document
+     */
+    @Modifying
+    @Transactional
+    @Query("UPDATE Document d SET d.downloadCount = d.downloadCount + 1 WHERE d.id = :id")
+    void incrementDownloadCount(@Param("id") Long id);
+    
+    /**
+     * ✅ ADDITIONAL: Decrement download count (if needed)
+     */
+    @Modifying
+    @Transactional
+    @Query("UPDATE Document d SET d.downloadCount = d.downloadCount - 1 WHERE d.id = :id AND d.downloadCount > 0")
+    void decrementDownloadCount(@Param("id") Long id);
+    
+    /**
+     * ✅ ADDITIONAL: Reset download count
+     */
+    @Modifying
+    @Transactional
+    @Query("UPDATE Document d SET d.downloadCount = 0 WHERE d.id = :id")
+    void resetDownloadCount(@Param("id") Long id);
+    
+    /**
+     * ✅ ADDITIONAL: Batch increment download count
+     */
+    @Modifying
+    @Transactional
+    @Query("UPDATE Document d SET d.downloadCount = d.downloadCount + 1 WHERE d.id IN :ids")
+    void incrementDownloadCountBatch(@Param("ids") List<Long> ids);
 
     // ===== ✅ SOFT DELETE COUNT METHODS (REQUIRED FOR DASHBOARD) =====
     
