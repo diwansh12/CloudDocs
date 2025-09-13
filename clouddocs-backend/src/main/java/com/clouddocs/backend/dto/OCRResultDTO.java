@@ -1,10 +1,12 @@
 package com.clouddocs.backend.dto;
 
 import lombok.Data;
+import lombok.Builder;
 import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
 
 @Data
+@Builder 
 @AllArgsConstructor
 @NoArgsConstructor
 public class OCRResultDTO {
@@ -47,5 +49,10 @@ public class OCRResultDTO {
     // ✅ ADD: Get confidence as percentage string
     public String getConfidencePercentage() {
         return confidence != null ? String.format("%.1f%%", confidence * 100) : "N/A";
+    }
+    
+    // ✅ ADD: Utility method to get error message safely
+    public String getError() {
+        return errorMessage;
     }
 }
