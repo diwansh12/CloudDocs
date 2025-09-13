@@ -22,14 +22,13 @@ public class NotificationTestController {
     private UserRepository userRepository;
 
     /**
-     * ✅ FIXED: Test email notification using public method
+     * ✅ KEEP: Test email notification
      */
     @PostMapping("/email")
     public ResponseEntity<Map<String, String>> testEmail() {
         try {
             User currentUser = getCurrentUser();
             
-            // ✅ FIXED: Use public method instead of private one
             boolean emailSent = notificationService.sendTestEmail(
                 currentUser,
                 "🧪 Email Test",
@@ -59,78 +58,49 @@ public class NotificationTestController {
     }
 
     /**
-     * ✅ FIXED: Test SMS notification using public method
+     * ✅ UPDATED: SMS test disabled (Twilio removed for memory optimization)
      */
     @PostMapping("/sms")
     public ResponseEntity<Map<String, String>> testSms() {
-        try {
-            User currentUser = getCurrentUser();
-            
-            if (currentUser.getPhoneNumber() == null || currentUser.getPhoneNumber().isBlank()) {
-                return ResponseEntity.badRequest().body(Map.of(
-                    "error", "No phone number configured for user",
-                    "suggestion", "Add phone number to user profile to test SMS notifications"
-                ));
-            }
-
-            // ✅ FIXED: Use public method instead of private one
-            boolean smsSent = notificationService.sendTestSms(
-                currentUser,
-                "🧪 SMS Test",
-                "CloudDocs SMS test - your notifications are working!"
-            );
-
-            if (smsSent) {
-                return ResponseEntity.ok(Map.of(
-                    "message", "Test SMS sent successfully",
-                    "recipient", currentUser.getPhoneNumber(),
-                    "status", "✅ SMS delivered"
-                ));
-            } else {
-                return ResponseEntity.ok(Map.of(
-                    "message", "SMS test completed but may not have been sent",
-                    "recipient", currentUser.getPhoneNumber(),
-                    "status", "⚠️ Check SMS configuration",
-                    "suggestion", "Verify Twilio settings in application.properties"
-                ));
-            }
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body(Map.of(
-                "error", "Failed to send test SMS: " + e.getMessage(),
-                "suggestion", "Check Twilio configuration and phone number format"
-            ));
-        }
+        return ResponseEntity.ok(Map.of(
+            "message", "SMS notifications have been disabled",
+            "status", "ℹ️ Feature disabled",
+            "reason", "Twilio SMS removed for memory optimization on 512MB deployment",
+            "alternative", "Email notifications are available and fully functional",
+            "suggestion", "Use /test/email endpoint to test notifications"
+        ));
     }
 
     /**
-     * ✅ NEW: Test all notification channels at once
+     * ✅ UPDATED: Test available notification channels (email only)
      */
     @PostMapping("/all")
     public ResponseEntity<Map<String, Object>> testAllNotifications() {
         try {
             User currentUser = getCurrentUser();
             
-            // ✅ FIXED: Use public method for comprehensive testing
+            // Send test notification via available channels (email + in-app)
             notificationService.sendTestNotification(
                 currentUser,
                 "🧪 Multi-Channel Test",
                 "This is a comprehensive test of your CloudDocs notification system. " +
-                "You should receive this via in-app notification and any other enabled channels (email, SMS, push)."
+                "You should receive this via in-app notification and email (SMS disabled for memory optimization)."
             );
 
-            // Check user's notification capabilities
+            // Check user's notification capabilities (SMS disabled)
             Map<String, Object> capabilities = Map.of(
                 "email", currentUser.getEmail() != null && !currentUser.getEmail().isBlank(),
-                "sms", currentUser.getPhoneNumber() != null && !currentUser.getPhoneNumber().isBlank(),
+                "sms", false, // Always false - SMS disabled
                 "inApp", true,
                 "push", "Depends on FCM token setup"
             );
 
             return ResponseEntity.ok(Map.of(
-                "message", "Comprehensive notification test initiated",
+                "message", "Notification test initiated for available channels",
                 "user", currentUser.getUsername(),
                 "capabilities", capabilities,
-                "instructions", "Check your notifications panel, email, and phone for test messages"
+                "note", "SMS disabled for memory optimization - email notifications active",
+                "instructions", "Check your notifications panel and email for test messages"
             ));
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of(
@@ -141,7 +111,7 @@ public class NotificationTestController {
     }
 
     /**
-     * ✅ NEW: Get notification test status
+     * ✅ UPDATED: Get notification test status (SMS disabled)
      */
     @GetMapping("/status")
     public ResponseEntity<Map<String, Object>> getNotificationTestStatus() {
@@ -152,17 +122,24 @@ public class NotificationTestController {
                 "user", currentUser.getUsername(),
                 "email", Map.of(
                     "configured", currentUser.getEmail() != null && !currentUser.getEmail().isBlank(),
-                    "address", currentUser.getEmail() != null ? currentUser.getEmail() : "Not configured"
+                    "address", currentUser.getEmail() != null ? currentUser.getEmail() : "Not configured",
+                    "status", "Available"
                 ),
                 "sms", Map.of(
-                    "configured", currentUser.getPhoneNumber() != null && !currentUser.getPhoneNumber().isBlank(),
-                    "number", currentUser.getPhoneNumber() != null ? currentUser.getPhoneNumber() : "Not configured"
+                    "configured", false,
+                    "number", "SMS disabled for memory optimization",
+                    "status", "Disabled"
                 ),
                 "services", Map.of(
                     "notificationService", "Available",
-                    "emailService", "Check SMTP configuration",
-                    "smsService", "Check Twilio configuration",
-                    "pushService", "Check Firebase configuration"
+                    "emailService", "Available - check SMTP configuration",
+                    "smsService", "Disabled - Twilio removed for memory optimization",
+                    "pushService", "Available - check Firebase configuration"
+                ),
+                "optimization", Map.of(
+                    "reason", "Memory optimization for 512MB deployment limit",
+                    "memorySaved", "~40-60MB by removing Twilio SMS functionality",
+                    "alternativeChannels", "Email and push notifications available"
                 )
             );
 
@@ -172,6 +149,34 @@ public class NotificationTestController {
                 "error", "Failed to get notification status: " + e.getMessage()
             ));
         }
+    }
+
+    /**
+     * ✅ NEW: Get memory optimization info
+     */
+    @GetMapping("/optimization-info")
+    public ResponseEntity<Map<String, Object>> getOptimizationInfo() {
+        Map<String, Object> info = Map.of(
+            "memoryOptimization", Map.of(
+                "targetLimit", "512MB (Render free tier)",
+                "removedFeatures", "Twilio SMS notifications",
+                "memorySaved", "~40-60MB",
+                "remainingFeatures", "Email notifications, Push notifications, In-app notifications"
+            ),
+            "availableTestEndpoints", Map.of(
+                "GET /test/status", "Check notification configuration status",
+                "POST /test/email", "Test email notifications",
+                "POST /test/all", "Test all available notification channels",
+                "POST /test/sms", "Returns SMS disabled message"
+            ),
+            "recommendations", Map.of(
+                "primaryChannel", "Email notifications (fully functional)",
+                "testing", "Use /test/email for notification testing",
+                "production", "Consider upgrading deployment tier for SMS if needed"
+            )
+        );
+
+        return ResponseEntity.ok(info);
     }
 
     private User getCurrentUser() {
