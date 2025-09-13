@@ -24,8 +24,7 @@ import java.util.List;
 @RequestMapping("/ocr")
 @CrossOrigin(origins = {
     "https://cloud-docs-tan.vercel.app", 
-    "http://localhost:3000",
-    "http://localhost:3001"
+    "http://localhost:3000"
 }, allowCredentials = "true")
 public class OCRController {
 
