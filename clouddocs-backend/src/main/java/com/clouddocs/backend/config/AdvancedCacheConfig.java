@@ -3,12 +3,14 @@ package com.clouddocs.backend.config;
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Primary;  // ✅ ADD THIS IMPORT
+import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
 import org.springframework.data.redis.cache.RedisCacheManager;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
@@ -24,10 +26,10 @@ import java.util.Map;
 public class AdvancedCacheConfig {
     
     @Bean
-    @Primary  // ✅ ADD THIS ANNOTATION
+    @Primary
     public CacheManager cacheManager(RedisConnectionFactory connectionFactory) {
-        // ✅ FIXED: Use GenericJackson2JsonRedisSerializer to avoid deprecated methods
-        ObjectMapper objectMapper = createObjectMapper();
+        // ✅ FIXED: Create ObjectMapper with Java 8 time support
+        ObjectMapper objectMapper = createObjectMapperWithJavaTimeSupport();
         GenericJackson2JsonRedisSerializer jsonSerializer = new GenericJackson2JsonRedisSerializer(objectMapper);
         
         // Default cache configuration
@@ -40,10 +42,8 @@ public class AdvancedCacheConfig {
                 .fromSerializer(jsonSerializer))
             .disableCachingNullValues();
         
-        // Portfolio-optimized cache configurations (shorter TTL for free tier)
+        // Portfolio-optimized cache configurations
         Map<String, RedisCacheConfiguration> cacheConfigurations = new HashMap<>();
-        
-        // Optimized for 30MB Redis limit
         cacheConfigurations.put("documents", defaultConfig.entryTtl(Duration.ofMinutes(30)));
         cacheConfigurations.put("users", defaultConfig.entryTtl(Duration.ofMinutes(15)));
         cacheConfigurations.put("workflows", defaultConfig.entryTtl(Duration.ofMinutes(10)));
@@ -62,11 +62,10 @@ public class AdvancedCacheConfig {
         RedisTemplate<String, Object> template = new RedisTemplate<>();
         template.setConnectionFactory(connectionFactory);
         
-        // ✅ FIXED: Use GenericJackson2JsonRedisSerializer with proper ObjectMapper configuration
-        ObjectMapper objectMapper = createObjectMapper();
+        // ✅ FIXED: Use ObjectMapper with Java 8 time support
+        ObjectMapper objectMapper = createObjectMapperWithJavaTimeSupport();
         GenericJackson2JsonRedisSerializer jsonSerializer = new GenericJackson2JsonRedisSerializer(objectMapper);
         
-        // String serialization for keys
         StringRedisSerializer stringRedisSerializer = new StringRedisSerializer();
         
         template.setKeySerializer(stringRedisSerializer);
@@ -80,48 +79,26 @@ public class AdvancedCacheConfig {
     }
     
     /**
-     * ✅ FIXED: Create properly configured ObjectMapper without deprecated methods
+     * ✅ FIXED: Create ObjectMapper with proper Java 8 date/time support
      */
-    private ObjectMapper createObjectMapper() {
+    private ObjectMapper createObjectMapperWithJavaTimeSupport() {
         ObjectMapper objectMapper = new ObjectMapper();
+        
+        // ✅ Register JavaTimeModule for Java 8 date/time support
+        objectMapper.registerModule(new JavaTimeModule());
+        
+        // ✅ Disable writing dates as timestamps
+        objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         
         // Configure visibility
         objectMapper.setVisibility(PropertyAccessor.ALL, JsonAutoDetect.Visibility.ANY);
         
-        // ✅ FIXED: Use LaissezFaireSubTypeValidator instead of deprecated activateDefaultTyping
+        // Use LaissezFaireSubTypeValidator for type safety
         objectMapper.activateDefaultTyping(
             LaissezFaireSubTypeValidator.instance, 
             ObjectMapper.DefaultTyping.NON_FINAL
         );
         
         return objectMapper;
-    }
-    
-    /**
-     * ✅ NEW: Alternative configuration method using Jackson2JsonRedisSerializer with constructor
-     */
-    private Jackson2JsonRedisSerializer<Object> createJackson2JsonRedisSerializer() {
-        ObjectMapper objectMapper = createObjectMapper();
-        
-        // ✅ FIXED: Use constructor instead of deprecated setObjectMapper
-        return new Jackson2JsonRedisSerializer<>(objectMapper, Object.class);
-    }
-    
-    // ✅ KEEP: Secondary cache manager (no @Primary annotation)
-    @Bean("highPerformanceCacheManager")
-    public CacheManager highPerformanceCacheManager(RedisConnectionFactory connectionFactory) {
-        // Use faster but less type-safe serialization for high-performance scenarios
-        RedisCacheConfiguration config = RedisCacheConfiguration.defaultCacheConfig()
-            .entryTtl(Duration.ofMinutes(15))
-            .computePrefixWith(cacheName -> "clouddocs:hp:" + cacheName + ":")
-            .serializeKeysWith(RedisSerializationContext.SerializationPair
-                .fromSerializer(new StringRedisSerializer()))
-            .serializeValuesWith(RedisSerializationContext.SerializationPair
-                .fromSerializer(new GenericJackson2JsonRedisSerializer()))
-            .disableCachingNullValues();
-        
-        return RedisCacheManager.builder(connectionFactory)
-            .cacheDefaults(config)
-            .build();
     }
 }
