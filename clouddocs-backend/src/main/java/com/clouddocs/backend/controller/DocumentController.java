@@ -2,6 +2,7 @@ package com.clouddocs.backend.controller;
 
 import com.clouddocs.backend.dto.DocumentDTO;
 import com.clouddocs.backend.dto.DocumentUploadRequest;
+import com.clouddocs.backend.dto.PageResponse;
 import com.clouddocs.backend.entity.DocumentStatus;
 import com.clouddocs.backend.service.DocumentService;
 
@@ -9,7 +10,6 @@ import jakarta.persistence.EntityNotFoundException;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpHeaders;
@@ -84,7 +84,7 @@ public class DocumentController {
             @RequestParam(required = false) String category) {
         
         try {
-            Page<DocumentDTO> documents = documentService.getAllDocuments(
+            PageResponse<DocumentDTO> documents = documentService.getAllDocuments(
                 page, size, sortBy, sortDir, search, status, category);
             
             Map<String, Object> response = new HashMap<>();
@@ -115,7 +115,7 @@ public class DocumentController {
             @RequestParam(defaultValue = "desc") String sortDir) {
         
         try {
-            Page<DocumentDTO> documents = documentService.getMyDocuments(page, size, sortBy, sortDir);
+            PageResponse<DocumentDTO> documents = documentService.getMyDocuments(page, size, sortBy, sortDir);
             
             Map<String, Object> response = new HashMap<>();
             response.put("documents", documents.getContent());
@@ -300,11 +300,11 @@ public ResponseEntity<?> getDocumentsByOCRStatus(@RequestParam boolean hasOCR) {
 }
 
 /**
- * ✅ NEW: Get documents with OCR information
+ * ✅ FIXED: Get documents with OCR information
  */
 @GetMapping("/with-ocr")
 @PreAuthorize("isAuthenticated()")
-public ResponseEntity<?> getDocumentsWithOCR(
+public ResponseEntity<Map<String, Object>> getDocumentsWithOCR(
         @RequestParam(defaultValue = "0") int page,
         @RequestParam(defaultValue = "20") int size,
         @RequestParam(defaultValue = "uploadDate") String sortBy,
@@ -314,7 +314,8 @@ public ResponseEntity<?> getDocumentsWithOCR(
         logger.info("📄 Requesting documents with OCR info - page: {}, size: {}", page, size);
         
         try {
-            Page<DocumentDTO> documentsWithOCR = documentService.getDocumentsWithOCR(page, size, sortBy, sortDir);
+            // ✅ FIXED: Changed from Page<DocumentDTO> to PageResponse<DocumentDTO>
+            PageResponse<DocumentDTO> documentsWithOCR = documentService.getDocumentsWithOCR(page, size, sortBy, sortDir);
             
             Map<String, Object> response = new HashMap<>();
             response.put("documents", documentsWithOCR.getContent());
@@ -517,20 +518,39 @@ public ResponseEntity<?> getDocumentsWithOCR(
         }
     }
     
-    /**
-     * ✅ NEW: Get deleted documents (trash)
-     */
-    @GetMapping("/trash")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
-    public ResponseEntity<Page<DocumentDTO>> getDeletedDocuments(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        
+   /**
+ * ✅ FIXED: Get deleted documents (trash) - Updated method signature and implementation
+ */
+@GetMapping("/trash")
+@PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+public ResponseEntity<Map<String, Object>> getDeletedDocuments(
+        @RequestParam(defaultValue = "0") int page,
+        @RequestParam(defaultValue = "20") int size) {
+    
+    try {
         Pageable pageable = PageRequest.of(page, size, Sort.by("deletedAt").descending());
-        Page<DocumentDTO> deletedDocs = documentService.getDeletedDocuments(pageable);
+        PageResponse<DocumentDTO> deletedDocs = documentService.getDeletedDocuments(pageable);
         
-        return ResponseEntity.ok(deletedDocs);
+        // ✅ FIXED: Return consistent Map format like other endpoints
+        Map<String, Object> response = new HashMap<>();
+        response.put("documents", deletedDocs.getContent());
+        response.put("currentPage", deletedDocs.getNumber());
+        response.put("totalItems", deletedDocs.getTotalElements());
+        response.put("totalPages", deletedDocs.getTotalPages());
+        response.put("hasNext", deletedDocs.hasNext());
+        response.put("hasPrevious", deletedDocs.hasPrevious());
+        
+        return ResponseEntity.ok(response);
+        
+    } catch (Exception e) {
+        logger.error("❌ Failed to fetch deleted documents: {}", e.getMessage());
+        
+        Map<String, Object> error = new HashMap<>();
+        error.put("error", "Failed to fetch deleted documents: " + e.getMessage());
+        return ResponseEntity.status(500).body(error);
     }
+}
+
 
     /**
      * Update document (legacy endpoint - redirects to metadata update)
@@ -567,7 +587,7 @@ public ResponseEntity<?> getDocumentsWithOCR(
             @RequestParam(defaultValue = "3") int size) {  // ✅ Use size=3 as expected by frontend
         
         try {
-            Page<DocumentDTO> documents = documentService.getPendingDocuments(page, size);
+            PageResponse<DocumentDTO> documents = documentService.getPendingDocuments(page, size);
             
             Map<String, Object> response = new HashMap<>();
             response.put("documents", documents.getContent());

@@ -4,6 +4,7 @@ import com.clouddocs.backend.dto.DocumentDTO;
 import com.clouddocs.backend.dto.DocumentUploadRequest;
 import com.clouddocs.backend.dto.DocumentWithOCRDTO;
 import com.clouddocs.backend.dto.OCRResultDTO;
+import com.clouddocs.backend.dto.PageResponse;
 import com.clouddocs.backend.entity.Document;
 import com.clouddocs.backend.entity.DocumentStatus;
 import com.clouddocs.backend.entity.DocumentShareLink;
@@ -111,76 +112,75 @@ public class DocumentService {
         }
     }
     
-    /**
-     * ✅ HEAVILY CACHED: Get all documents with smart caching
-     */
-    @Cacheable(
-        value = "documents", 
-        key = "'all:page:' + #page + ':size:' + #size + ':sort:' + #sortBy + ':dir:' + #sortDir + ':search:' + (#search != null ? #search : 'none') + ':status:' + (#status != null ? #status.toString() : 'none') + ':category:' + (#category != null ? #category : 'none')",
-        unless = "#result == null || #result.isEmpty()"
-    )
-    @Transactional(readOnly = true)
-    public Page<DocumentDTO> getAllDocuments(int page, int size, String sortBy, String sortDir, 
-                                           String search, DocumentStatus status, String category) {
-        try {
-            log.info("🔍 Getting all documents - page: {}, size: {}, search: {}", page, size, search);
-            
-            Sort sort = sortDir.equalsIgnoreCase("desc") ? 
-                       Sort.by(sortBy).descending() : Sort.by(sortBy).ascending();
-            Pageable pageable = PageRequest.of(page, size, sort);
-            
-            Page<Document> documents;
-            
-            if (search != null && !search.trim().isEmpty()) {
-                documents = documentRepository.searchDocumentsWithTags(search, pageable);
-            } else if (status != null || category != null) {
-                documents = documentRepository.findWithFilters(search, status, category, null, null, pageable);
-            } else {
-                documents = documentRepository.findAllWithTagsAndUsers(pageable);
-            }
-            
-            Page<DocumentDTO> result = documents.map(this::convertToDTO);
-            log.info("✅ Retrieved {} documents (cached)", result.getTotalElements());
-            
-            return result;
-            
-        } catch (Exception e) {
-            log.error("❌ Error in getAllDocuments: {}", e.getMessage(), e);
-            return Page.empty(PageRequest.of(page, size));
+   @Cacheable(
+    value = "documents", 
+    key = "'all:page:' + #page + ':size:' + #size + ':sort:' + #sortBy + ':dir:' + #sortDir + ':search:' + (#search != null ? #search : 'none') + ':status:' + (#status != null ? #status.toString() : 'none') + ':category:' + (#category != null ? #category : 'none')",
+    unless = "#result == null"
+)
+@Transactional(readOnly = true)
+public PageResponse<DocumentDTO> getAllDocuments(int page, int size, String sortBy, String sortDir, 
+                                               String search, DocumentStatus status, String category) {
+    try {
+        log.info("🔍 Getting all documents - page: {}, size: {}, search: {}", page, size, search);
+        
+        Sort sort = sortDir.equalsIgnoreCase("desc") ? 
+                   Sort.by(sortBy).descending() : Sort.by(sortBy).ascending();
+        Pageable pageable = PageRequest.of(page, size, sort);
+        
+        Page<Document> documents;
+        
+        if (search != null && !search.trim().isEmpty()) {
+            documents = documentRepository.searchDocumentsWithTags(search, pageable);
+        } else if (status != null || category != null) {
+            documents = documentRepository.findWithFilters(search, status, category, null, null, pageable);
+        } else {
+            documents = documentRepository.findAllWithTagsAndUsers(pageable);
         }
+        
+        Page<DocumentDTO> dtoPage = documents.map(this::convertToDTO);
+        PageResponse<DocumentDTO> result = PageResponse.from(dtoPage);
+        
+        log.info("✅ Retrieved {} documents (cached)", result.getTotalElements());
+        return result;
+        
+    } catch (Exception e) {
+        log.error("❌ Error in getAllDocuments: {}", e.getMessage(), e);
+        return new PageResponse<>(List.of(), 0, 0, size, page, true, true, 0);
     }
+}
+
 
     /**
      * ✅ CACHED: Get user's documents with smart key generation
      */
-    @Cacheable(
-        value = "documents",
-        key = "'user:' + T(org.springframework.security.core.context.SecurityContextHolder).getContext().getAuthentication().getName() + ':page:' + #page + ':size:' + #size + ':sort:' + #sortBy + ':dir:' + #sortDir",
-        unless = "#result == null || #result.isEmpty()"
-    )
-    @Transactional(readOnly = true)
-    public Page<DocumentDTO> getMyDocuments(int page, int size, String sortBy, String sortDir) {
-        try {
-            User currentUser = getCurrentUser();
-            log.info("🔍 Getting documents for user: {} - page: {}, size: {}", currentUser.getUsername(), page, size);
-            
-            Sort sort = sortDir.equalsIgnoreCase("desc") ? 
-                       Sort.by(sortBy).descending() : 
-                       Sort.by(sortBy).ascending();
-            Pageable pageable = PageRequest.of(page, size, sort);
-            
-            Page<Document> documents = documentRepository.findByUploadedByIdWithTagsAndUsers(currentUser.getId(), pageable);
-            Page<DocumentDTO> result = documents.map(this::convertToDTO);
-            
-            log.info("✅ Retrieved {} user documents (cached)", result.getTotalElements());
-            return result;
-            
-        } catch (Exception e) {
-            log.error("❌ Error getting user documents: {}", e.getMessage(), e);
-            User currentUser = getCurrentUser();
-            return Page.empty(PageRequest.of(page, size));
-        }
+   @Cacheable(
+    value = "documents",
+    key = "'user:' + T(org.springframework.security.core.context.SecurityContextHolder).getContext().getAuthentication().getName() + ':page:' + #page + ':size:' + #size + ':sort:' + #sortBy + ':dir:' + #sortDir",
+    unless = "#result == null"
+)
+@Transactional(readOnly = true)
+public PageResponse<DocumentDTO> getMyDocuments(int page, int size, String sortBy, String sortDir) {
+    try {
+        User currentUser = getCurrentUser();
+        log.info("🔍 Getting documents for user: {} - page: {}, size: {}", currentUser.getUsername(), page, size);
+        
+        Sort sort = sortDir.equalsIgnoreCase("desc") ? 
+                   Sort.by(sortBy).descending() : 
+                   Sort.by(sortBy).ascending();
+        Pageable pageable = PageRequest.of(page, size, sort);
+        
+        Page<Document> documents = documentRepository.findByUploadedByIdWithTagsAndUsers(currentUser.getId(), pageable);
+        Page<DocumentDTO> dtoPage = documents.map(this::convertToDTO);
+        PageResponse<DocumentDTO> result = PageResponse.from(dtoPage);
+        
+        log.info("✅ Retrieved {} user documents (cached)", result.getTotalElements());
+        return result;
+        
+    } catch (Exception e) {
+        log.error("❌ Error getting user documents: {}", e.getMessage(), e);
+        return new PageResponse<>(List.of(), 0, 0, size, page, true, true, 0);
     }
+}
     
     /**
      * ✅ HEAVILY CACHED: Get document by ID with long TTL
@@ -382,30 +382,32 @@ public class DocumentService {
         }
     }
     
-    /**
-     * ✅ CACHED: Get deleted documents
-     */
-    @Cacheable(
-        value = "deleted-documents",
-        key = "'page:' + #pageable.pageNumber + ':size:' + #pageable.pageSize",
-        unless = "#result == null || #result.isEmpty()"
-    )
-    @Transactional(readOnly = true)
-    public Page<DocumentDTO> getDeletedDocuments(Pageable pageable) {
-        try {
-            log.info("🗑️ Getting deleted documents - page: {}", pageable.getPageNumber());
-            
-            Page<Document> deletedDocs = documentRepository.findDeletedDocuments(pageable);
-            Page<DocumentDTO> result = deletedDocs.map(this::convertToDTO);
-            
-            log.info("✅ Retrieved {} deleted documents (cached)", result.getTotalElements());
-            return result;
-            
-        } catch (Exception e) {
-            log.error("❌ Failed to fetch deleted documents: {}", e.getMessage(), e);
-            return Page.empty(pageable);
-        }
+   /**
+ * ✅ FIXED: Get deleted documents - Updated to return PageResponse
+ */
+@Cacheable(
+    value = "deleted-documents",
+    key = "'page:' + #pageable.pageNumber + ':size:' + #pageable.pageSize",
+    unless = "#result == null"
+)
+@Transactional(readOnly = true)
+public PageResponse<DocumentDTO> getDeletedDocuments(Pageable pageable) {
+    try {
+        log.info("🗑️ Getting deleted documents - page: {}", pageable.getPageNumber());
+        
+        Page<Document> deletedDocs = documentRepository.findDeletedDocuments(pageable);
+        Page<DocumentDTO> dtoPage = deletedDocs.map(this::convertToDTO);
+        PageResponse<DocumentDTO> result = PageResponse.from(dtoPage);
+        
+        log.info("✅ Retrieved {} deleted documents (cached)", result.getTotalElements());
+        return result;
+        
+    } catch (Exception e) {
+        log.error("❌ Failed to fetch deleted documents: {}", e.getMessage(), e);
+        return new PageResponse<>(List.of(), 0, 0, pageable.getPageSize(), pageable.getPageNumber(), true, true, 0);
     }
+}
+
     
     /**
      * ✅ COMPREHENSIVE CACHE EVICTION: Permanent deletion
@@ -612,34 +614,36 @@ public class DocumentService {
         }
     }
 
-    /**
-     * ✅ CACHED: Documents with OCR (paginated)
-     */
-    @Cacheable(
-        value = "documents-with-ocr",
-        key = "'page:' + #page + ':size:' + #size + ':sort:' + #sortBy + ':dir:' + #sortDir",
-        unless = "#result == null || #result.isEmpty()"
-    )
-    @Transactional(readOnly = true)
-    public Page<DocumentDTO> getDocumentsWithOCR(int page, int size, String sortBy, String sortDir) {
-        try {
-            log.info("📄 Requesting documents with OCR info - page: {}, size: {} (checking cache)", page, size);
-            
-            Sort sort = sortDir.equalsIgnoreCase("desc") ? 
-                       Sort.by(sortBy).descending() : Sort.by(sortBy).ascending();
-            Pageable pageable = PageRequest.of(page, size, sort);
-            
-            Page<Document> documentsWithOCR = documentRepository.findByHasOcrTrue(pageable);
-            Page<DocumentDTO> result = documentsWithOCR.map(this::convertToDTO);
-            
-            log.info("✅ Found {} documents with OCR info (cached)", result.getTotalElements());
-            return result;
-            
-        } catch (Exception e) {
-            log.error("❌ Failed to fetch documents with OCR: {}", e.getMessage(), e);
-            return getAllDocuments(page, size, sortBy, sortDir, null, null, null);
-        }
+   /**
+ * ✅ FIXED: Documents with OCR (paginated) - Updated to return PageResponse
+ */
+@Cacheable(
+    value = "documents-with-ocr",
+    key = "'page:' + #page + ':size:' + #size + ':sort:' + #sortBy + ':dir:' + #sortDir",
+    unless = "#result == null"
+)
+@Transactional(readOnly = true)
+public PageResponse<DocumentDTO> getDocumentsWithOCR(int page, int size, String sortBy, String sortDir) {
+    try {
+        log.info("📄 Requesting documents with OCR info - page: {}, size: {} (checking cache)", page, size);
+        
+        Sort sort = sortDir.equalsIgnoreCase("desc") ? 
+                   Sort.by(sortBy).descending() : Sort.by(sortBy).ascending();
+        Pageable pageable = PageRequest.of(page, size, sort);
+        
+        Page<Document> documentsWithOCR = documentRepository.findByHasOcrTrue(pageable);
+        Page<DocumentDTO> dtoPage = documentsWithOCR.map(this::convertToDTO);
+        PageResponse<DocumentDTO> result = PageResponse.from(dtoPage);
+        
+        log.info("✅ Found {} documents with OCR info (cached)", result.getTotalElements());
+        return result;
+        
+    } catch (Exception e) {
+        log.error("❌ Failed to fetch documents with OCR: {}", e.getMessage(), e);
+        return new PageResponse<>(List.of(), 0, 0, size, page, true, true, 0);
     }
+}
+
     
     // ===== CACHED UTILITY AND STATISTICS METHODS =====
     
@@ -701,29 +705,29 @@ public class DocumentService {
     /**
      * ✅ CACHED: Pending documents with short TTL
      */
-    @Cacheable(
-        value = "pending-documents",
-        key = "'page:' + #page + ':size:' + #size",
-        unless = "#result == null || #result.isEmpty()"
-    )
-    @Transactional(readOnly = true)
-    public Page<DocumentDTO> getPendingDocuments(int page, int size) {
-        try {
-            log.info("⏳ Getting pending documents - page: {}, size: {} (checking cache)", page, size);
-            
-            Pageable pageable = PageRequest.of(page, size, Sort.by("uploadDate").ascending());
-            Page<Document> documents = documentRepository.findPendingDocuments(pageable);
-            Page<DocumentDTO> result = documents.map(this::convertToDTO);
-            
-            log.info("✅ Found {} pending documents (cached)", result.getTotalElements());
-            return result;
-            
-        } catch (Exception e) {
-            log.error("❌ Failed to get pending documents: {}", e.getMessage(), e);
-            return Page.empty(PageRequest.of(page, size));
-        }
+   @Cacheable(
+    value = "pending-documents",
+    key = "'page:' + #page + ':size:' + #size",
+    unless = "#result == null"
+)
+@Transactional(readOnly = true)
+public PageResponse<DocumentDTO> getPendingDocuments(int page, int size) {
+    try {
+        log.info("⏳ Getting pending documents - page: {}, size: {} (checking cache)", page, size);
+        
+        Pageable pageable = PageRequest.of(page, size, Sort.by("uploadDate").ascending());
+        Page<Document> documents = documentRepository.findPendingDocuments(pageable);
+        Page<DocumentDTO> dtoPage = documents.map(this::convertToDTO);
+        PageResponse<DocumentDTO> result = PageResponse.from(dtoPage);
+        
+        log.info("✅ Found {} pending documents (cached)", result.getTotalElements());
+        return result;
+        
+    } catch (Exception e) {
+        log.error("❌ Failed to get pending documents: {}", e.getMessage(), e);
+        return new PageResponse<>(List.of(), 0, 0, size, page, true, true, 0);
     }
-
+}
     /**
      * ✅ CACHED: Categories and tags
      */

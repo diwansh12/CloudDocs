@@ -5,7 +5,6 @@ import com.clouddocs.backend.service.AISearchService;
 import com.clouddocs.backend.service.FeatureFlagService;
 import com.clouddocs.backend.dto.DocumentDTO;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Page;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -13,6 +12,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
+import com.clouddocs.backend.dto.PageResponse;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -204,7 +204,7 @@ public class SearchController {
     private List<DocumentDTO> performEnhancedRegularSearch(String query, String username, int limit) {
         try {
             List<DocumentDTO> documents = new ArrayList<>();
-            Page<DocumentDTO> searchResults = null;
+            PageResponse<DocumentDTO> searchResults = null;
             
             logger.debug("🔍 Performing enhanced regular search for: '{}'", query);
             
