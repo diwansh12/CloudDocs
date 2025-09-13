@@ -1,9 +1,11 @@
 package com.clouddocs.backend.dto;
 
 import com.clouddocs.backend.entity.DocumentStatus;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties; 
 import java.time.LocalDateTime;
 import java.util.List;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class DocumentDTO {
     private Long id;
     private String filename;
