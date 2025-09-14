@@ -8,7 +8,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 
 @Configuration
@@ -135,7 +134,7 @@ public class DataInitializer {
         step1.setApprovalPolicy(ApprovalPolicy.QUORUM);
         step1.setRequiredApprovals(1);
         step1.setSlaHours(24);
-        step1.setAssignedApprovers(List.of(approver));
+        step1.setAssignedApprovers(Set.of(approver));
         step1 = stepRepository.save(step1);
         
         // ✅ FIXED: Use Role entity from database instead of enum
@@ -151,7 +150,7 @@ public class DataInitializer {
         step2.setApprovalPolicy(ApprovalPolicy.ALL);
         step2.setRequiredApprovals(1);
         step2.setSlaHours(24);
-        step2.setAssignedApprovers(List.of(approver));
+        step2.setAssignedApprovers(Set.of(approver));
         step2 = stepRepository.save(step2);
         
         // ✅ FIXED: Use Role entity from database instead of enum

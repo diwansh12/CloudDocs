@@ -24,7 +24,7 @@ public class AuditLog {
     private Long id;
 
     /** Human-readable action (e.g. “Document Uploaded”). */
-    @Column(nullable = false, length = 120)
+    @Column(nullable = false, length = 255)
     private String activity;
 
     /** Optional object the action relates to (“Project-Plan.pdf”). */
@@ -32,7 +32,7 @@ public class AuditLog {
     private String linkedItem;
 
     /** Username or full-name of the actor. */
-@Column(name = "user_name", nullable = false, length = 120)
+@Column(name = "user_name", nullable = false, length = 255)
 private String user;
 
     /** When the action happened. */

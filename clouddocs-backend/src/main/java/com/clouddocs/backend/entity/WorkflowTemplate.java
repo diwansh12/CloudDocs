@@ -3,9 +3,10 @@ package com.clouddocs.backend.entity;
 import jakarta.persistence.*;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.time.LocalDateTime;
-import java.util.List;
+import java.util.Set;
 import java.util.UUID;
-import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 
 @Entity
 @Table(name = "workflow_templates")
@@ -30,7 +31,7 @@ public class WorkflowTemplate {
     @Column(name = "default_sla_hours")
     private Integer defaultSlaHours;
 
-    // ✅ ADD: Missing audit fields
+    // ✅ AUDIT FIELDS
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by")
     private User createdBy;
@@ -41,14 +42,15 @@ public class WorkflowTemplate {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
     
-    // ✅ CRITICAL: Add @JsonIgnore to prevent serialization issues
-   @OneToMany(mappedBy = "template", cascade = {CascadeType.PERSIST, CascadeType.MERGE}, fetch = FetchType.LAZY)
-
-    @OrderBy("stepOrder ASC")
-    @JsonIgnore  // ✅ Prevents Jackson from trying to serialize lazy collection
-    private List<WorkflowStep> steps;
+    // ✅ FIXED: Changed List to LinkedHashSet to avoid MultipleBagFetchException
+    // LinkedHashSet maintains insertion order like a List
+    @OneToMany(mappedBy = "template", cascade = {CascadeType.PERSIST, CascadeType.MERGE}, fetch = FetchType.LAZY)
+    @OrderBy("stepOrder ASC") // ✅ Ensures consistent ordering
+    @JsonIgnore // ✅ Prevents Jackson serialization issues
+    private Set<WorkflowStep> steps = new LinkedHashSet<>();
     
-    // Constructors
+    // ===== CONSTRUCTORS =====
+    
     public WorkflowTemplate() {
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
@@ -61,15 +63,17 @@ public class WorkflowTemplate {
         this.type = type;
     }
     
-    // ✅ Add safe accessor method
-    public List<WorkflowStep> getStepsSafe() {
+    // ✅ ENHANCED: Safe accessor method for steps
+    public Set<WorkflowStep> getStepsSafe() {
         try {
-            return steps != null ? steps : new ArrayList<>();
+            return steps != null ? steps : new LinkedHashSet<>();
         } catch (Exception e) {
-            return new ArrayList<>();
+            return new LinkedHashSet<>();
         }
     }
 
+    // ===== JPA LIFECYCLE METHODS =====
+    
     @PrePersist
     protected void onCreate() {
         if (createdAt == null) {
@@ -83,7 +87,8 @@ public class WorkflowTemplate {
         updatedAt = LocalDateTime.now();
     }
     
-    // All existing getters and setters...
+    // ===== GETTERS AND SETTERS =====
+    
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     
@@ -99,13 +104,14 @@ public class WorkflowTemplate {
     public WorkflowType getType() { return type; }
     public void setType(WorkflowType type) { this.type = type; }
     
-    public List<WorkflowStep> getSteps() { return steps; }
-    public void setSteps(List<WorkflowStep> steps) { this.steps = steps; }
+    // ✅ UPDATED: Changed return type from List to Set
+    public Set<WorkflowStep> getSteps() { return steps; }
+    public void setSteps(Set<WorkflowStep> steps) { this.steps = steps; }
     
     public Integer getDefaultSlaHours() { return defaultSlaHours; }
     public void setDefaultSlaHours(Integer defaultSlaHours) { this.defaultSlaHours = defaultSlaHours; }
 
-    // ✅ ADD: Missing getters and setters for audit fields
+    // ✅ AUDIT FIELD GETTERS AND SETTERS
     public User getCreatedBy() { return createdBy; }
     public void setCreatedBy(User createdBy) { this.createdBy = createdBy; }
 
@@ -114,4 +120,54 @@ public class WorkflowTemplate {
 
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+
+    // ===== HELPER METHODS =====
+    
+    /**
+     * ✅ NEW: Add a step to the workflow template
+     */
+    public void addStep(WorkflowStep step) {
+        if (step != null) {
+            steps.add(step);
+            step.setTemplate(this);
+        }
+    }
+    
+    /**
+     * ✅ NEW: Remove a step from the workflow template
+     */
+    public void removeStep(WorkflowStep step) {
+        if (step != null) {
+            steps.remove(step);
+            step.setTemplate(null);
+        }
+    }
+
+    // ===== EQUALS AND HASHCODE =====
+    
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof WorkflowTemplate)) return false;
+        WorkflowTemplate that = (WorkflowTemplate) o;
+        return id != null && id.equals(that.id);
+    }
+
+    @Override
+    public int hashCode() {
+        return getClass().hashCode();
+    }
+
+    @Override
+    public String toString() {
+        return "WorkflowTemplate{" +
+                "id=" + id +
+                ", name='" + name + '\'' +
+                ", description='" + description + '\'' +
+                ", isActive=" + isActive +
+                ", type=" + type +
+                ", stepCount=" + (steps != null ? steps.size() : 0) +
+                '}';
+    }
 }
+

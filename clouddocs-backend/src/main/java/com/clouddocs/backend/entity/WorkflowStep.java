@@ -1,8 +1,9 @@
 package com.clouddocs.backend.entity;
 
 import jakarta.persistence.*;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.Objects;
 
 /**
@@ -27,12 +28,14 @@ public class WorkflowStep {
     private WorkflowTemplate template;
 
     /**
+     * ✅ FIXED: Changed List to Set to avoid MultipleBagFetchException
      * Role-based approvers for this step
      */
     @OneToMany(mappedBy = "step", cascade = {CascadeType.PERSIST, CascadeType.MERGE}, orphanRemoval = false, fetch = FetchType.LAZY)
-    private List<WorkflowStepRole> roles = new ArrayList<>();
+    private Set<WorkflowStepRole> roles = new HashSet<>();
 
     /**
+     * ✅ FIXED: Changed List to Set to avoid MultipleBagFetchException
      * Direct user assignments as approvers (alternative to role-based)
      */
     @ManyToMany(fetch = FetchType.LAZY)
@@ -41,7 +44,7 @@ public class WorkflowStep {
         joinColumns = @JoinColumn(name = "step_id"),
         inverseJoinColumns = @JoinColumn(name = "user_id")
     )
-    private List<User> assignedApprovers = new ArrayList<>();
+    private Set<User> assignedApprovers = new HashSet<>();
 
     // ===== BASIC PROPERTIES =====
 
@@ -58,7 +61,6 @@ public class WorkflowStep {
     @Column(name = "step_type", nullable = false)
     private StepType stepType = StepType.APPROVAL;
 
-    // ✅ FIXED: Proper entity relationship mapping (not @Enumerated)
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "assignee_role_id")
     private Role assigneeRole;
@@ -106,64 +108,59 @@ public class WorkflowStep {
     // ===== HELPER METHODS =====
 
     /**
- * ✅ FIXED: Add a role-based approver to this step - constructor corrected
- */
-public void addRole(Role roleEntity) {
-    if (roleEntity == null) return;
-    
-    // ✅ FIXED: Compare ERole enums properly
-    boolean exists = roles.stream()
-        .anyMatch(stepRole -> stepRole.getRoleName().equals(roleEntity.getName()));
-    
-    if (!exists) {
-        // ✅ FIXED: Pass ERole enum to constructor (not Role entity)
-        WorkflowStepRole stepRole = new WorkflowStepRole(this, roleEntity.getName());
-        this.roles.add(stepRole);
+     * ✅ UPDATED: Add a role-based approver to this step
+     */
+    public void addRole(Role roleEntity) {
+        if (roleEntity == null) return;
+        
+        boolean exists = roles.stream()
+            .anyMatch(stepRole -> stepRole.getRoleName().equals(roleEntity.getName()));
+        
+        if (!exists) {
+            WorkflowStepRole stepRole = new WorkflowStepRole(this, roleEntity.getName());
+            this.roles.add(stepRole);
+        }
     }
-}
 
     /**
-     * ✅ FIXED: Remove a role from this step (corrected enum comparison)
+     * ✅ UPDATED: Remove a role from this step
      */
-   public void removeRole(Role roleEntity) {
-    if (roleEntity == null) return;
-    
-    // ✅ FIXED: Compare ERole enums properly
-    roles.removeIf(stepRole -> stepRole.getRoleName().equals(roleEntity.getName()));
-}
-
+    public void removeRole(Role roleEntity) {
+        if (roleEntity == null) return;
+        
+        roles.removeIf(stepRole -> stepRole.getRoleName().equals(roleEntity.getName()));
+    }
 
     /**
-     * ✅ ENHANCED: Get all required roles as Role entities (placeholder for service layer conversion)
+     * ✅ ENHANCED: Get all required roles as Role entities
      */
-    public List<Role> getRequiredRoles() {
+    public Set<Role> getRequiredRoles() {
         // This method would need RoleRepository to convert enums back to entities
-        // For now, return empty list and handle conversion in service layer
-        return new ArrayList<>();
+        // For now, return empty set and handle conversion in service layer
+        return new HashSet<>();
     }
 
-   /**
- * ✅ FIXED: Get required role enums directly - no conversion needed
- */
-public List<ERole> getRequiredRoleEnums() {
-    return roles.stream()
-        .map(WorkflowStepRole::getRoleName) // ✅ Returns ERole directly now
-        .filter(Objects::nonNull)
-        .distinct()
-        .toList();
-}
+    /**
+     * ✅ UPDATED: Get required role enums directly
+     */
+    public Set<ERole> getRequiredRoleEnums() {
+        return roles.stream()
+            .map(WorkflowStepRole::getRoleName)
+            .filter(Objects::nonNull)
+            .collect(java.util.stream.Collectors.toSet());
+    }
 
     /**
-     * Add a direct user approver
+     * ✅ UPDATED: Add a direct user approver
      */
     public void addApprover(User user) {
-        if (user != null && !assignedApprovers.contains(user)) {
+        if (user != null) {
             assignedApprovers.add(user);
         }
     }
 
     /**
-     * Remove a direct user approver
+     * ✅ UPDATED: Remove a direct user approver
      */
     public void removeApprover(User user) {
         assignedApprovers.remove(user);
@@ -184,175 +181,98 @@ public List<ERole> getRequiredRoleEnums() {
     }
 
     /**
- * ✅ FIXED: Check if step has specific role requirement - direct ERole comparison
- */
-public boolean hasRole(ERole roleEnum) {
-    return roles.stream()
-        .map(WorkflowStepRole::getRoleName) // ✅ Returns ERole directly
-        .filter(Objects::nonNull)
-        .anyMatch(eRole -> eRole == roleEnum); // ✅ Direct ERole comparison
-}
+     * ✅ UPDATED: Check if step has specific role requirement
+     */
+    public boolean hasRole(ERole roleEnum) {
+        return roles.stream()
+            .map(WorkflowStepRole::getRoleName)
+            .filter(Objects::nonNull)
+            .anyMatch(eRole -> eRole == roleEnum);
+    }
 
     /**
-     * ✅ NEW: Get total number of role-based approvers
+     * Get total number of role-based approvers
      */
     public int getRoleBasedApproverCount() {
         return roles.size();
     }
 
     /**
-     * ✅ NEW: Get total number of direct approvers
+     * Get total number of direct approvers
      */
     public int getDirectApproverCount() {
         return assignedApprovers.size();
     }
 
-    // ===== STANDARD GETTERS AND SETTERS =====
+    // ===== GETTERS AND SETTERS =====
 
-    public Long getId() {
-        return id;
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+
+    public WorkflowTemplate getTemplate() { return template; }
+    public void setTemplate(WorkflowTemplate template) { this.template = template; }
+
+    // ✅ UPDATED: Changed return type from List to Set
+    public Set<WorkflowStepRole> getRoles() { return roles; }
+    public void setRoles(Set<WorkflowStepRole> roles) { 
+        this.roles = roles != null ? roles : new HashSet<>(); 
     }
 
-    public void setId(Long id) {
-        this.id = id;
+    // ✅ UPDATED: Changed return type from List to Set
+    public Set<User> getAssignedApprovers() { return assignedApprovers; }
+    public void setAssignedApprovers(Set<User> assignedApprovers) { 
+        this.assignedApprovers = assignedApprovers != null ? assignedApprovers : new HashSet<>(); 
     }
 
-    public WorkflowTemplate getTemplate() {
-        return template;
-    }
+    public Integer getStepOrder() { return stepOrder; }
+    public void setStepOrder(Integer stepOrder) { this.stepOrder = stepOrder; }
 
-    public void setTemplate(WorkflowTemplate template) {
-        this.template = template;
-    }
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
 
-    public List<WorkflowStepRole> getRoles() {
-        return roles;
-    }
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
 
-    public void setRoles(List<WorkflowStepRole> roles) {
-        this.roles = roles != null ? roles : new ArrayList<>();
-    }
+    public StepType getStepType() { return stepType; }
+    public void setStepType(StepType stepType) { this.stepType = stepType; }
 
-    public List<User> getAssignedApprovers() {
-        return assignedApprovers;
-    }
+    public StepType getType() { return this.stepType; }
 
-    public void setAssignedApprovers(List<User> assignedApprovers) {
-        this.assignedApprovers = assignedApprovers != null ? assignedApprovers : new ArrayList<>();
-    }
+    public Role getAssigneeRole() { return assigneeRole; }
+    public void setAssigneeRole(Role assigneeRole) { this.assigneeRole = assigneeRole; }
 
-    public Integer getStepOrder() {
-        return stepOrder;
-    }
+    public Boolean getIsRequired() { return isRequired != null ? isRequired : true; }
+    public void setIsRequired(Boolean isRequired) { this.isRequired = isRequired; }
+    public void setIsRequired(boolean isRequired) { this.isRequired = isRequired; }
 
-    public void setStepOrder(Integer stepOrder) {
-        this.stepOrder = stepOrder;
-    }
+    public ApprovalPolicy getApprovalPolicy() { return approvalPolicy; }
+    public void setApprovalPolicy(ApprovalPolicy approvalPolicy) { this.approvalPolicy = approvalPolicy; }
 
-    public String getName() {
-        return name;
-    }
+    public Integer getRequiredApprovals() { return requiredApprovals; }
+    public void setRequiredApprovals(Integer requiredApprovals) { this.requiredApprovals = requiredApprovals; }
 
-    public void setName(String name) {
-        this.name = name;
-    }
+    public Integer getSlaHours() { return slaHours; }
+    public void setSlaHours(Integer slaHours) { this.slaHours = slaHours; }
 
-    public String getDescription() {
-        return description;
-    }
+    public String getAutoApproveCondition() { return autoApproveCondition; }
+    public void setAutoApproveCondition(String autoApproveCondition) { this.autoApproveCondition = autoApproveCondition; }
 
-    public void setDescription(String description) {
-        this.description = description;
-    }
-
-    public StepType getStepType() {
-        return stepType;
-    }
-
-    public void setStepType(StepType stepType) {
-        this.stepType = stepType;
-    }
-
-    /**
-     * Alias: getType() method for compatibility
-     */
-    public StepType getType() {
-        return this.stepType;
-    }
-
-    public Role getAssigneeRole() {
-        return assigneeRole;
-    }
-
-    public void setAssigneeRole(Role assigneeRole) {
-        this.assigneeRole = assigneeRole;
-    }
-
-    public Boolean getIsRequired() {
-        return isRequired != null ? isRequired : true;
-    }
-
-    public void setIsRequired(Boolean isRequired) {
-        this.isRequired = isRequired;
-    }
-
-    public void setIsRequired(boolean isRequired) {
-        this.isRequired = isRequired;
-    }
-
-    public ApprovalPolicy getApprovalPolicy() {
-        return approvalPolicy;
-    }
-
-    public void setApprovalPolicy(ApprovalPolicy approvalPolicy) {
-        this.approvalPolicy = approvalPolicy;
-    }
-
-    public Integer getRequiredApprovals() {
-        return requiredApprovals;
-    }
-
-    public void setRequiredApprovals(Integer requiredApprovals) {
-        this.requiredApprovals = requiredApprovals;
-    }
-
-    public Integer getSlaHours() {
-        return slaHours;
-    }
-
-    public void setSlaHours(Integer slaHours) {
-        this.slaHours = slaHours;
-    }
-
-    public String getAutoApproveCondition() {
-        return autoApproveCondition;
-    }
-
-    public void setAutoApproveCondition(String autoApproveCondition) {
-        this.autoApproveCondition = autoApproveCondition;
-    }
-
-    public Boolean getIsActive() {
-        return isActive;
-    }
-
-    public void setIsActive(Boolean isActive) {
-        this.isActive = isActive;
-    }
+    public Boolean getIsActive() { return isActive; }
+    public void setIsActive(Boolean isActive) { this.isActive = isActive; }
 
     // ===== EQUALS, HASHCODE, TOSTRING =====
 
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (!(o instanceof WorkflowStep)) return false;
         WorkflowStep that = (WorkflowStep) o;
-        return Objects.equals(id, that.id);
+        return id != null && id.equals(that.id);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id);
+        return getClass().hashCode();
     }
 
     @Override
@@ -371,6 +291,3 @@ public boolean hasRole(ERole roleEnum) {
                 '}';
     }
 }
-
-
-

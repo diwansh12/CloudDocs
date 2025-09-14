@@ -357,7 +357,7 @@ public class WorkflowTemplateController {
             // ✅ FIXED: Steps should already be loaded via fetch join
             try {
                 List<WorkflowStepDTO> stepDTOs = Optional.ofNullable(template.getSteps())
-                        .orElse(Collections.emptyList())
+                        .orElse(Collections.emptySet())
                         .stream()
                         .map(this::convertStepToDTOSafe)
                         .filter(Objects::nonNull)
@@ -432,7 +432,7 @@ public class WorkflowTemplateController {
             // ✅ ENHANCED: Better role handling
             try {
                 List<String> roleNames = Optional.ofNullable(step.getRequiredRoles())
-                        .orElse(Collections.emptyList())
+                        .orElse(Collections.emptySet())
                         .stream()
                         .filter(Objects::nonNull)
                         .map(role -> role.getName().name())
