@@ -74,7 +74,7 @@ export default function ProfilePage() {
   };
 
  const getAuthenticatedImageUrl = (profilePicture?: string) => {
-    const baseUrl = process.env.REACT_APP_BACKEND_URL || 'https://clouddocs.onrender.com';
+    const baseUrl = process.env.REACT_APP_BACKEND_URL || 'https://clouddocs-production.up.railway.app';
     return buildProfileImageUrl(profilePicture, baseUrl);
   };
 

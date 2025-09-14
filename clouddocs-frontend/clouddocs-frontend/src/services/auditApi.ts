@@ -10,7 +10,7 @@ export interface AuditLogItem {
 
 /* ───────── helpers ───────── */
 
-const API_BASE = process.env.REACT_APP_API_URL ?? 'https://clouddocs.onrender.com/api';
+const API_BASE = process.env.REACT_APP_API_URL ?? 'https://clouddocs-production.up.railway.app/api';
 
 const authHeaders = (): HeadersInit => ({
   Authorization: `Bearer ${localStorage.getItem('token') ?? ''}`,

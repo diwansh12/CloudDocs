@@ -55,7 +55,7 @@ const mapBackendResponseToDocument = (backendDoc: any): DocumentResult => ({
 
 const AI_API_BASE = process.env.REACT_APP_API_BASE_URL 
   ? `${process.env.REACT_APP_API_BASE_URL}/ai`
-  : 'https://clouddocs.onrender.com/api/ai';
+  : 'https://clouddocs-production.up.railway.app/api/ai';
 
 
 // ✅ Keep the rest of your aiService code exactly the same

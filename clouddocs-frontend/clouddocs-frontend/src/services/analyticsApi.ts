@@ -6,7 +6,7 @@ import {
   ExportType
 } from '../types/analytics';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://clouddocs.onrender.com/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://clouddocs-production.up.railway.app/api';
 
 class AnalyticsApiError extends Error {
   constructor(

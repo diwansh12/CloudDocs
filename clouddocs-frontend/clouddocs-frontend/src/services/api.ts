@@ -57,7 +57,7 @@ class ApiClient {
 
   constructor() {
     this.axiosInstance = axios.create({
-      baseURL: process.env.REACT_APP_API_BASE_URL || 'https://clouddocs.onrender.com/api',
+      baseURL: process.env.REACT_APP_API_BASE_URL || 'https://clouddocs-production.up.railway.app/api',
       timeout: 60000, // Extended for OCR processing
       withCredentials: true,
       headers: {
