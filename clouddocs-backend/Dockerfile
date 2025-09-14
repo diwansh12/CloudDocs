@@ -21,16 +21,18 @@ EXPOSE 10000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD curl -f http://localhost:10000/api/health || exit 1
 
-# ✅ FIXED: Increased thread stack size from 128k to 512k
+# ✅ FIXED: Updated JVM settings to prevent Metaspace OutOfMemoryError
 ENTRYPOINT ["java", \
-  "-Xms100m", \
-  "-Xmx200m", \
+  "-Xms128m", \
+  "-Xmx300m", \
   "-Xss512k", \
   "-XX:+UseSerialGC", \
-  "-XX:MaxMetaspaceSize=80m", \
-  "-XX:CompressedClassSpaceSize=10m", \
+  "-XX:MetaspaceSize=128m", \
+  "-XX:MaxMetaspaceSize=256m", \
+  "-XX:CompressedClassSpaceSize=32m", \
   "-XX:MaxDirectMemorySize=15m", \
   "-XX:+HeapDumpOnOutOfMemoryError", \
   "-XX:HeapDumpPath=/app", \
   "-XX:MaxGCPauseMillis=100", \
   "-jar", "app.jar"]
+
