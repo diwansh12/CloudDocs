@@ -72,18 +72,35 @@ public class WorkflowService {
     /**
      * ✅ FIXED: Start workflow with proper timestamp handling
      */
-    @Transactional
-    public WorkflowInstanceDTO startWorkflowWithUser(Long documentId, UUID templateId,
-            String title, String description,
-            String priority, Long userId) {
-        log.info("🚀 Starting workflow - DocumentID: {}, TemplateID: {}, UserID: {}, Priority: {}",
-                documentId, templateId, userId, priority);
+   @Transactional
+public WorkflowInstanceDTO startWorkflowWithUser(Long documentId, UUID templateId,
+        String title, String description,
+        String priority, Long userId) {
+    // ✅ DEBUG: Log all incoming parameters
+    log.info("🚀 Starting workflow - DocumentID: {}, TemplateID: {} ({}), UserID: {}, Priority: {}",
+            documentId, templateId, templateId != null ? templateId.getClass().getSimpleName() : "null", userId, priority);
+    
+    try {
+        // ✅ DEBUG: Check template existence first
+        log.info("🔍 Checking if template exists: {}", templateId);
+        boolean templateExists = templateRepository.existsById(templateId);
+        log.info("🔍 Template exists: {}", templateExists);
+        
+        if (!templateExists) {
+            // ✅ DEBUG: List available templates for comparison
+            List<WorkflowTemplate> availableTemplates = templateRepository.findByIsActiveTrue();
+            log.error("❌ Template {} not found. Available active templates:", templateId);
+            availableTemplates.forEach(t -> 
+                log.error("   - ID: {}, Name: {}, Active: {}", t.getId(), t.getName(), t.getIsActive())
+            );
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, 
+                "Template not found with ID: " + templateId);
+        }
 
-        try {
-            // Load and validate all required entities
-            Document document = loadAndValidateDocument(documentId);
-            WorkflowTemplate template = loadTemplateWithStepsAndRoles(templateId);
-            User initiator = loadAndValidateUser(userId);
+        // Load and validate all required entities
+        Document document = loadAndValidateDocument(documentId);
+        WorkflowTemplate template = loadTemplateWithStepsAndRoles(templateId);
+        User initiator = loadAndValidateUser(userId);
 
             validateTemplateActive(template);
 
@@ -671,24 +688,33 @@ private void completeTaskWithDetails(WorkflowTask task, TaskAction action, Strin
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
     }
 
-    private WorkflowTemplate loadTemplateWithStepsAndRoles(UUID templateId) {
-        try {
-            WorkflowTemplate template = templateRepository.findByIdWithSteps(templateId)
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Template not found"));
-
-            if (template.getSteps() != null && !template.getSteps().isEmpty()) {
-                List<WorkflowStep> stepsWithRoles = stepRepository.findStepsWithRoles(templateId);
-                template.setSteps(new ArrayList<>(stepsWithRoles));
-            }
-
-            return template;
-        } catch (ResponseStatusException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("Error loading template with steps: {}", e.getMessage(), e);
+   /**
+ * ✅ FIXED: Load template with proper fetch joins to avoid LazyInitializationException
+ */
+private WorkflowTemplate loadTemplateWithStepsAndRoles(UUID templateId) {
+    log.info("🔍 Loading template with steps and roles: {}", templateId);
+    
+    try {
+        // ✅ FIXED: Use fetch join query instead of basic findById
+        Optional<WorkflowTemplate> templateOpt = templateRepository.findByIdWithStepsAndRoles(templateId);
+        
+        if (templateOpt.isEmpty()) {
+            log.error("❌ Template not found with ID: {}", templateId);
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Template not found");
         }
+        
+        WorkflowTemplate template = templateOpt.get();
+        log.info("✅ Loaded template '{}' with {} steps", 
+                template.getName(), 
+                template.getSteps() != null ? template.getSteps().size() : 0);
+        
+        return template;
+        
+    } catch (Exception e) {
+        log.error("❌ Error loading template {}: {}", templateId, e.getMessage(), e);
+        throw e;
     }
+}
 
     private void validateTemplateActive(WorkflowTemplate template) {
         if (!Boolean.TRUE.equals(template.getIsActive())) {
