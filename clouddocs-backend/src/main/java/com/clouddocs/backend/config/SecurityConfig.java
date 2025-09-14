@@ -13,7 +13,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.crypto.factory.PasswordEncoderFactories;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -35,11 +35,14 @@ public class SecurityConfig {
     @Value("${app.cors.allowed-origins:https://cloud-docs-tan.vercel.app,http://localhost:3000}")
     private String allowedOrigins;
 
+    // ✅ PRODUCTION: BCrypt Password Encoder
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return PasswordEncoderFactories.createDelegatingPasswordEncoder();
+        // Production-grade BCrypt with strength 12 (recommended for 2024+)
+        return new BCryptPasswordEncoder(12);
     }
 
+    // ... rest of your existing configuration remains the same
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
         return config.getAuthenticationManager();
@@ -76,29 +79,18 @@ public class SecurityConfig {
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                // ✅ CRITICAL: Allow OPTIONS requests first
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                
-                // ✅ CRITICAL: Static resources and health endpoints
                 .requestMatchers(
                     "/favicon.ico", "/error", "/actuator/health", "/actuator/info",
                     "/static/**", "/public/**", "/uploads/**", "/health"
                 ).permitAll()
-                
-                // ✅ CRITICAL: Authentication endpoints (public)
                 .requestMatchers(
                     "/api/auth/**", "/auth/**"
                 ).permitAll()
-                
-                // ✅ CRITICAL: Public endpoints
                 .requestMatchers("/api/documents/shared/**").permitAll()
                 .requestMatchers("/api/users/profile/picture/**").permitAll()
-                
-                // ✅ FIXED: OCR endpoints - EXPLICIT MAPPING
                 .requestMatchers("/api/ocr/**").authenticated()
-                .requestMatchers("/api/search/**").authenticated()  // Add this line
-
-                // ✅ FIXED: All API endpoints with proper /api/ prefix
+                .requestMatchers("/api/search/**").authenticated()
                 .requestMatchers("/api/users/**").authenticated()
                 .requestMatchers("/api/documents/**").authenticated()
                 .requestMatchers("/api/dashboard/**").authenticated()
@@ -106,29 +98,19 @@ public class SecurityConfig {
                 .requestMatchers("/api/notifications/**").authenticated()
                 .requestMatchers("/api/settings/**").authenticated()
                 .requestMatchers("/api/audit/**").authenticated()
-                
-                // ✅ LEGACY: Support old patterns without /api prefix (if needed)
                 .requestMatchers(
                     "/users/**", "/documents/**", "/workflows/**", 
                     "/notifications/**", "/settings/**", "/audit/**"
                 ).authenticated()
-                
-                // ✅ ADMIN: Admin-only endpoints
                 .requestMatchers("/admin/**", "/actuator/**").hasRole("ADMIN")
-                
-                // ✅ TEST: Test endpoints
                 .requestMatchers("/test/**").permitAll()
-                
-                // ✅ DEFAULT: All other requests require authentication
                 .anyRequest().authenticated())
-                
             .exceptionHandling(exceptions -> exceptions
                 .authenticationEntryPoint((request, response, authException) -> {
                     response.setStatus(401);
                     response.setContentType("application/json");
                     response.setCharacterEncoding("UTF-8");
                     
-                    // Dynamic CORS header
                     String origin = request.getHeader("Origin");
                     if (origin != null && (origin.contains("vercel.app") || origin.contains("localhost"))) {
                         response.setHeader("Access-Control-Allow-Origin", origin);
@@ -146,7 +128,6 @@ public class SecurityConfig {
                     response.setContentType("application/json");
                     response.setCharacterEncoding("UTF-8");
                     
-                    // Dynamic CORS header
                     String origin = request.getHeader("Origin");
                     if (origin != null && (origin.contains("vercel.app") || origin.contains("localhost"))) {
                         response.setHeader("Access-Control-Allow-Origin", origin);
