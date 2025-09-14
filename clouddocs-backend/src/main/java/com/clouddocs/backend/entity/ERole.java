@@ -5,7 +5,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
 
 public enum ERole {
     ROLE_USER("USER"),
-    ROLE_ADMIN("ADMIN"),
+    ROLE_ADMIN("ADMIN"), 
     ROLE_MANAGER("MANAGER");
     
     private final String value;
@@ -20,8 +20,7 @@ public enum ERole {
     }
     
     /**
-     * ✅ FIXED: Case-insensitive enum deserialization
-     * Handles: "manager", "MANAGER", "Manager", "ROLE_MANAGER"
+     * ✅ CRITICAL FIX: Handle both "MANAGER" and "ROLE_MANAGER" formats
      */
     @JsonCreator
     public static ERole fromString(String input) {
@@ -31,39 +30,29 @@ public enum ERole {
         
         String normalizedInput = input.trim().toUpperCase();
         
-        // Try direct match first
-        for (ERole role : ERole.values()) {
-            if (role.name().equals(normalizedInput) || 
-                role.getValue().equals(normalizedInput)) {
-                return role;
-            }
+        // ✅ Handle direct value matches ("MANAGER" -> ROLE_MANAGER)
+        switch (normalizedInput) {
+            case "USER": return ROLE_USER;
+            case "ADMIN": return ROLE_ADMIN;
+            case "MANAGER": return ROLE_MANAGER;
+            case "ROLE_USER": return ROLE_USER;
+            case "ROLE_ADMIN": return ROLE_ADMIN;
+            case "ROLE_MANAGER": return ROLE_MANAGER;
+            default:
+                throw new IllegalArgumentException(
+                    String.format("Invalid role: '%s'. Valid roles are: USER, ADMIN, MANAGER, ROLE_USER, ROLE_ADMIN, ROLE_MANAGER", input)
+                );
         }
-        
-        // Try with ROLE_ prefix if missing
-        if (!normalizedInput.startsWith("ROLE_")) {
-            String withPrefix = "ROLE_" + normalizedInput;
-            for (ERole role : ERole.values()) {
-                if (role.name().equals(withPrefix)) {
-                    return role;
-                }
-            }
-        }
-        
-        // Log the error and throw descriptive exception
-        throw new IllegalArgumentException(
-            String.format("Invalid role: '%s'. Valid roles are: %s", 
-                         input, java.util.Arrays.toString(ERole.values()))
-        );
     }
     
     /**
-     * ✅ ENHANCED: Safe enum lookup without exceptions
+     * ✅ SAFE: No-exception version
      */
     public static ERole fromStringSafe(String input) {
         try {
             return fromString(input);
-        } catch (IllegalArgumentException e) {
-            return null; // or return a default like ROLE_USER
+        } catch (Exception e) {
+            return ROLE_USER; // Default fallback
         }
     }
     
