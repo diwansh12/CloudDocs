@@ -1,45 +1,35 @@
 package com.clouddocs.backend.service;
 
-import net.sourceforge.tess4j.ITesseract;
-import net.sourceforge.tess4j.Tesseract;
-import net.sourceforge.tess4j.TesseractException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import com.clouddocs.backend.repository.DocumentRepository;
 import com.clouddocs.backend.dto.OCRResultDTO;
 import com.clouddocs.backend.dto.DocumentWithOCRDTO;
 
 import jakarta.annotation.PostConstruct;
-import java.io.*;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 /**
- * 📖 OCR Service using Tesseract for free text extraction from images
+ * 🚫 OCR Service - DISABLED for Memory Optimization
+ * Provides helpful error messages instead of processing
  */
 @Service
 public class OCRService {
     
     private static final Logger log = LoggerFactory.getLogger(OCRService.class);
     
-    // ✅ SAFE: Class-level diagnostics flag
-    private static volatile boolean diagnosticsRun = false;
-    
-    // Supported image formats
+    // Supported image formats (for validation only)
     private static final List<String> SUPPORTED_FORMATS = Arrays.asList(
         "image/jpeg", "image/jpg", "image/png", "image/bmp", "image/tiff", "image/gif"
     );
     
-    @Autowired
-    private MultiProviderAIService aiService;
+  
+    
     private final DocumentRepository documentRepository;
     
     public OCRService(DocumentRepository documentRepository) {
@@ -47,317 +37,100 @@ public class OCRService {
     }
 
     /**
-     * ✅ SAFE: Initialize OCR Service without heavy operations
+     * ✅ SAFE: Initialize OCR Service (disabled version)
      */
     @PostConstruct
     public void initializeOCRService() {
         try {
-            log.info("🔧 Initializing OCR Service...");
-            
-            // Quick environment check
-            String tessDataPrefix = System.getenv("TESSDATA_PREFIX");
-            String tesseractPath = System.getenv("TESSERACT_PATH");
-            
-            log.info("Environment: TESSDATA_PREFIX={}, TESSERACT_PATH={}", 
-                    tessDataPrefix, tesseractPath);
-            
-            log.info("✅ OCR Service initialized successfully");
+            log.info("🔧 Initializing OCR Service (DISABLED for memory optimization)...");
+            log.info("💡 OCR processing disabled to stay within 512MB deployment limit");
+            log.info("✅ OCR Service initialized - all requests will return disabled status");
         } catch (Exception e) {
             log.error("❌ OCR Service initialization warning: {}", e.getMessage());
         }
     }
 
     /**
-     * ✅ CRASH-PROOF: Extract text with enhanced error handling
+     * 🚫 DISABLED: Extract text - returns helpful error message
      */
     public OCRResultDTO extractTextFromImage(MultipartFile file) {
-        log.info("🔍 Starting OCR extraction for file: {}", file.getOriginalFilename());
+        String filename = file != null ? file.getOriginalFilename() : "unknown";
+        log.info("🚫 OCR extraction requested for {} but OCR is disabled", filename);
 
-        // ✅ ULTRA-SAFE: Run minimal diagnostics once only
-        if (!diagnosticsRun) {
-            synchronized (OCRService.class) {
-                if (!diagnosticsRun) {
-                    logMinimalDiagnostics();
-                    diagnosticsRun = true;
-                }
-            }
-        }
-        
-        try {
-            // Validate file type
-            if (!isImageFile(file)) {
-                throw new IllegalArgumentException("File must be an image (JPEG, PNG, BMP, TIFF, GIF)");
-            }
-            
-            // ✅ ENHANCED: Detect tessdata path with validation
-            String tessDataPath = detectTessdataPath();
-            if (tessDataPath == null || !validateTessdataFiles(tessDataPath)) {
-                log.warn("⚠️ Tessdata not found or invalid, OCR unavailable");
-                return new OCRResultDTO("", 0.0, 0L, file.getOriginalFilename(), false, 
-                    "OCR temporarily unavailable - tessdata files not accessible");
-            }
-            
-            // Create temporary file
-            Path tempFile = createTempFile(file);
-            
-            try {
-                return performSafeOCR(tempFile, tessDataPath, file.getOriginalFilename());
-            } finally {
-                Files.deleteIfExists(tempFile);
-            }
-            
-        } catch (TesseractException e) {
-            log.error("❌ Tesseract OCR failed for {}: {}", file.getOriginalFilename(), e.getMessage());
-            return new OCRResultDTO("", 0.0, 0L, file.getOriginalFilename(), false, 
-                "OCR processing failed: " + e.getMessage());
-                
-        } catch (Exception e) {
-            log.error("❌ OCR processing failed for {}: {}", file.getOriginalFilename(), e.getMessage());
-            return new OCRResultDTO("", 0.0, 0L, file.getOriginalFilename(), false, 
-                "File processing failed: " + e.getMessage());
-        }
+        return OCRResultDTO.builder()
+            .success(false)
+            .filename(filename)
+            .extractedText("")
+            .confidence(0.0)
+            .processingTimeMs(0L)
+            .errorMessage("OCR processing temporarily disabled for memory optimization on 512MB deployment")
+            .build();
     }
 
     /**
-     * ✅ SAFE: Synchronized OCR processing to prevent native crashes
+     * 🚫 DISABLED: Process document with OCR - returns helpful error
      */
-    private OCRResultDTO performSafeOCR(Path tempFile, String tessDataPath, String filename) 
-            throws TesseractException {
+    public DocumentWithOCRDTO processDocumentWithOCR(MultipartFile file, String description, String category) {
+        String filename = file != null ? file.getOriginalFilename() : "unknown";
+        log.info("🚫 Document OCR processing requested for {} but OCR is disabled", filename);
         
-        // ✅ CRITICAL: Synchronize all OCR operations to prevent multi-threading crashes
-        synchronized (OCRService.class) {
-            ITesseract tesseract = new Tesseract();
-            
-            // Set tessdata path explicitly
-            tesseract.setDatapath(tessDataPath);
-            log.info("🔧 Using tessdata path: {}", tessDataPath);
-            
-            tesseract.setLanguage("eng");
-            
-            // ✅ CRITICAL: Use safer PSM 6 instead of PSM 1 to avoid OSD crashes
-            tesseract.setPageSegMode(6); // Uniform block of text (safer)
-            tesseract.setOcrEngineMode(1); // LSTM only
-            
-            // ✅ SAFE: Perform OCR with timeout protection
-            long startTime = System.currentTimeMillis();
-            String extractedText = tesseract.doOCR(tempFile.toFile());
-            long processingTime = System.currentTimeMillis() - startTime;
-            
-            // Clean up extracted text
-            String cleanedText = cleanExtractedText(extractedText);
-            double confidence = calculateConfidence(cleanedText);
-            
-            log.info("✅ Safe OCR completed in {}ms. Extracted {} characters with {:.1f}% confidence", 
-                processingTime, cleanedText.length(), confidence * 100);
-            
-            return new OCRResultDTO(
-                cleanedText,
-                confidence,
-                processingTime,
-                filename,
-                true
-            );
-        }
+        // Return disabled status
+        OCRResultDTO ocrResult = OCRResultDTO.builder()
+            .success(false)
+            .filename(filename)
+            .extractedText("")
+            .confidence(0.0)
+            .processingTimeMs(0L)
+            .errorMessage("OCR processing disabled for memory optimization")
+            .build();
+
+        return DocumentWithOCRDTO.builder()
+            .ocrResult(ocrResult)
+            .embedding(null)
+            .embeddingContent(null)
+            .description(description)
+            .category(category)
+            .ocrEnabled(false)
+            .embeddingGenerated(false)
+            .processingMessage("OCR temporarily disabled. Use regular document upload at /api/documents/upload")
+            .build();
     }
 
     /**
-     * ✅ ENHANCED: Validate tessdata files exist and are readable
+     * ✅ WORKING: Get OCR statistics (disabled version)
      */
-    private boolean validateTessdataFiles(String tessDataPath) {
-        try {
-            File engFile = new File(tessDataPath, "eng.traineddata");
-            File osdFile = new File(tessDataPath, "osd.traineddata");
-            
-            boolean valid = engFile.exists() && engFile.canRead() &&
-                           osdFile.exists() && osdFile.canRead();
-            
-            log.info("Tessdata validation: path={}, eng={}, osd={}, overall={}", 
-                    tessDataPath, engFile.exists(), osdFile.exists(), valid);
-            
-            return valid;
-        } catch (Exception e) {
-            log.error("Tessdata validation failed: {}", e.getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * ✅ ULTRA-SAFE: Minimal diagnostics with better path checking
-     */
-    private void logMinimalDiagnostics() {
-        try {
-            log.info("=== MINIMAL TESSDATA DIAGNOSTICS ===");
-            
-            // Log environment variables only
-            log.info("TESSDATA_PREFIX: {}", System.getenv("TESSDATA_PREFIX"));
-            log.info("TESSERACT_PATH: {}", System.getenv("TESSERACT_PATH"));
-            log.info("OS: {}", System.getProperty("os.name"));
-            
-            // ✅ ENHANCED: Check actual tessdata files
-            String tessDataPrefix = System.getenv("TESSDATA_PREFIX");
-            if (tessDataPrefix != null) {
-                try {
-                    // Check if files are directly in TESSDATA_PREFIX
-                    File directEngFile = new File(tessDataPrefix, "eng.traineddata");
-                    File directOsdFile = new File(tessDataPrefix, "osd.traineddata");
-                    log.info("Direct tessdata files - eng: {}, osd: {}", 
-                            directEngFile.exists(), directOsdFile.exists());
-                    
-                    // Check tessdata subdirectory
-                    File tessDataDir = new File(tessDataPrefix, "tessdata");
-                    log.info("Tessdata directory exists at TESSDATA_PREFIX: {}", tessDataDir.exists());
-                    
-                    if (tessDataDir.exists()) {
-                        File engFile = new File(tessDataDir, "eng.traineddata");
-                        File osdFile = new File(tessDataDir, "osd.traineddata");
-                        log.info("Subdirectory tessdata files - eng: {}, osd: {}", 
-                                engFile.exists(), osdFile.exists());
-                    }
-                } catch (Exception e) {
-                    log.debug("Cannot check tessdata path: {}", e.getMessage());
-                }
-            }
-            
-            log.info("=== END DIAGNOSTICS ===");
-            
-        } catch (Exception e) {
-            log.debug("Minimal diagnostics failed (non-critical): {}", e.getMessage());
-        }
-    }
-
-    /**
-     * ✅ FIXED: Corrected tessdata path detection
-     */
-    private String detectTessdataPath() {
-        String envPath = System.getenv("TESSDATA_PREFIX");
-        if (envPath != null && !envPath.isEmpty()) {
-            
-            // ✅ CRITICAL FIX: Check if files are directly in envPath first
-            File directEngFile = new File(envPath, "eng.traineddata");
-            if (directEngFile.exists()) {
-                log.info("✅ Found tessdata directly at TESSDATA_PREFIX: {}", envPath);
-                return envPath; // ✅ FIXED: Return envPath, not parent!
-            }
-            
-            // Check if files are in tessdata subdirectory
-            File tessDataDir = new File(envPath, "tessdata");
-            File engFile = new File(tessDataDir, "eng.traineddata");
-            if (tessDataDir.exists() && engFile.exists()) {
-                log.info("✅ Using TESSDATA_PREFIX with tessdata subdirectory: {}", tessDataDir.getAbsolutePath());
-                return tessDataDir.getAbsolutePath();
-            }
-            
-            log.warn("⚠️ TESSDATA_PREFIX set but tessdata not found at: {}", envPath);
-        }
-        
-        String osName = System.getProperty("os.name").toLowerCase();
-        String[] locations;
-        
-        if (osName.contains("windows")) {
-            locations = new String[]{
-                "C:\\Program Files\\Tesseract-OCR\\tessdata",
-                "C:\\Program Files (x86)\\Tesseract-OCR\\tessdata",
-                "C:\\tesseract\\tessdata"
-            };
-        } else {
-            locations = new String[]{
-                "/usr/share/tessdata",
-                "/usr/share/tesseract-ocr/tessdata",
-                "/usr/share/tesseract-ocr/4.00/tessdata",
-                "/usr/local/share/tessdata",
-                "/opt/tesseract/tessdata",
-                "/app/tessdata"
-            };
-        }
-        
-        for (String location : locations) {
-            try {
-                File engFile = new File(location, "eng.traineddata");
-                if (engFile.exists() && engFile.canRead()) {
-                    log.info("✅ Auto-detected tessdata at: {} (OS: {})", location, osName);
-                    return location;
-                }
-            } catch (Exception e) {
-                // Silently continue to next location
-            }
-        }
-        
-        log.error("❌ No valid tessdata directory found for OS: {}", osName);
-        return null;
-    }
-
-    private boolean isTesseractAvailable() {
-        try {
-            String tessDataPath = detectTessdataPath();
-            return tessDataPath != null && validateTessdataFiles(tessDataPath);
-        } catch (Exception e) {
-            log.warn("Tesseract availability check failed: {}", e.getMessage());
-            return false;
-        }
-    }
-
-    // ✅ ALL YOUR EXISTING METHODS REMAIN EXACTLY THE SAME:
-    
     public Map<String, Object> getOCRStatistics(String username) {
         Map<String, Object> stats = new HashMap<>();
 
         try {
-            log.info("📊 Fetching OCR statistics for user: {}", username);
+            log.info("📊 Fetching OCR statistics for user: {} (OCR disabled)", username);
 
             long totalDocuments = documentRepository.count();
-            long documentsWithOCR = 0L;
-            long documentsWithEmbeddings = 0L;
-            long aiReadyDocuments = 0L;
-            Double avgOCRConfidence = 0.0;
-
-            try {
-                documentsWithOCR = documentRepository.findByHasOcrTrue().size();
-            } catch (Exception e) {
-                log.warn("⚠️ Failed to fetch documentsWithOCR: {}", e.getMessage());
-            }
-
-            try {
-                documentsWithEmbeddings = documentRepository.findByEmbeddingGeneratedTrue().size();
-            } catch (Exception e) {
-                log.warn("⚠️ Failed to fetch documentsWithEmbeddings: {}", e.getMessage());
-            }
-
-            try {
-                aiReadyDocuments = documentRepository.countAIReadyDocumentsWithOCR(username);
-            } catch (Exception e) {
-                log.warn("⚠️ Failed to fetch aiReadyDocuments: {}", e.getMessage());
-            }
-
-            try {
-                avgOCRConfidence = Optional.ofNullable(
-                        documentRepository.getAverageOCRConfidenceByUser(username)
-                ).orElse(0.0);
-            } catch (Exception e) {
-                log.warn("⚠️ Failed to fetch averageOCRConfidence: {}", e.getMessage());
-            }
-
-            double ocrCoverage = (totalDocuments > 0)
-                    ? (documentsWithOCR * 100.0 / totalDocuments)
-                    : 0.0;
 
             stats.put("totalDocuments", totalDocuments);
-            stats.put("documentsWithOCR", documentsWithOCR);
-            stats.put("documentsWithEmbeddings", documentsWithEmbeddings);
-            stats.put("ocrCoverage", ocrCoverage);
-            stats.put("averageOCRConfidence", avgOCRConfidence);
-            stats.put("aiReadyDocuments", aiReadyDocuments);
+            stats.put("documentsWithOCR", 0); // OCR disabled
+            stats.put("documentsWithEmbeddings", 0);
+            stats.put("ocrCoverage", 0.0);
+            stats.put("averageOCRConfidence", 0.0);
+            stats.put("aiReadyDocuments", 0);
 
             stats.put("timestamp", System.currentTimeMillis());
-            stats.put("status", "success");
-            stats.put("service", "OCR Service");
-            stats.put("supportedFormats", Arrays.asList("JPEG", "PNG", "BMP", "TIFF", "GIF"));
-            stats.put("tesseractAvailable", isTesseractAvailable());
+            stats.put("status", "disabled");
+            stats.put("service", "OCR Service (Memory Optimized)");
+            stats.put("supportedFormats", SUPPORTED_FORMATS);
+            stats.put("tesseractAvailable", false);
+            stats.put("ocrEnabled", false);
+            stats.put("memoryOptimization", Map.of(
+                "reason", "OCR disabled for 512MB deployment limit compliance",
+                "memorySaved", "~150-250MB during processing",
+                "alternative", "AI semantic search available for text-based document discovery"
+            ));
 
-            log.info("✅ OCR statistics built successfully");
+            log.info("✅ OCR statistics built successfully (disabled mode)");
 
         } catch (Exception e) {
             log.error("❌ Error while building OCR statistics: {}", e.getMessage(), e);
-
+            
             stats.put("totalDocuments", 0);
             stats.put("documentsWithOCR", 0);
             stats.put("documentsWithEmbeddings", 0);
@@ -366,129 +139,67 @@ public class OCRService {
             stats.put("aiReadyDocuments", 0);
             stats.put("timestamp", System.currentTimeMillis());
             stats.put("status", "error");
-            stats.put("service", "OCR Service");
-            stats.put("supportedFormats", Arrays.asList("JPEG", "PNG", "BMP", "TIFF", "GIF"));
-            stats.put("tesseractAvailable", false);
+            stats.put("service", "OCR Service (Disabled)");
+            stats.put("ocrEnabled", false);
         }
 
         return stats;
     }
-    
-    public DocumentWithOCRDTO processDocumentWithOCR(MultipartFile file, String description, String category) {
-        log.info("📄 Processing document with OCR: {}", file.getOriginalFilename());
-        
-        try {
-            OCRResultDTO ocrResult = extractTextFromImage(file);
-            
-            if (!ocrResult.isSuccess() || ocrResult.getExtractedText().length() < 10) {
-                log.warn("⚠️ OCR extraction yielded minimal text for: {}", file.getOriginalFilename());
-            }
-            
-            String embeddingContent = createEmbeddingContent(
-                file.getOriginalFilename(), 
-                description, 
-                category, 
-                ocrResult.getExtractedText()
-            );
-            
-            List<Double> embedding = null;
-            if (embeddingContent.length() > 20) {
-                try {
-                    embedding = aiService.generateEmbedding(embeddingContent);
-                    log.info("✅ Generated embedding with {} dimensions", embedding.size());
-                } catch (Exception e) {
-                    log.warn("⚠️ Failed to generate embedding: {}", e.getMessage());
-                }
-            }
-            
-            return new DocumentWithOCRDTO(
-                file,
-                ocrResult,
-                embedding,
-                embeddingContent,
-                description,
-                category
-            );
-            
-        } catch (Exception e) {
-            log.error("❌ Document processing with OCR failed: {}", e.getMessage());
-            throw new RuntimeException("Document OCR processing failed", e);
-        }
-    }
-    
+
+    /**
+     * ✅ UTILITY: Validate image file type
+     */
     private boolean isImageFile(MultipartFile file) {
         String contentType = file.getContentType();
         return contentType != null && SUPPORTED_FORMATS.contains(contentType.toLowerCase());
     }
-    
-    private Path createTempFile(MultipartFile file) throws IOException {
-        String originalName = file.getOriginalFilename();
-        String extension = originalName != null && originalName.contains(".") 
-            ? originalName.substring(originalName.lastIndexOf(".")) 
-            : ".tmp";
-            
-        Path tempFile = Files.createTempFile("ocr_", extension);
-        file.transferTo(tempFile.toFile());
-        return tempFile;
+
+    /**
+     * ✅ UTILITY: Check if OCR is available (always false)
+     */
+    public boolean isOcrAvailable() {
+        return false; // Always disabled
     }
-    
-    private String cleanExtractedText(String rawText) {
-        if (rawText == null || rawText.trim().isEmpty()) {
-            return "";
-        }
-        
-        return rawText
-            .replaceAll("\\s+", " ")
-            .replaceAll("[\\u0000-\\u001F\\u007F]", "")
-            .replaceAll("\\r\\n|\\r|\\n", " ")
-            .trim();
+
+    /**
+     * ✅ UTILITY: Get OCR service status
+     */
+    public Map<String, Object> getServiceStatus() {
+        return Map.of(
+            "ocrEnabled", false,
+            "reason", "Memory optimization for 512MB deployment limit",
+            "memorySaved", "~150-250MB by disabling OCR processing",
+            "alternatives", Map.of(
+                "documentUpload", "Available via /api/documents/upload",
+                "aiSearch", "Fully functional semantic search",
+                "textExtraction", "Not available - OCR disabled"
+            ),
+            "recommendation", "Use AI semantic search to find document content"
+        );
     }
-    
-    private double calculateConfidence(String text) {
-        if (text == null || text.trim().isEmpty()) {
-            return 0.0;
+
+    /**
+     * ✅ UTILITY: Validate file for OCR (returns validation only)
+     */
+    public Map<String, Object> validateFileForOCR(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            return Map.of(
+                "valid", false,
+                "reason", "File is null or empty"
+            );
         }
-        
-        double score = 0.5;
-        
-        if (text.length() > 50) score += 0.2;
-        
-        long alphanumericCount = text.chars().filter(Character::isLetterOrDigit).count();
-        double alphanumericRatio = (double) alphanumericCount / text.length();
-        score += alphanumericRatio * 0.3;
-        
-        long specialCharCount = text.chars().filter(c -> !Character.isLetterOrDigit(c) && !Character.isWhitespace(c)).count();
-        double specialCharRatio = (double) specialCharCount / text.length();
-        if (specialCharRatio > 0.3) score -= 0.2;
-        
-        return Math.max(0.0, Math.min(1.0, score));
-    }
-    
-    private String createEmbeddingContent(String filename, String description, String category, String ocrText) {
-        StringBuilder content = new StringBuilder();
-        
-        if (filename != null) {
-            String name = filename.replaceAll("\\.[^.]+$", "").replace("_", " ").replace("-", " ");
-            content.append("Document: ").append(name).append(". ");
+
+        if (!isImageFile(file)) {
+            return Map.of(
+                "valid", false,
+                "reason", "File must be an image (JPEG, PNG, BMP, TIFF, GIF)",
+                "supportedFormats", SUPPORTED_FORMATS
+            );
         }
-        
-        if (description != null && !description.trim().isEmpty()) {
-            content.append("Description: ").append(description.trim()).append(". ");
-        }
-        
-        if (category != null && !category.trim().isEmpty()) {
-            content.append("Category: ").append(category.trim()).append(". ");
-        }
-        
-        if (ocrText != null && !ocrText.trim().isEmpty()) {
-            String truncatedText = ocrText.length() > 500 
-                ? ocrText.substring(0, 500) + "..."
-                : ocrText;
-            content.append("Content: ").append(truncatedText.trim()).append(". ");
-        }
-        
-        content.append("Type: Scanned document with extracted text. ");
-        
-        return content.toString().trim();
+
+        return Map.of(
+            "valid", true,
+            "note", "File is valid but OCR processing is disabled for memory optimization"
+        );
     }
 }

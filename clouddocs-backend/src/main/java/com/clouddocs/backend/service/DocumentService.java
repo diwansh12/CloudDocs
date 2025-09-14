@@ -2,8 +2,6 @@ package com.clouddocs.backend.service;
 
 import com.clouddocs.backend.dto.DocumentDTO;
 import com.clouddocs.backend.dto.DocumentUploadRequest;
-import com.clouddocs.backend.dto.DocumentWithOCRDTO;
-import com.clouddocs.backend.dto.OCRResultDTO;
 import com.clouddocs.backend.entity.Document;
 import com.clouddocs.backend.entity.DocumentStatus;
 import com.clouddocs.backend.entity.DocumentShareLink;
@@ -11,7 +9,6 @@ import com.clouddocs.backend.entity.User;
 import com.clouddocs.backend.repository.DocumentRepository;
 import com.clouddocs.backend.repository.DocumentShareLinkRepository;
 import com.clouddocs.backend.repository.UserRepository;
-import com.clouddocs.backend.exception.UserNotFoundException;
 
 import org.hibernate.LazyInitializationException;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,9 +51,6 @@ public class DocumentService {
     @Autowired
     private AuditService auditService;
 
-    @Autowired
-    private AIEmbeddingService embeddingService;
-    
     // ===== EXISTING METHODS (UNCHANGED) =====
     
     public DocumentDTO uploadDocument(MultipartFile file, DocumentUploadRequest request) {
@@ -565,54 +559,53 @@ public class DocumentService {
     
     // ===== OCR METHODS (UNCHANGED) =====
     
-    @Transactional
-    public DocumentDTO saveDocumentWithOCR(DocumentWithOCRDTO documentWithOCR, String username) {
-        try {
-            User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new UserNotFoundException("User not found: " + username));
-            
-            MultipartFile file = documentWithOCR.getFile();
-            OCRResultDTO ocrResult = documentWithOCR.getOcrResult();
-            
-            String storedFilePath = fileStorageService.storeFile(file);
-            
-            Document document = new Document();
-            document.setOriginalFilename(file.getOriginalFilename());
-            document.setFilename(generateStoredFilename(file.getOriginalFilename()));
-            document.setFilePath(storedFilePath);
-            document.setFileSize(file.getSize());
-            document.setMimeType(file.getContentType());
-            document.setDocumentType(determineDocumentType(file.getContentType()));
-            document.setUploadedBy(user);
-            document.setUploadDate(LocalDateTime.now());
-            document.setDescription(documentWithOCR.getDescription());
-            document.setCategory(documentWithOCR.getCategory());
-            
-            document.setOcrText(ocrResult.getExtractedText());
-            document.setOcrConfidence(ocrResult.getConfidence());
-            document.setHasOcr(ocrResult.isSuccess());
-            document.setOcrProcessingTime(ocrResult.getProcessingTimeMs());
-            
-            List<Double> embedding = documentWithOCR.getEmbedding();
-            if (embedding != null && !embedding.isEmpty()) {
-                document.setEmbedding(embeddingService.embeddingToJson(embedding));
-                document.setEmbeddingGenerated(true);
-            }
-            
-            Document savedDocument = documentRepository.save(document);
-            
-            log.info("✅ Saved document with OCR: {} (OCR: {}, Embedding: {})", 
-                savedDocument.getOriginalFilename(), 
-                document.getHasOcr(),
-                document.getEmbeddingGenerated());
-            
-            return convertToDTO(savedDocument);
-            
-        } catch (Exception e) {
-            log.error("❌ Failed to save document with OCR: {}", e.getMessage());
-            throw new RuntimeException("Failed to save document with OCR processing", e);
-        }
+ /**
+ * 🚫 SIMPLIFIED: OCR disabled - return helpful error
+ */
+public DocumentDTO saveDocumentWithOCR(Object request, String username) {
+    log.info("🚫 OCR upload attempted but OCR is disabled");
+    throw new RuntimeException(
+        "OCR processing is temporarily disabled for memory optimization. " +
+        "Please use regular document upload at /api/documents/upload instead."
+    );
+}
+    
+   public DocumentDTO saveDocument(MultipartFile file, String description, String username) {
+    try {
+        // Use existing getCurrentUser method instead of userService
+        User user = getCurrentUser();
+        
+        // Store file using existing fileStorageService
+        String fileName = fileStorageService.storeFile(file);
+        
+        // ✅ FIXED: Use correct Document constructor
+        Document document = new Document(
+            fileName,                    // filename
+            file.getOriginalFilename(),  // originalFilename  
+            fileName,                    // filePath (using same as filename)
+            file.getSize(),              // fileSize
+            file.getContentType(),       // mimeType
+            user                         // uploadedBy
+        );
+        
+        // ✅ FIXED: Set additional properties using CORRECT setters
+        document.setDescription(description);
+        document.setStatus(DocumentStatus.PENDING); // ✅ Use PENDING instead of ACTIVE
+        
+        // Save using existing repository
+        document = documentRepository.save(document);
+        
+        // Log audit using existing service
+        auditService.logDocumentUpload(document, user);
+        
+        // ✅ FIXED: Convert using existing method
+        return convertToDTO(document);
+        
+    } catch (Exception e) {
+        log.error("❌ Failed to save document: {}", e.getMessage(), e);
+        throw new RuntimeException("Failed to save document: " + e.getMessage(), e);
     }
+}
 
     public Map<String, Object> getOCRStatistics(String username) {
         try {

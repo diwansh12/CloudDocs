@@ -165,20 +165,6 @@
     <version>2.1.1</version>
 </dependency>
 
-<dependency>
-    <groupId>net.sourceforge.tess4j</groupId>
-    <artifactId>tess4j</artifactId>
-    <version>5.8.0</version>
-</dependency>
-
-<!-- Image processing support -->
-<dependency>
-    <groupId>org.apache.commons</groupId>
-    <artifactId>commons-imaging</artifactId>
-    <version>1.0.0-alpha6</version>
-</dependency>
-
-
 <!-- File type detection -->
 <dependency>
     <groupId>org.apache.tika</groupId>
