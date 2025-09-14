@@ -106,9 +106,9 @@ public class WorkflowStep {
     // ===== HELPER METHODS =====
 
     /**
-     * ✅ FIXED: Add a role-based approver to this step (uses proper constructor)
-     */
-    public void addRole(Role roleEntity) {
+ * ✅ FIXED: Add a role-based approver to this step - constructor corrected
+ */
+public void addRole(Role roleEntity) {
     if (roleEntity == null) return;
     
     // ✅ FIXED: Compare ERole enums properly
@@ -116,9 +116,9 @@ public class WorkflowStep {
         .anyMatch(stepRole -> stepRole.getRoleName().equals(roleEntity.getName()));
     
     if (!exists) {
-      WorkflowStepRole stepRole = new WorkflowStepRole(this, roleEntity);
-this.roles.add(stepRole); // ✅ Actually add it to the list
-
+        // ✅ FIXED: Pass ERole enum to constructor (not Role entity)
+        WorkflowStepRole stepRole = new WorkflowStepRole(this, roleEntity.getName());
+        this.roles.add(stepRole);
     }
 }
 
@@ -142,17 +142,15 @@ this.roles.add(stepRole); // ✅ Actually add it to the list
         return new ArrayList<>();
     }
 
-    /**
-     * ✅ FIXED: Get required role enums directly - corrected return type
-     */
-  public List<ERole> getRequiredRoleEnums() {
-   return roles.stream()
-    .map(WorkflowStepRole::getRoleName) // Returns Role entity
-    .filter(Objects::nonNull)
-    .map(Role::getName) // Convert Role → ERole
-    .distinct()
-    .toList();
-
+   /**
+ * ✅ FIXED: Get required role enums directly - no conversion needed
+ */
+public List<ERole> getRequiredRoleEnums() {
+    return roles.stream()
+        .map(WorkflowStepRole::getRoleName) // ✅ Returns ERole directly now
+        .filter(Objects::nonNull)
+        .distinct()
+        .toList();
 }
 
     /**
@@ -186,16 +184,13 @@ this.roles.add(stepRole); // ✅ Actually add it to the list
     }
 
     /**
-     * ✅ FIXED: Check if step has specific role requirement - corrected enum comparison
-     */
-  public boolean hasRole(ERole roleEnum) {
-   return roles.stream()
-    .map(WorkflowStepRole::getRoleName) // ✅ Step 1: WorkflowStepRole → Role
-    .filter(Objects::nonNull)           // ✅ Step 2: Filter nulls
-    .map(Role::getName)                 // ✅ Step 3: Role → ERole  
-    .anyMatch(eRole -> eRole == roleEnum); // ✅ Step 4: Compare ERole == ERole
-
-
+ * ✅ FIXED: Check if step has specific role requirement - direct ERole comparison
+ */
+public boolean hasRole(ERole roleEnum) {
+    return roles.stream()
+        .map(WorkflowStepRole::getRoleName) // ✅ Returns ERole directly
+        .filter(Objects::nonNull)
+        .anyMatch(eRole -> eRole == roleEnum); // ✅ Direct ERole comparison
 }
 
     /**

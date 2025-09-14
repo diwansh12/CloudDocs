@@ -249,9 +249,10 @@ public ResponseEntity<Map<String, Object>> createSampleTemplate() {
 
         WorkflowTemplate saved = templateRepository.save(template);
         
-        // ✅ FIXED: Actually use and save the WorkflowStepRole objects
-        WorkflowStepRole step1Role = new WorkflowStepRole(step1, managerRole);
-        WorkflowStepRole step2Role = new WorkflowStepRole(step2, adminRole);
+       // ✅ FIXED: Pass ERole enums to constructor (not Role entities)
+WorkflowStepRole step1Role = new WorkflowStepRole(step1, managerRole.getName()); // ✅ ERole enum
+WorkflowStepRole step2Role = new WorkflowStepRole(step2, adminRole.getName());   // ✅ ERole enum
+
         
         // Save the role associations (assumes you have WorkflowStepRoleRepository)
         // If you don't have this repository, you can add the roles directly to the steps:

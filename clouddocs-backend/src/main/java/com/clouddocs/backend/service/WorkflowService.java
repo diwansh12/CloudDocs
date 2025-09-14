@@ -816,8 +816,9 @@ private void completeTaskWithDetails(WorkflowTask task, TaskAction action, Strin
         List<WorkflowStepRole> stepRoles = stepRoleRepository.findByStepId(step.getId());
         if (!stepRoles.isEmpty()) {
             for (WorkflowStepRole stepRole : stepRoles) {
-               Role roleEntity = roleRepository.findByName(stepRole.getRoleName().getName())
+              Role roleEntity = roleRepository.findByName(stepRole.getRoleName())
     .orElse(null);
+
                 
                 if (roleEntity != null) {
                     List<User> usersWithRole = userRepository.findByRoleAndActiveAndEnabled(roleEntity, true, true);

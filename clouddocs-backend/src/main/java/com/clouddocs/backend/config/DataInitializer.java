@@ -139,7 +139,7 @@ public class DataInitializer {
         step1 = stepRepository.save(step1);
         
         // ✅ FIXED: Use Role entity from database instead of enum
-        WorkflowStepRole step1Role = new WorkflowStepRole(step1, managerRole);
+      WorkflowStepRole step1Role = new WorkflowStepRole(step1, managerRole.getName());
         stepRoleRepository.save(step1Role);
         System.out.println("✅ Created step 1 '" + step1.getName() + "' with " + 
             step1.getAssignedApprovers().size() + " direct approvers and role: " + managerRole.getName());
@@ -155,7 +155,7 @@ public class DataInitializer {
         step2 = stepRepository.save(step2);
         
         // ✅ FIXED: Use Role entity from database instead of enum
-        WorkflowStepRole step2Role = new WorkflowStepRole(step2, adminRole);
+        WorkflowStepRole step2Role = new WorkflowStepRole(step2, adminRole.getName());
         stepRoleRepository.save(step2Role);
         System.out.println("✅ Created step 2 '" + step2.getName() + "' with " + 
             step2.getAssignedApprovers().size() + " direct approvers and role: " + adminRole.getName());

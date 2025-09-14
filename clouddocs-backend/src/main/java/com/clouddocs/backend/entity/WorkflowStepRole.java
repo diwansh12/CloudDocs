@@ -20,14 +20,14 @@ public class WorkflowStepRole {
     @JoinColumn(name = "step_id", nullable = false)
     private WorkflowStep step;
 
+    // ✅ FIXED: Using ERole enum
     @Enumerated(EnumType.STRING)
     @Column(name = "role_name", nullable = false)
-    private Role roleName; // Changed from String to Role enum
+    private ERole roleName;
 
-    // Constructor for easy creation
-    public WorkflowStepRole(WorkflowStep step, Role roleName) {
+    // ✅ FIXED: Constructor now accepts ERole instead of Role
+    public WorkflowStepRole(WorkflowStep step, ERole roleName) {
         this.step = step;
         this.roleName = roleName;
     }
 }
-

@@ -290,65 +290,57 @@ public class WorkflowMapper {
         return historyDTOs;
     }
 
-    /**
-     * ✅ COMPILATION ERRORS FIXED: Map workflow template steps to DTOs
-     */
-    private static List<WorkflowStepDTO> mapSteps(WorkflowTemplate template) {
-        List<WorkflowStepDTO> stepDTOs = new ArrayList<>();
-        
-        if (template == null || template.getSteps() == null) {
-            return stepDTOs;
-        }
-
-        for (WorkflowStep step : template.getSteps()) {
-            try {
-                WorkflowStepDTO stepDTO = new WorkflowStepDTO();
-                stepDTO.setId(step.getId());
-                stepDTO.setStepOrder(step.getStepOrder());
-                stepDTO.setName(step.getName() != null ? step.getName() : "Step " + step.getStepOrder());
-                stepDTO.setStepType(step.getStepType());
-                stepDTO.setSlaHours(step.getSlaHours());
-
-                // ✅ COMPILATION ERRORS FIXED: Map required roles
-                List<String> requiredRoles = new ArrayList<>();
-                try {
-                    // Method 1: Check if step has WorkflowStepRole entities
-                    if (step.getRoles() != null && !step.getRoles().isEmpty()) {
-                        requiredRoles = step.getRoles().stream()
-                            .filter(Objects::nonNull)
-                            .filter(stepRole -> stepRole.getRoleName() != null)
-                            .map(stepRole -> stepRole.getRoleName().getName().name()) // ✅ FIXED: Use getName().name()
-                            .collect(Collectors.toList());
-                    }
-                    // Method 2: Fallback - check if step has direct Role collection
-                    else if (step.getRequiredRoles() != null && !step.getRequiredRoles().isEmpty()) {
-                        requiredRoles = step.getRequiredRoles().stream()
-                            .filter(Objects::nonNull)
-                            .map(role -> role.getName().name()) // ✅ FIXED: Use getName().name()
-                            .collect(Collectors.toList());
-                    }
-                } catch (Exception e) {
-                    log.debug("Could not map required roles for step {}: {}", step.getId(), e.getMessage());
-                    requiredRoles = new ArrayList<>();
-                }
-                
-                stepDTO.setRequiredRoles(requiredRoles);
-                stepDTOs.add(stepDTO);
-                
-            } catch (Exception e) {
-                log.warn("Error mapping step {}: {}", step != null ? step.getId() : "null", e.getMessage());
-            }
-        }
-
-        // Sort by step order
-        stepDTOs.sort((a, b) -> {
-            if (a.getStepOrder() == null) return 1;
-            if (b.getStepOrder() == null) return -1;
-            return a.getStepOrder().compareTo(b.getStepOrder());
-        });
-
+   /**
+ * ✅ FIXED: Map workflow template steps to DTOs - ERole compilation errors resolved
+ */
+private static List<WorkflowStepDTO> mapSteps(WorkflowTemplate template) {
+    List<WorkflowStepDTO> stepDTOs = new ArrayList<>();
+    
+    if (template == null || template.getSteps() == null) {
         return stepDTOs;
     }
+
+    for (WorkflowStep step : template.getSteps()) {
+        try {
+            WorkflowStepDTO stepDTO = new WorkflowStepDTO();
+            stepDTO.setId(step.getId());
+            stepDTO.setStepOrder(step.getStepOrder());
+            stepDTO.setName(step.getName() != null ? step.getName() : "Step " + step.getStepOrder());
+            stepDTO.setStepType(step.getStepType());
+            stepDTO.setSlaHours(step.getSlaHours());
+
+            // ✅ FIXED: Correct ERole enum mapping
+            List<String> requiredRoles = new ArrayList<>();
+            try {
+                if (step.getRoles() != null && !step.getRoles().isEmpty()) {
+                    requiredRoles = step.getRoles().stream()
+                        .filter(Objects::nonNull)
+                        .filter(stepRole -> stepRole.getRoleName() != null)
+                        .map(stepRole -> stepRole.getRoleName().name()) // ✅ FIXED: ERole.name() not getName().name()
+                        .collect(Collectors.toList());
+                }
+            } catch (Exception e) {
+                log.debug("Could not map required roles for step {}: {}", step.getId(), e.getMessage());
+                requiredRoles = new ArrayList<>();
+            }
+            
+            stepDTO.setRequiredRoles(requiredRoles);
+            stepDTOs.add(stepDTO);
+            
+        } catch (Exception e) {
+            log.warn("Error mapping step {}: {}", step != null ? step.getId() : "null", e.getMessage());
+        }
+    }
+
+    // Sort by step order
+    stepDTOs.sort((a, b) -> {
+        if (a.getStepOrder() == null) return 1;
+        if (b.getStepOrder() == null) return -1;
+        return a.getStepOrder().compareTo(b.getStepOrder());
+    });
+
+    return stepDTOs;
+}
 
     /**
      * ✅ ENHANCED: Create minimal DTO when full mapping fails
@@ -416,46 +408,41 @@ public class WorkflowMapper {
     }
 
     /**
-     * ✅ COMPILATION ERRORS FIXED: Helper method to safely map a single WorkflowStep to DTO
-     */
-    public static WorkflowStepDTO toStepDTO(WorkflowStep step) {
-        if (step == null) {
-            return null;
-        }
-
-        try {
-            WorkflowStepDTO dto = new WorkflowStepDTO();
-            dto.setId(step.getId());
-            dto.setStepOrder(step.getStepOrder());
-            dto.setName(step.getName() != null ? step.getName() : "Step " + step.getStepOrder());
-            dto.setStepType(step.getStepType());
-            dto.setSlaHours(step.getSlaHours());
-
-            // ✅ COMPILATION ERRORS FIXED: Map required roles safely
-            List<String> requiredRoles = new ArrayList<>();
-            try {
-                if (step.getRoles() != null && !step.getRoles().isEmpty()) {
-                    requiredRoles = step.getRoles().stream()
-                        .filter(Objects::nonNull)
-                        .filter(stepRole -> stepRole.getRoleName() != null)
-                        .map(stepRole -> stepRole.getRoleName().getName().name()) // ✅ FIXED: Use getName().name()
-                        .collect(Collectors.toList());
-                } else if (step.getRequiredRoles() != null && !step.getRequiredRoles().isEmpty()) {
-                    requiredRoles = step.getRequiredRoles().stream()
-                        .filter(Objects::nonNull)
-                        .map(role -> role.getName().name()) // ✅ FIXED: Use getName().name()
-                        .collect(Collectors.toList());
-                }
-            } catch (Exception e) {
-                log.debug("Could not map required roles for step {}: {}", step.getId(), e.getMessage());
-            }
-
-            dto.setRequiredRoles(requiredRoles);
-            return dto;
-
-        } catch (Exception e) {
-            log.error("Error mapping WorkflowStep to DTO: {}", e.getMessage(), e);
-            return null;
-        }
+ * ✅ FIXED: Helper method to safely map a single WorkflowStep to DTO
+ */
+public static WorkflowStepDTO toStepDTO(WorkflowStep step) {
+    if (step == null) {
+        return null;
     }
+
+    try {
+        WorkflowStepDTO dto = new WorkflowStepDTO();
+        dto.setId(step.getId());
+        dto.setStepOrder(step.getStepOrder());
+        dto.setName(step.getName() != null ? step.getName() : "Step " + step.getStepOrder());
+        dto.setStepType(step.getStepType());
+        dto.setSlaHours(step.getSlaHours());
+
+        // ✅ FIXED: Correct ERole enum mapping
+        List<String> requiredRoles = new ArrayList<>();
+        try {
+            if (step.getRoles() != null && !step.getRoles().isEmpty()) {
+                requiredRoles = step.getRoles().stream()
+                    .filter(Objects::nonNull)
+                    .filter(stepRole -> stepRole.getRoleName() != null)
+                    .map(stepRole -> stepRole.getRoleName().name()) // ✅ FIXED: ERole.name() directly
+                    .collect(Collectors.toList());
+            }
+        } catch (Exception e) {
+            log.debug("Could not map required roles for step {}: {}", step.getId(), e.getMessage());
+        }
+
+        dto.setRequiredRoles(requiredRoles);
+        return dto;
+
+    } catch (Exception e) {
+        log.error("Error mapping WorkflowStep to DTO: {}", e.getMessage(), e);
+        return null;
+    }
+}
 }
