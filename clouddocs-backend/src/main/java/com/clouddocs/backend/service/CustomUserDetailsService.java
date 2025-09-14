@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 public class CustomUserDetailsService implements UserDetailsService {
@@ -48,7 +49,12 @@ public class CustomUserDetailsService implements UserDetailsService {
         
         System.out.println("✅ User found: " + user.getUsername() + " (" + user.getEmail() + ")");
         System.out.println("User enabled: " + user.isEnabled());
-        System.out.println("User role: " + user.getRole());
+        
+        // ✅ FIXED: Use getRoles() for Many-to-Many system and format for display
+        String userRoles = user.getRoles().stream()
+            .map(role -> role.getName().name())
+            .collect(Collectors.joining(", "));
+        System.out.println("User roles: [" + userRoles + "]");
 
         return UserPrincipal.create(user); // ✅ Using UserPrincipal instead of UserDetailsImpl
     }

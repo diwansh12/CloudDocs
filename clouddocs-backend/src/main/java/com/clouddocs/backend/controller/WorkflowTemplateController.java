@@ -5,6 +5,7 @@ import com.clouddocs.backend.dto.workflow.WorkflowStepDTO;
 import com.clouddocs.backend.entity.WorkflowTemplate;
 import com.clouddocs.backend.entity.WorkflowStep;
 import com.clouddocs.backend.entity.WorkflowType;
+import com.clouddocs.backend.entity.Role;
 import com.clouddocs.backend.repository.WorkflowTemplateRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.*;
@@ -18,10 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static org.springframework.http.HttpStatus.NOT_FOUND;
@@ -50,14 +48,12 @@ public class WorkflowTemplateController {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             logger.debug("User: {}, Authorities: {}", auth.getName(), auth.getAuthorities());
             
-            // Use existing repository method
             List<WorkflowTemplate> activeTemplates = templateRepository.findByIsActiveTrue();
             logger.info("Active templates found: {}", activeTemplates.size());
             
-            // Safe DTO conversion with error handling
             List<WorkflowTemplateDto> templateDTOs = activeTemplates.stream()
                     .map(this::convertToDTOSafe)
-                    .filter(dto -> dto != null)  // Remove failed conversions
+                    .filter(Objects::nonNull)  // Remove failed conversions
                     .collect(Collectors.toList());
             
             logger.info("✅ Successfully converted {} templates to DTOs", templateDTOs.size());
@@ -66,8 +62,6 @@ public class WorkflowTemplateController {
             
         } catch (Exception e) {
             logger.error("❌ Error in getActiveTemplates: {}", e.getMessage(), e);
-            
-            // Return empty list instead of throwing exception to prevent frontend crashes
             return ResponseEntity.ok(new ArrayList<>());
         }
     }
@@ -91,7 +85,7 @@ public class WorkflowTemplateController {
             if (active != null) {
                 templates = templates.stream()
                         .filter(t -> active.equals(t.getIsActive()))
-                        .toList();
+                        .collect(Collectors.toList());
             }
             
             if (type != null) {
@@ -99,17 +93,16 @@ public class WorkflowTemplateController {
                     WorkflowType workflowType = WorkflowType.valueOf(type.toUpperCase());
                     templates = templates.stream()
                             .filter(t -> workflowType.equals(t.getType()))
-                            .toList();
+                            .collect(Collectors.toList());
                 } catch (IllegalArgumentException e) {
                     logger.warn("Invalid workflow type: {}", type);
                     templates = List.of();
                 }
             }
 
-            // Safe DTO conversion
             List<WorkflowTemplateDto> templateDTOs = templates.stream()
                     .map(this::convertToDTOSafe)
-                    .filter(dto -> dto != null)
+                    .filter(Objects::nonNull)
                     .collect(Collectors.toList());
 
             logger.info("✅ Successfully listed {} templates", templateDTOs.size());
@@ -165,7 +158,6 @@ public class WorkflowTemplateController {
                 result = templateRepository.findAll(pageable);
             }
 
-            // Convert to DTOs
             Page<WorkflowTemplateDto> dtoPage = result.map(this::convertToDTOSafe);
             
             logger.info("✅ Successfully returned paged templates: {} of {}", 
@@ -341,7 +333,7 @@ public class WorkflowTemplateController {
                 if (template.getSteps() != null && !template.getSteps().isEmpty()) {
                     List<WorkflowStepDTO> stepDTOs = template.getSteps().stream()
                             .map(this::convertStepToDTOSafe)
-                            .filter(stepDto -> stepDto != null)
+                            .filter(Objects::nonNull)
                             .sorted(Comparator.comparingInt(s -> s.getStepOrder() != null ? s.getStepOrder() : 0))
                             .collect(Collectors.toList());
                     dto.setSteps(stepDTOs);
@@ -363,7 +355,7 @@ public class WorkflowTemplateController {
     }
 
     /**
-     * ✅ SAFE step DTO conversion
+     * ✅ FIXED: Safe step DTO conversion with Many-to-Many role support
      */
     private WorkflowStepDTO convertStepToDTOSafe(WorkflowStep step) {
         try {
@@ -374,11 +366,12 @@ public class WorkflowTemplateController {
             stepDTO.setStepType(step.getStepType());
             stepDTO.setSlaHours(step.getSlaHours());
             
-            // ✅ Safe handling of roles (if they exist)
+            // ✅ FIXED: Handle Many-to-Many roles properly
             try {
                 if (step.getRequiredRoles() != null && !step.getRequiredRoles().isEmpty()) {
+                    // ✅ FIXED: Explicit lambda parameter type to resolve inference error
                     List<String> roleNames = step.getRequiredRoles().stream()
-                            .map(role -> role.name())
+                            .map((Role role) -> role.getName().name()) // ✅ FIXED: Use getName().name() for Role entity
                             .collect(Collectors.toList());
                     stepDTO.setRequiredRoles(roleNames);
                 } else {
@@ -417,5 +410,43 @@ public class WorkflowTemplateController {
         return template;
     }
 
-    
+    /**
+     * ✅ NEW: Get template statistics
+     */
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @GetMapping("/statistics")
+    @Transactional(readOnly = true)
+    public ResponseEntity<Map<String, Object>> getTemplateStatistics() {
+        try {
+            logger.info("📊 Getting template statistics");
+            
+            List<WorkflowTemplate> allTemplates = templateRepository.findAll();
+            
+            Map<String, Object> stats = new HashMap<>();
+            stats.put("totalTemplates", allTemplates.size());
+            stats.put("activeTemplates", allTemplates.stream().mapToLong(t -> t.getIsActive() ? 1 : 0).sum());
+            stats.put("inactiveTemplates", allTemplates.stream().mapToLong(t -> !t.getIsActive() ? 1 : 0).sum());
+            
+            // Group by type
+            Map<String, Long> byType = allTemplates.stream()
+                .collect(Collectors.groupingBy(
+                    t -> t.getType() != null ? t.getType().name() : "UNKNOWN",
+                    Collectors.counting()
+                ));
+            stats.put("templatesByType", byType);
+            
+            // Average steps per template
+            double avgSteps = allTemplates.stream()
+                .mapToInt(t -> t.getSteps() != null ? t.getSteps().size() : 0)
+                .average()
+                .orElse(0.0);
+            stats.put("averageStepsPerTemplate", Math.round(avgSteps * 100.0) / 100.0);
+            
+            return ResponseEntity.ok(stats);
+            
+        } catch (Exception e) {
+            logger.error("❌ Error getting template statistics: {}", e.getMessage(), e);
+            return ResponseEntity.ok(new HashMap<>());
+        }
+    }
 }

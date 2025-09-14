@@ -1,6 +1,7 @@
 package com.clouddocs.backend.scheduler;
 
 import com.clouddocs.backend.entity.*;
+import com.clouddocs.backend.repository.RoleRepository;
 import com.clouddocs.backend.repository.UserRepository;
 import com.clouddocs.backend.repository.WorkflowHistoryRepository;
 import com.clouddocs.backend.repository.WorkflowTaskRepository;
@@ -15,8 +16,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.OffsetDateTime; // ✅ CHANGED: Use OffsetDateTime instead of LocalDateTime
-import java.time.ZoneOffset;     // ✅ ADDED: For UTC timezone handling
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 
 /**
@@ -30,6 +31,7 @@ public class WorkflowScheduler {
     @Autowired private WorkflowTaskRepository taskRepository;
     @Autowired private WorkflowHistoryRepository historyRepository;
     @Autowired private UserRepository userRepository;
+    @Autowired private RoleRepository roleRepository; // ✅ ADDED: For Role entity access
     @Autowired private NotificationService notificationService;
 
     @Value("${workflow.sla.enabled:true}")
@@ -52,7 +54,6 @@ public class WorkflowScheduler {
             return;
         }
 
-        // ✅ FIXED: Use OffsetDateTime with UTC timezone
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         Pageable batch = PageRequest.of(0, 200);
 
@@ -86,7 +87,6 @@ public class WorkflowScheduler {
         }
 
         // 2) Escalate tasks OVERDUE older than graceHours
-        // ✅ FIXED: Use OffsetDateTime for escalation cutoff calculation
         OffsetDateTime escalationCutoff = now.minusHours(escalationGraceHours);
         var escalatePage = taskRepository.findByStatusAndDueDateBefore(TaskStatus.OVERDUE, escalationCutoff, batch);
         List<WorkflowTask> toEscalate = escalatePage.getContent();
@@ -95,14 +95,15 @@ public class WorkflowScheduler {
             logger.info("Escalating {} overdue tasks (cutoff: {})", toEscalate.size(), escalationCutoff);
         }
 
+        // ✅ FIXED: Get Role entity instead of enum
         Role escalationRole = safeRole(escalationRoleName);
 
         for (WorkflowTask task : toEscalate) {
             try {
-                // Reassign to a user with escalation role (pick first by simple rule; customize as needed)
-                List<User> candidates = userRepository.findByRole(escalationRole);
+                // ✅ FIXED: Find users by Role entity using Many-to-Many query
+                List<User> candidates = userRepository.findByRoleName(ERole.valueOf("ROLE_" + escalationRoleName.toUpperCase()));
                 if (candidates == null || candidates.isEmpty()) {
-                    logger.warn("No users found for escalation role {}", escalationRole);
+                    logger.warn("No users found for escalation role {}", escalationRoleName);
                     continue;
                 }
 
@@ -111,7 +112,6 @@ public class WorkflowScheduler {
                 User previousAssignee = task.getAssignedTo();
                 task.setAssignedTo(newAssignee);
                 
-                // ✅ FIXED: Use OffsetDateTime for due date extension
                 task.setDueDate(now.plusHours(24));
                 taskRepository.save(task);
 
@@ -132,11 +132,25 @@ public class WorkflowScheduler {
         }
     }
 
+    // ✅ COMPLETELY FIXED: Get Role entity from database
     private Role safeRole(String roleName) {
         try {
-            return Role.valueOf(roleName.toUpperCase());
+            // Convert string to ERole enum (e.g., "MANAGER" -> "ROLE_MANAGER")
+            String enumName = roleName.startsWith("ROLE_") ? roleName : "ROLE_" + roleName;
+            ERole eRole = ERole.valueOf(enumName.toUpperCase());
+            
+            // Find Role entity by ERole enum
+            return roleRepository.findByName(eRole)
+                .orElseGet(() -> {
+                    logger.warn("Role {} not found, falling back to ROLE_MANAGER", enumName);
+                    return roleRepository.findByName(ERole.ROLE_MANAGER)
+                        .orElse(null);
+                });
         } catch (Exception e) {
-            return Role.MANAGER;
+            logger.warn("Error resolving role {}, falling back to ROLE_MANAGER: {}", roleName, e.getMessage());
+            // ✅ FIXED: Return ROLE_MANAGER entity as fallback
+            return roleRepository.findByName(ERole.ROLE_MANAGER)
+                .orElse(null);
         }
     }
 

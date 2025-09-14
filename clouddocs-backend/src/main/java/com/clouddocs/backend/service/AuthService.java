@@ -1,11 +1,13 @@
 package com.clouddocs.backend.service;
 
 import com.clouddocs.backend.dto.request.LoginRequest;
-import com.clouddocs.backend.dto.request.SignupRequest; // ✅ FIXED: Using SignupRequest consistently
+import com.clouddocs.backend.dto.request.SignupRequest;
 import com.clouddocs.backend.dto.response.JwtResponse;
 import com.clouddocs.backend.entity.User;
 import com.clouddocs.backend.entity.Role;
+import com.clouddocs.backend.entity.ERole;
 import com.clouddocs.backend.repository.UserRepository;
+import com.clouddocs.backend.repository.RoleRepository;
 import com.clouddocs.backend.security.JwtTokenProvider;
 import com.clouddocs.backend.security.UserPrincipal;
 import org.slf4j.Logger;
@@ -21,8 +23,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -35,6 +36,9 @@ public class AuthService {
     
     @Autowired
     private UserRepository userRepository;
+    
+    @Autowired
+    private RoleRepository roleRepository; // ✅ ADDED: For Many-to-Many role management
     
     @Autowired
     private JwtTokenProvider jwtTokenProvider;
@@ -110,10 +114,10 @@ public class AuthService {
     }
     
     /**
-     * ✅ FIXED: User registration with SignupRequest and manual User creation
+     * ✅ FIXED: User registration with Many-to-Many role system
      */
     @Transactional
-    public JwtResponse register(SignupRequest signupRequest) { // ✅ FIXED: Changed from RegisterRequest to SignupRequest
+    public JwtResponse register(SignupRequest signupRequest) {
         try {
             logger.info("📝 Registration attempt for user: {}", signupRequest.getUsername());
             
@@ -140,26 +144,44 @@ public class AuthService {
             user.setFirstName(signupRequest.getFirstName());
             user.setLastName(signupRequest.getLastName());
             
-            // ✅ FIXED: Set default role - handle role assignment
+            // ✅ COMPLETELY FIXED: Handle Many-to-Many role assignment
+            Set<Role> userRoles = new HashSet<>();
             if (signupRequest.getRole() != null && !signupRequest.getRole().isEmpty()) {
-                // If roles are provided, use the first one or handle multiple roles
-                String firstRole = signupRequest.getRole().iterator().next().toUpperCase();
-                try {
-                    user.setRole(Role.valueOf(firstRole));
-                } catch (IllegalArgumentException e) {
-                    logger.warn("⚠️ Invalid role '{}', assigning USER role", firstRole);
-                    user.setRole(Role.USER);
+                // Process each role from the signup request
+                for (String roleStr : signupRequest.getRole()) {
+                    try {
+                        // Convert string to ERole enum (handle "USER" -> "ROLE_USER")
+                        String enumName = roleStr.startsWith("ROLE_") ? roleStr : "ROLE_" + roleStr;
+                        ERole eRole = ERole.valueOf(enumName.toUpperCase());
+                        
+                        // Find Role entity in database
+                        Role role = roleRepository.findByName(eRole)
+                            .orElseThrow(() -> new RuntimeException("Role not found: " + enumName));
+                        userRoles.add(role);
+                        
+                    } catch (IllegalArgumentException e) {
+                        logger.warn("⚠️ Invalid role '{}', skipping", roleStr);
+                    }
                 }
-            } else {
-                user.setRole(Role.USER); // Default role
             }
+            
+            // ✅ FIXED: If no valid roles found, assign default USER role
+            if (userRoles.isEmpty()) {
+                Role defaultRole = roleRepository.findByName(ERole.ROLE_USER)
+                    .orElseThrow(() -> new RuntimeException("Default USER role not found"));
+                userRoles.add(defaultRole);
+            }
+            
+            user.setRoles(userRoles);
             
             // Set additional defaults
             user.setActive(true);
             user.setEnabled(true);
             
             User savedUser = userRepository.save(user);
-            logger.info("✅ User registered successfully: {}", savedUser.getUsername());
+            logger.info("✅ User registered successfully: {} with roles: {}", 
+                savedUser.getUsername(), 
+                savedUser.getRoles().stream().map(r -> r.getName().name()).collect(Collectors.toList()));
             
             // Automatically log in the user after registration
             LoginRequest loginRequest = new LoginRequest();

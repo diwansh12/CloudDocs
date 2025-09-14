@@ -20,7 +20,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -56,12 +55,13 @@ public class WorkflowService {
     private final UserRepository userRepository;
     private final AuthzUtil authz;
     private final NotificationService notificationService;
+    private final RoleRepository roleRepository;
+    
 
     @Autowired
     private AuditService auditService;
     @Autowired 
     private EntityManager entityManager;
-    
     // ===== ENUMS =====
     private enum StepOutcome {
         CONTINUE, APPROVED, REJECTED
@@ -797,30 +797,30 @@ private void completeTaskWithDetails(WorkflowTask task, TaskAction action, Strin
     }
 
     private List<User> findApproversForStep(WorkflowStep step) {
-        List<User> approvers = new ArrayList<>();
+    List<User> approvers = new ArrayList<>();
 
-        try {
-            // First, check for directly assigned approvers
-            if (step.getAssignedApprovers() != null && !step.getAssignedApprovers().isEmpty()) {
-                for (User user : step.getAssignedApprovers()) {
-                    if (isUserEligible(user)) {
-                        approvers.add(user);
-                    }
-                }
-                if (!approvers.isEmpty()) {
-                    return approvers;
+    try {
+        // First, check for directly assigned approvers
+        if (step.getAssignedApprovers() != null && !step.getAssignedApprovers().isEmpty()) {
+            for (User user : step.getAssignedApprovers()) {
+                if (isUserEligible(user)) {
+                    approvers.add(user);
                 }
             }
+            if (!approvers.isEmpty()) {
+                return approvers;
+            }
+        }
 
-            // Find approvers by role
-            List<WorkflowStepRole> stepRoles = stepRoleRepository.findByStepId(step.getId());
-            if (!stepRoles.isEmpty()) {
-                Set<Role> requiredRoles = stepRoles.stream()
-                        .map(WorkflowStepRole::getRoleName)
-                        .collect(Collectors.toSet());
-
-                for (Role role : requiredRoles) {
-                    List<User> usersWithRole = userRepository.findByRoleAndActiveAndEnabled(role, true, true);
+        // Find approvers by role using Many-to-Many system
+        List<WorkflowStepRole> stepRoles = stepRoleRepository.findByStepId(step.getId());
+        if (!stepRoles.isEmpty()) {
+            for (WorkflowStepRole stepRole : stepRoles) {
+               Role roleEntity = roleRepository.findByName(stepRole.getRoleName().getName())
+    .orElse(null);
+                
+                if (roleEntity != null) {
+                    List<User> usersWithRole = userRepository.findByRoleAndActiveAndEnabled(roleEntity, true, true);
                     for (User user : usersWithRole) {
                         if (isUserEligible(user) && !approvers.contains(user)) {
                             approvers.add(user);
@@ -828,25 +828,33 @@ private void completeTaskWithDetails(WorkflowTask task, TaskAction action, Strin
                     }
                 }
             }
+        }
 
-            // Fallback: if no specific roles, find admin users
-            if (approvers.isEmpty()) {
-                log.warn("⚠️ No role-based approvers found for step '{}', falling back to admin users", step.getName());
-                List<User> adminUsers = userRepository.findByRoleAndActiveAndEnabled(Role.ADMIN, true, true);
+        // ✅ FIXED: Fallback - find admin users using ERole enum
+        if (approvers.isEmpty()) {
+            log.warn("⚠️ No role-based approvers found for step '{}', falling back to admin users", step.getName());
+            
+            Role adminRole = roleRepository.findByName(ERole.ROLE_ADMIN)
+                .orElse(null);
+            
+            if (adminRole != null) {
+                List<User> adminUsers = userRepository.findByRoleAndActiveAndEnabled(adminRole, true, true);
                 for (User user : adminUsers) {
                     if (isUserEligible(user)) {
                         approvers.add(user);
                     }
                 }
             }
-
-            return approvers;
-
-        } catch (Exception e) {
-            log.error("Error finding approvers for step '{}': {}", step.getName(), e.getMessage());
-            return new ArrayList<>();
         }
+
+        return approvers;
+
+    } catch (Exception e) {
+        log.error("Error finding approvers for step '{}': {}", step.getName(), e.getMessage());
+        return new ArrayList<>();
     }
+}
+
 
     private boolean isUserEligible(User user) {
         return user != null && user.isActive() && user.isEnabled();
@@ -1288,22 +1296,24 @@ private void completeTaskWithDetails(WorkflowTask task, TaskAction action, Strin
 }
 
     private boolean canUserAccessWorkflow(User user, WorkflowInstance workflow) {
-        try {
-            boolean isInitiator = workflow.getInitiatedBy() != null &&
-                    workflow.getInitiatedBy().getId().equals(user.getId());
+    try {
+        boolean isInitiator = workflow.getInitiatedBy() != null &&
+                workflow.getInitiatedBy().getId().equals(user.getId());
 
-            boolean hasTask = workflow.getTasks() != null &&
-                    workflow.getTasks().stream().anyMatch(task -> task.getAssignedTo() != null &&
-                            task.getAssignedTo().getId().equals(user.getId()));
+        boolean hasTask = workflow.getTasks() != null &&
+                workflow.getTasks().stream().anyMatch(task -> task.getAssignedTo() != null &&
+                        task.getAssignedTo().getId().equals(user.getId()));
 
-            boolean isAdminOrManager = user.getRole() == Role.ADMIN || user.getRole() == Role.MANAGER;
+        // ✅ FIXED: Use hasRole() method for Many-to-Many system
+        boolean isAdminOrManager = user.hasRole(ERole.ROLE_ADMIN) || user.hasRole(ERole.ROLE_MANAGER);
 
-            return isInitiator || hasTask || isAdminOrManager;
-        } catch (Exception e) {
-            log.error("Error checking workflow access: {}", e.getMessage());
-            return false;
-        }
+        return isInitiator || hasTask || isAdminOrManager;
+    } catch (Exception e) {
+        log.error("Error checking workflow access: {}", e.getMessage());
+        return false;
     }
+}
+
 
     private Map<String, Object> getUserWorkflowPermissions(WorkflowInstance workflow, User user) {
         Map<String, Object> permissions = new HashMap<>();

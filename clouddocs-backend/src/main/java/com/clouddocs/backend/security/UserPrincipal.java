@@ -5,9 +5,8 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
-import java.util.Collection;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
+import java.util.stream.Collectors;
 
 public class UserPrincipal implements UserDetails {
     private Long id;
@@ -29,10 +28,20 @@ public class UserPrincipal implements UserDetails {
         this.authorities = authorities;
     }
     
+    // ✅ FIXED: Updated for Many-to-Many Role system
     public static UserPrincipal create(User user) {
-        List<GrantedAuthority> authorities = List.of(
-            new SimpleGrantedAuthority("ROLE_" + user.getRole().name())
-        );
+        // ✅ FIXED: Use ArrayList instead of List.of() to avoid type issues
+        List<GrantedAuthority> authorities = new ArrayList<>();
+        
+        // ✅ FIXED: Handle Many-to-Many roles - user.getRoles() returns Set<Role>
+        if (user.getRoles() != null && !user.getRoles().isEmpty()) {
+            authorities = user.getRoles().stream()
+                .map(role -> new SimpleGrantedAuthority("ROLE_" + role.getName().name()))
+                .collect(Collectors.toList());
+        } else {
+            // ✅ Fallback: If no roles, add default USER role
+            authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
+        }
         
         return new UserPrincipal(
             user.getId(),

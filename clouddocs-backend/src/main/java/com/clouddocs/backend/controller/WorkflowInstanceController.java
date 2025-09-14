@@ -34,7 +34,7 @@ public class WorkflowInstanceController {
     private final UserRepository userRepository;
 
     /**
-     * ✅ UPDATED: Get user's workflow instances with enhanced display using new service
+     * ✅ FIXED: Get user's workflow instances with Many-to-Many role support
      */
     @PreAuthorize("isAuthenticated()")
     @GetMapping("/mine")
@@ -53,26 +53,28 @@ public class WorkflowInstanceController {
             log.info("🔍 Fetching workflow instances - status: {}, page: {}, size: {}", 
                     status, page, size);
 
-            UserPrincipal userPrincipal = getCurrentUserPrincipal();
-            User currentUser = getCurrentUser(userPrincipal.getId());
+            User currentUser = getCurrentUser();
             
-            log.info("🔍 Current user: {} with role: {}", currentUser.getUsername(), currentUser.getRole());
+            // ✅ FIXED: Use role checking methods for Many-to-Many roles
+            List<String> userRoles = currentUser.getRoles().stream()
+                .map(role -> role.getName().name())
+                .collect(Collectors.toList());
+            
+            log.info("🔍 Current user: {} with roles: {}", currentUser.getUsername(), userRoles);
 
-            // ✅ UPDATED: Use enhanced service method with proper filtering
             Map<String, Object> response;
             
-            if (currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.MANAGER) {
-                // For admin/manager, we can implement a special service method or use existing one
+            // ✅ FIXED: Check roles using hasRole() method for Many-to-Many system
+            if (currentUser.hasRole(ERole.ROLE_ADMIN) || currentUser.hasRole(ERole.ROLE_MANAGER)) {
                 log.info("🔑 Admin/Manager access - using enhanced service method");
                 response = workflowService.getUserWorkflowsWithDetails(currentUser.getId(), page, size, status);
             } else {
-                // Regular user access
                 log.info("👤 Regular user access - fetching user's workflow instances");
                 response = workflowService.getUserWorkflowsWithDetails(currentUser.getId(), page, size, status);
             }
             
-            log.info("✅ Returning workflow instances for user {} (role: {})", 
-                    userPrincipal.getUsername(), currentUser.getRole());
+            log.info("✅ Returning workflow instances for user {} (roles: {})", 
+                    currentUser.getUsername(), userRoles);
             
             return ResponseEntity.ok(response);
 
@@ -102,13 +104,12 @@ public class WorkflowInstanceController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
         try {
-            log.debug("Searching workflow instances with query: {}", q);
+            log.debug("🔍 Searching workflow instances with query: {}", q);
             
-            UserPrincipal userPrincipal = getCurrentUserPrincipal();
+            Long currentUserId = getCurrentUserId();
             
-            // ✅ UPDATED: Use service method for enhanced search
             Map<String, Object> response = workflowService.getUserWorkflowsWithDetails(
-                userPrincipal.getId(), page, size, "All Statuses");
+                currentUserId, page, size, "All Statuses");
             
             // Filter results based on search query
             @SuppressWarnings("unchecked")
@@ -121,10 +122,11 @@ public class WorkflowInstanceController {
             // Update response with filtered results
             response.put("workflows", filteredResults);
             response.put("totalItems", (long) filteredResults.size());
-            response.put("totalPages", 1);
+            response.put("totalPages", filteredResults.size() > 0 ? 1 : 0);
             response.put("hasNext", false);
             response.put("hasPrevious", false);
             
+            log.info("✅ Search completed: {} results found for query '{}'", filteredResults.size(), q);
             return ResponseEntity.ok(response);
             
         } catch (Exception e) {
@@ -141,12 +143,10 @@ public class WorkflowInstanceController {
     @Transactional(readOnly = true)
     public ResponseEntity<WorkflowInstanceDTO> getWorkflowInstance(@PathVariable Long id) {
         try {
-            log.debug("Fetching workflow instance with ID: {}", id);
+            log.debug("🔍 Fetching workflow instance with ID: {}", id);
             
-            UserPrincipal userPrincipal = getCurrentUserPrincipal();
-            
-            // ✅ UPDATED: Use enhanced service method
-            WorkflowInstanceDTO workflow = workflowService.getWorkflowDetailsWithTasks(id, userPrincipal.getId());
+            Long currentUserId = getCurrentUserId();
+            WorkflowInstanceDTO workflow = workflowService.getWorkflowDetailsWithTasks(id, currentUserId);
             
             return ResponseEntity.ok(workflow);
             
@@ -166,12 +166,10 @@ public class WorkflowInstanceController {
     @Transactional(readOnly = true)
     public ResponseEntity<WorkflowInstanceDTO> getWorkflowWithDetails(@PathVariable Long id) {
         try {
-            log.debug("Fetching detailed workflow instance with ID: {}", id);
+            log.debug("🔍 Fetching detailed workflow instance with ID: {}", id);
             
-            UserPrincipal userPrincipal = getCurrentUserPrincipal();
-            
-            // ✅ UPDATED: Use enhanced service method for detailed workflow
-            WorkflowInstanceDTO workflow = workflowService.getWorkflowDetailsWithTasks(id, userPrincipal.getId());
+            Long currentUserId = getCurrentUserId();
+            WorkflowInstanceDTO workflow = workflowService.getWorkflowDetailsWithTasks(id, currentUserId);
             
             log.debug("✅ Returning detailed workflow instance: {}", id);
             return ResponseEntity.ok(workflow);
@@ -194,9 +192,8 @@ public class WorkflowInstanceController {
     public ResponseEntity<Map<String, Object>> cancelWorkflowInstance(@PathVariable Long id, 
                                                                       @RequestParam(required = false) String reason) {
         try {
-            log.info("Cancelling workflow instance: {}", id);
+            log.info("🚫 Cancelling workflow instance: {}", id);
             
-            // ✅ UPDATED: Use enhanced service method
             WorkflowInstanceDTO cancelledWorkflow = workflowService.cancelWorkflow(id, reason);
             
             Map<String, Object> response = new HashMap<>();
@@ -225,21 +222,18 @@ public class WorkflowInstanceController {
     }
 
     /**
-     * ✅ UPDATED: Get workflow instance history - keeping original implementation but with better error handling
+     * ✅ UPDATED: Get workflow instance history
      */
     @PreAuthorize("isAuthenticated()")
     @GetMapping("/{id}/history")
     @Transactional(readOnly = true)
     public ResponseEntity<List<Map<String, Object>>> getWorkflowHistory(@PathVariable Long id) {
         try {
-            log.debug("Fetching history for workflow instance: {}", id);
+            log.debug("📜 Fetching history for workflow instance: {}", id);
             
-            UserPrincipal userPrincipal = getCurrentUserPrincipal();
+            Long currentUserId = getCurrentUserId();
+            WorkflowInstanceDTO workflow = workflowService.getWorkflowDetailsWithTasks(id, currentUserId);
             
-            // ✅ UPDATED: Get workflow through service first to ensure access control
-            WorkflowInstanceDTO workflow = workflowService.getWorkflowDetailsWithTasks(id, userPrincipal.getId());
-            
-            // Extract history from the workflow DTO
             List<Map<String, Object>> historyDTOs = new ArrayList<>();
             
             if (workflow.getHistory() != null && !workflow.getHistory().isEmpty()) {
@@ -269,7 +263,7 @@ public class WorkflowInstanceController {
     }
 
     /**
-     * ✅ UPDATED: Add comment to workflow instance - simplified implementation
+     * ✅ UPDATED: Add comment to workflow instance
      */
     @PreAuthorize("isAuthenticated()")
     @PostMapping("/{id}/comments")
@@ -282,13 +276,17 @@ public class WorkflowInstanceController {
                 return ResponseEntity.badRequest().body(Map.of("error", "Comment cannot be empty"));
             }
             
-            UserPrincipal userPrincipal = getCurrentUserPrincipal();
+            User currentUser = getCurrentUser();
             
             // ✅ Note: This functionality might need to be added to WorkflowService
-            // For now, return a placeholder response
+            log.info("💬 Adding comment to workflow {} by user {}", id, currentUser.getUsername());
+            
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
             response.put("message", "Comment functionality needs to be implemented in WorkflowService");
+            response.put("workflowId", id);
+            response.put("comment", comment);
+            response.put("addedBy", currentUser.getUsername());
             response.put("timestamp", LocalDateTime.now());
             
             return ResponseEntity.ok(response);
@@ -310,10 +308,8 @@ public class WorkflowInstanceController {
     @Transactional(readOnly = true)
     public ResponseEntity<List<String>> getWorkflowComments(@PathVariable Long id) {
         try {
-            UserPrincipal userPrincipal = getCurrentUserPrincipal();
-            
-            // ✅ UPDATED: Get workflow through service
-            WorkflowInstanceDTO workflow = workflowService.getWorkflowDetailsWithTasks(id, userPrincipal.getId());
+            Long currentUserId = getCurrentUserId();
+            WorkflowInstanceDTO workflow = workflowService.getWorkflowDetailsWithTasks(id, currentUserId);
             
             List<String> comments = new ArrayList<>();
             if (workflow.getComments() != null && !workflow.getComments().trim().isEmpty()) {
@@ -332,18 +328,19 @@ public class WorkflowInstanceController {
     }
 
     /**
-     * ✅ NEW: Get all user tasks with enhanced details
+     * ✅ UPDATED: Get all user tasks with enhanced details
      */
     @PreAuthorize("isAuthenticated()")
     @GetMapping("/tasks/mine")
     @Transactional(readOnly = true)
     public ResponseEntity<List<Map<String, Object>>> getMyTasks() {
         try {
-            UserPrincipal userPrincipal = getCurrentUserPrincipal();
+            Long currentUserId = getCurrentUserId();
             
-            // ✅ NEW: Use enhanced service method for detailed tasks
-            List<Map<String, Object>> tasks = workflowService.getMyTasksWithDetails(userPrincipal.getId());
+            log.info("📋 Fetching tasks for user ID: {}", currentUserId);
+            List<Map<String, Object>> tasks = workflowService.getMyTasksWithDetails(currentUserId);
             
+            log.info("✅ Retrieved {} tasks for user", tasks.size());
             return ResponseEntity.ok(tasks);
             
         } catch (Exception e) {
@@ -353,7 +350,7 @@ public class WorkflowInstanceController {
     }
 
     /**
-     * ✅ NEW: Process task action through service
+     * ✅ UPDATED: Process task action through service
      */
     @PreAuthorize("isAuthenticated()")
     @PutMapping("/tasks/{taskId}/action")
@@ -363,11 +360,11 @@ public class WorkflowInstanceController {
             @RequestParam String action,
             @RequestParam(required = false) String comments) {
         try {
-            UserPrincipal userPrincipal = getCurrentUserPrincipal();
+            log.info("🔄 Processing task action - TaskID: {}, Action: {}", taskId, action);
             
-            // ✅ NEW: Use enhanced service method for task processing
+            Long currentUserId = getCurrentUserId();
             Map<String, Object> result = workflowService.processTaskActionWithUser(
-                taskId, action, comments, userPrincipal.getId());
+                taskId, action, comments, currentUserId);
             
             return ResponseEntity.ok(result);
             
@@ -386,39 +383,137 @@ public class WorkflowInstanceController {
     }
 
     /**
-     * ✅ NEW: Get workflow statistics for dashboard
+     * ✅ UPDATED: Get workflow statistics for dashboard
      */
     @PreAuthorize("isAuthenticated()")
     @GetMapping("/statistics")
     @Transactional(readOnly = true)
     public ResponseEntity<Map<String, Object>> getWorkflowStatistics() {
         try {
-            UserPrincipal userPrincipal = getCurrentUserPrincipal();
+            log.info("📊 Fetching workflow statistics for current user");
             
-            // ✅ Get user workflows to calculate statistics
+            Long currentUserId = getCurrentUserId();
+            
+            // Get user workflows to calculate statistics
             Map<String, Object> workflowsResponse = workflowService.getUserWorkflowsWithDetails(
-                userPrincipal.getId(), 0, 1000, "All Statuses");
+                currentUserId, 0, 1000, "All Statuses");
             
             @SuppressWarnings("unchecked")
             List<WorkflowInstanceDTO> workflows = (List<WorkflowInstanceDTO>) workflowsResponse.get("workflows");
             
             Map<String, Object> stats = new HashMap<>();
             stats.put("totalWorkflows", workflows.size());
-            stats.put("inProgress", workflows.stream().filter(w -> w.getStatus() == WorkflowStatus.IN_PROGRESS).count());
-            stats.put("approved", workflows.stream().filter(w -> w.getStatus() == WorkflowStatus.APPROVED).count());
-            stats.put("rejected", workflows.stream().filter(w -> w.getStatus() == WorkflowStatus.REJECTED).count());
-            stats.put("cancelled", workflows.stream().filter(w -> w.getStatus() == WorkflowStatus.CANCELLED).count());
-            stats.put("pending", workflows.stream().filter(w -> w.getStatus() == WorkflowStatus.PENDING).count());
+            stats.put("inProgress", workflows.stream()
+                .mapToLong(w -> w.getStatus() == WorkflowStatus.IN_PROGRESS ? 1 : 0).sum());
+            stats.put("approved", workflows.stream()
+                .mapToLong(w -> w.getStatus() == WorkflowStatus.APPROVED ? 1 : 0).sum());
+            stats.put("rejected", workflows.stream()
+                .mapToLong(w -> w.getStatus() == WorkflowStatus.REJECTED ? 1 : 0).sum());
+            stats.put("cancelled", workflows.stream()
+                .mapToLong(w -> w.getStatus() == WorkflowStatus.CANCELLED ? 1 : 0).sum());
+            stats.put("pending", workflows.stream()
+                .mapToLong(w -> w.getStatus() == WorkflowStatus.PENDING ? 1 : 0).sum());
             
             // Task statistics
-            List<Map<String, Object>> tasks = workflowService.getMyTasksWithDetails(userPrincipal.getId());
+            List<Map<String, Object>> tasks = workflowService.getMyTasksWithDetails(currentUserId);
             stats.put("pendingTasks", tasks.size());
+            stats.put("timestamp", LocalDateTime.now());
             
             return ResponseEntity.ok(stats);
             
         } catch (Exception e) {
             log.error("❌ Error getting workflow statistics: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new HashMap<>());
+        }
+    }
+
+    /**
+     * ✅ NEW: Get workflow instances by status
+     */
+    @PreAuthorize("isAuthenticated()")
+    @GetMapping("/by-status/{status}")
+    @Transactional(readOnly = true)
+    public ResponseEntity<List<WorkflowInstanceDTO>> getWorkflowsByStatus(@PathVariable String status) {
+        try {
+            log.info("📂 Fetching workflows by status: {}", status);
+            
+            Long currentUserId = getCurrentUserId();
+            Map<String, Object> response = workflowService.getUserWorkflowsWithDetails(
+                currentUserId, 0, 1000, status);
+            
+            @SuppressWarnings("unchecked")
+            List<WorkflowInstanceDTO> workflows = (List<WorkflowInstanceDTO>) response.get("workflows");
+            
+            return ResponseEntity.ok(workflows);
+            
+        } catch (Exception e) {
+            log.error("❌ Error getting workflows by status {}: {}", status, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ArrayList<>());
+        }
+    }
+
+    /**
+     * ✅ NEW: Bulk workflow operations (for admin/manager users)
+     */
+    @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
+    @PostMapping("/bulk/{action}")
+    @Transactional
+    public ResponseEntity<Map<String, Object>> bulkWorkflowAction(
+            @PathVariable String action,
+            @RequestBody Map<String, Object> request) {
+        try {
+            @SuppressWarnings("unchecked")
+            List<Long> workflowIds = (List<Long>) request.get("workflowIds");
+            String reason = (String) request.get("reason");
+            
+            User currentUser = getCurrentUser();
+            log.info("🔄 Bulk action '{}' on {} workflows by user {}", 
+                action, workflowIds.size(), currentUser.getUsername());
+            
+            Map<String, Object> response = new HashMap<>();
+            List<Map<String, Object>> results = new ArrayList<>();
+            
+            for (Long workflowId : workflowIds) {
+                try {
+                    Map<String, Object> result = new HashMap<>();
+                    result.put("workflowId", workflowId);
+                    
+                    if ("cancel".equalsIgnoreCase(action)) {
+                        WorkflowInstanceDTO cancelled = workflowService.cancelWorkflow(workflowId, reason);
+                        result.put("success", true);
+                        result.put("status", cancelled.getStatus());
+                    } else {
+                        result.put("success", false);
+                        result.put("error", "Unsupported action: " + action);
+                    }
+                    
+                    results.add(result);
+                } catch (Exception e) {
+                    Map<String, Object> result = new HashMap<>();
+                    result.put("workflowId", workflowId);
+                    result.put("success", false);
+                    result.put("error", e.getMessage());
+                    results.add(result);
+                }
+            }
+            
+            response.put("action", action);
+            response.put("results", results);
+            response.put("total", workflowIds.size());
+            response.put("successful", results.stream().mapToLong(r -> 
+                (Boolean) r.get("success") ? 1 : 0).sum());
+            response.put("timestamp", LocalDateTime.now());
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            log.error("❌ Error in bulk workflow action: {}", e.getMessage(), e);
+            
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
+                "success", false,
+                "error", e.getMessage(),
+                "timestamp", LocalDateTime.now()
+            ));
         }
     }
 
@@ -450,25 +545,59 @@ public class WorkflowInstanceController {
             return true;
         }
         
+        // Search in status
+        if (workflow.getStatus() != null && workflow.getStatus().name().toLowerCase().contains(searchTerm)) {
+            return true;
+        }
+        
         return false;
     }
 
     /**
-     * ✅ Get current user principal
+     * ✅ FIXED: Get current user ID (removed unused UserPrincipal variable)
      */
-    private UserPrincipal getCurrentUserPrincipal() {
+    private Long getCurrentUserId() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !(auth.getPrincipal() instanceof UserPrincipal)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "No authenticated user");
         }
-        return (UserPrincipal) auth.getPrincipal();
+        
+        UserPrincipal userPrincipal = (UserPrincipal) auth.getPrincipal();
+        return userPrincipal.getId();
     }
 
     /**
-     * ✅ Get current user entity
+     * ✅ UPDATED: Get current user entity with Many-to-Many role support
      */
-    private User getCurrentUser(Long userId) {
+    private User getCurrentUser() {
+        Long userId = getCurrentUserId();
         return userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not found"));
+    }
+
+    /**
+     * ✅ NEW: Check if current user has specific role
+     */
+    private boolean currentUserHasRole(ERole role) {
+        try {
+            User currentUser = getCurrentUser();
+            return currentUser.hasRole(role);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * ✅ NEW: Get current user's role names as list
+     */
+    private List<String> getCurrentUserRoles() {
+        try {
+            User currentUser = getCurrentUser();
+            return currentUser.getRoles().stream()
+                .map(role -> role.getName().name())
+                .collect(Collectors.toList());
+        } catch (Exception e) {
+            return new ArrayList<>();
+        }
     }
 }

@@ -4,6 +4,7 @@ import com.clouddocs.backend.dto.DocumentDTO;
 import com.clouddocs.backend.dto.DocumentUploadRequest;
 import com.clouddocs.backend.entity.Document;
 import com.clouddocs.backend.entity.DocumentStatus;
+import com.clouddocs.backend.entity.ERole;
 import com.clouddocs.backend.entity.DocumentShareLink;
 import com.clouddocs.backend.entity.User;
 import com.clouddocs.backend.repository.DocumentRepository;
@@ -802,33 +803,38 @@ public DocumentDTO saveDocumentWithOCR(Object request, String username) {
     }
     
     private boolean canChangeDocumentStatus(User user) {
-        return user.getRole().name().equals("ADMIN") || user.getRole().name().equals("MANAGER");
-    }
+    // ✅ FIXED: Use hasRole() method for Many-to-Many system
+    return user.hasRole(ERole.ROLE_ADMIN) || user.hasRole(ERole.ROLE_MANAGER);
+}
     
     private boolean canDeleteDocument(Document document, User user) {
-        return user.getRole().name().equals("ADMIN") || 
-               document.getUploadedBy().getId().equals(user.getId());
-    }
+    // ✅ FIXED: Use hasRole() method for Many-to-Many system
+    return user.hasRole(ERole.ROLE_ADMIN) || 
+           document.getUploadedBy().getId().equals(user.getId());
+}
     
     private boolean canUpdateDocument(Document document, User user) {
-        return user.getRole().name().equals("ADMIN") || 
-               user.getRole().name().equals("MANAGER") ||
-               document.getUploadedBy().getId().equals(user.getId());
-    }
-    
-    private boolean canShareDocument(Document document, User user) {
-        return user.getRole().name().equals("ADMIN") || 
-               user.getRole().name().equals("MANAGER") ||
-               document.getUploadedBy().getId().equals(user.getId());
-    }
-    
-    private boolean canViewShareLinks(Document document, User user) {
-        return canShareDocument(document, user);
-    }
-    
-    private boolean canRevokeShareLink(DocumentShareLink shareLink, User user) {
-        return user.getRole().name().equals("ADMIN") || 
-               shareLink.getCreatedBy().getId().equals(user.getId()) ||
-               shareLink.getDocument().getUploadedBy().getId().equals(user.getId());
-    }
+    // ✅ FIXED: Use hasRole() method for Many-to-Many system
+    return user.hasRole(ERole.ROLE_ADMIN) || 
+           user.hasRole(ERole.ROLE_MANAGER) ||
+           document.getUploadedBy().getId().equals(user.getId());
+}
+
+private boolean canShareDocument(Document document, User user) {
+    // ✅ FIXED: Use hasRole() method for Many-to-Many system
+    return user.hasRole(ERole.ROLE_ADMIN) || 
+           user.hasRole(ERole.ROLE_MANAGER) ||
+           document.getUploadedBy().getId().equals(user.getId());
+}
+
+private boolean canViewShareLinks(Document document, User user) {
+    return canShareDocument(document, user);
+}
+
+private boolean canRevokeShareLink(DocumentShareLink shareLink, User user) {
+    // ✅ FIXED: Use hasRole() method for Many-to-Many system
+    return user.hasRole(ERole.ROLE_ADMIN) || 
+           shareLink.getCreatedBy().getId().equals(user.getId()) ||
+           shareLink.getDocument().getUploadedBy().getId().equals(user.getId());
+}
 }

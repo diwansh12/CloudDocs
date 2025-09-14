@@ -3,12 +3,15 @@ package com.clouddocs.backend.entity;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
-import java.time.LocalDateTime;
-import java.util.Collection;
-import java.util.List;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
+
+import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Entity
 @Table(name = "users")
@@ -35,19 +38,22 @@ public class User implements UserDetails {
     @Column(name = "phone_number")
     private String phoneNumber;
     
-    @Enumerated(EnumType.STRING)
-    private Role role;
+    // ✅ CHANGED: Many-to-Many relationship with roles
+    @ManyToMany(fetch = FetchType.EAGER)
+    @JoinTable(
+        name = "user_roles",
+        joinColumns = @JoinColumn(name = "user_id"),
+        inverseJoinColumns = @JoinColumn(name = "role_id")
+    )
+    private Set<Role> roles = new HashSet<>();
     
-    // ✅ FIXED: Automatic creation timestamp
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
     
-    // ✅ IMPROVED: Automatic update timestamp for login tracking
     @Column(name = "last_login")
     private LocalDateTime lastLogin;
     
-    // ✅ OPTIONAL: Auto-update timestamp for any entity changes
     @UpdateTimestamp
     @Column(name = "last_modified")
     private LocalDateTime lastModified;
@@ -55,42 +61,41 @@ public class User implements UserDetails {
     @Column(name = "profile_picture")
     private String profilePicture;
     
-    // ✅ FIXED: Use Boolean wrapper type instead of primitive boolean
     @Column(name = "active", nullable = false)
     private Boolean active = true;
     
-    // ✅ FIXED: Use Boolean wrapper type for enabled as well
     @Column(name = "enabled", nullable = false)
     private Boolean enabled = true;
     
-    // ✅ CONSTRUCTORS: Removed manual createdAt setting - @CreationTimestamp handles it
+    // Constructors
     public User() {}
     
     public User(String username, String email, String password) {
         this.username = username;
         this.email = email;
         this.password = password;
-        // ✅ REMOVED: this.createdAt = LocalDateTime.now(); - @CreationTimestamp handles this
         this.enabled = true;
         this.active = true;
+        this.roles = new HashSet<>();
     }
     
-    public User(String username, String email, String password, String firstName, String lastName, Role role) {
+    public User(String username, String email, String password, String firstName, String lastName) {
         this.username = username;
         this.email = email;
         this.password = password;
         this.firstName = firstName;
         this.lastName = lastName;
-        this.role = role;
-        // ✅ REMOVED: this.createdAt = LocalDateTime.now(); - @CreationTimestamp handles this
         this.enabled = true;
         this.active = true;
+        this.roles = new HashSet<>();
     }
     
-    // ✅ UserDetails implementation - unchanged
+    // ✅ UPDATED: UserDetails implementation for multiple roles
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
+        return roles.stream()
+            .map(role -> new SimpleGrantedAuthority(role.getName().name()))
+            .collect(Collectors.toSet());
     }
     
     @Override
@@ -107,7 +112,36 @@ public class User implements UserDetails {
         return enabled != null ? enabled : true; 
     }
     
-    // ✅ ALL GETTERS AND SETTERS - unchanged
+    // ✅ NEW: Roles management
+    public Set<Role> getRoles() { 
+        return roles; 
+    }
+    
+    public void setRoles(Set<Role> roles) { 
+        this.roles = roles != null ? roles : new HashSet<>(); 
+    }
+    
+    // ✅ UTILITY: Add/remove roles
+    public void addRole(Role role) {
+        if (role != null) {
+            this.roles.add(role);
+        }
+    }
+    
+    public void removeRole(Role role) {
+        this.roles.remove(role);
+    }
+    
+    public boolean hasRole(ERole roleName) {
+        return roles.stream().anyMatch(role -> role.getName() == roleName);
+    }
+    
+    // ✅ BACKWARD COMPATIBILITY: Get primary role
+    public ERole getPrimaryRole() {
+        return roles.isEmpty() ? ERole.ROLE_USER : roles.iterator().next().getName();
+    }
+    
+    // All existing getters and setters remain the same
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     
@@ -129,9 +163,6 @@ public class User implements UserDetails {
     public String getPhoneNumber() { return phoneNumber; }
     public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }
     
-    public Role getRole() { return role; }
-    public void setRole(Role role) { this.role = role; }
-    
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     
@@ -139,12 +170,11 @@ public class User implements UserDetails {
     public void setLastLogin(LocalDateTime lastLogin) { this.lastLogin = lastLogin; }
     
     public LocalDateTime getLastModified() { return lastModified; }
-    public void setLastModified(LocalDateTime lastModified) { this.lastModified = lastModified; }
+    public void setModified(LocalDateTime lastModified) { this.lastModified = lastModified; }
     
     public String getProfilePicture() { return profilePicture; }
     public void setProfilePicture(String profilePicture) { this.profilePicture = profilePicture; }
     
-    // ✅ FIXED: Boolean getters and setters with null safety
     public Boolean isActive() { 
         return active != null ? active : true; 
     }
@@ -161,7 +191,7 @@ public class User implements UserDetails {
         this.enabled = enabled != null ? enabled : true; 
     }
     
-    // ✅ UTILITY METHODS - unchanged
+    // Utility methods
     public String getFullName() {
         if (firstName == null && lastName == null) return username;
         return ((firstName != null ? firstName : "") + " " + (lastName != null ? lastName : "")).trim();

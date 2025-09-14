@@ -9,10 +9,11 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
- * ✅ ENHANCED: Production-ready utility class for mapping workflow entities to DTOs
+ * ✅ FIXED: Production-ready utility class for mapping workflow entities to DTOs
  * Includes comprehensive null checks, error handling, and enhanced data mapping
  */
 @Slf4j
@@ -51,7 +52,6 @@ public class WorkflowMapper {
             dto.setCreatedDate(instance.getCreatedDate());
 
             // ✅ Fix for "Last Updated stuck"
-            // If updatedDate is null, fall back to createdDate
             if (instance.getUpdatedDate() != null) {
                 dto.setUpdatedDate(instance.getUpdatedDate());
             } else {
@@ -176,7 +176,7 @@ public class WorkflowMapper {
     }
 
     /**
-     * ✅ FIXED: Map workflow tasks to DTOs - assuming WorkflowTaskDTO also uses OffsetDateTime
+     * ✅ FIXED: Map workflow tasks to DTOs
      */
     private static List<WorkflowTaskDTO> mapTasks(List<WorkflowTask> tasks) {
         List<WorkflowTaskDTO> taskDTOs = new ArrayList<>();
@@ -197,11 +197,10 @@ public class WorkflowMapper {
                 taskDTO.setAction(task.getAction());
                 taskDTO.setPriority(task.getPriority());
                 
-                // ✅ FIXED: Date information - no conversion needed if WorkflowTaskDTO uses OffsetDateTime
-                // If WorkflowTaskDTO still uses LocalDateTime, uncomment the .toLocalDateTime() calls:
-                taskDTO.setCreatedDate(task.getCreatedDate()); // Change to .toLocalDateTime() if DTO uses LocalDateTime
-                taskDTO.setDueDate(task.getDueDate()); // Change to .toLocalDateTime() if DTO uses LocalDateTime
-                taskDTO.setCompletedDate(task.getCompletedDate()); // Change to .toLocalDateTime() if DTO uses LocalDateTime
+                // ✅ FIXED: Date information
+                taskDTO.setCreatedDate(task.getCreatedDate());
+                taskDTO.setDueDate(task.getDueDate());
+                taskDTO.setCompletedDate(task.getCompletedDate());
 
                 // ✅ Enhanced: Assignee details with fallback
                 if (task.getAssignedTo() != null) {
@@ -244,7 +243,7 @@ public class WorkflowMapper {
     }
 
     /**
-     * ✅ FIXED: Map workflow history to DTOs - assuming WorkflowHistoryDTO also uses OffsetDateTime
+     * ✅ FIXED: Map workflow history to DTOs
      */
     private static List<WorkflowHistoryDTO> mapHistory(List<WorkflowHistory> historyList) {
         List<WorkflowHistoryDTO> historyDTOs = new ArrayList<>();
@@ -257,11 +256,7 @@ public class WorkflowMapper {
             try {
                 WorkflowHistoryDTO historyDTO = new WorkflowHistoryDTO();
                 historyDTO.setId(history.getId());
-                
-                // ✅ FIXED: Date - no conversion needed if WorkflowHistoryDTO uses OffsetDateTime
-                // If WorkflowHistoryDTO still uses LocalDateTime, uncomment the .toLocalDateTime() call:
-                historyDTO.setActionDate(history.getActionDate()); // Change to .toLocalDateTime() if DTO uses LocalDateTime
-                
+                historyDTO.setActionDate(history.getActionDate());
                 historyDTO.setDetails(history.getDetails());
                 historyDTO.setAction(history.getAction());
 
@@ -296,7 +291,7 @@ public class WorkflowMapper {
     }
 
     /**
-     * ✅ ENHANCED: Map workflow template steps to DTOs with error handling
+     * ✅ COMPILATION ERRORS FIXED: Map workflow template steps to DTOs
      */
     private static List<WorkflowStepDTO> mapSteps(WorkflowTemplate template) {
         List<WorkflowStepDTO> stepDTOs = new ArrayList<>();
@@ -314,22 +309,27 @@ public class WorkflowMapper {
                 stepDTO.setStepType(step.getStepType());
                 stepDTO.setSlaHours(step.getSlaHours());
 
-                // ✅ Enhanced: Map required roles safely
+                // ✅ COMPILATION ERRORS FIXED: Map required roles
                 List<String> requiredRoles = new ArrayList<>();
                 try {
+                    // Method 1: Check if step has WorkflowStepRole entities
                     if (step.getRoles() != null && !step.getRoles().isEmpty()) {
                         requiredRoles = step.getRoles().stream()
+                            .filter(Objects::nonNull)
                             .filter(stepRole -> stepRole.getRoleName() != null)
-                            .map(stepRole -> stepRole.getRoleName().name())
+                            .map(stepRole -> stepRole.getRoleName().getName().name()) // ✅ FIXED: Use getName().name()
                             .collect(Collectors.toList());
-                    } else if (step.getRequiredRoles() != null && !step.getRequiredRoles().isEmpty()) {
-                        // Fallback to getRequiredRoles method if available
+                    }
+                    // Method 2: Fallback - check if step has direct Role collection
+                    else if (step.getRequiredRoles() != null && !step.getRequiredRoles().isEmpty()) {
                         requiredRoles = step.getRequiredRoles().stream()
-                            .map(Enum::name)
+                            .filter(Objects::nonNull)
+                            .map(role -> role.getName().name()) // ✅ FIXED: Use getName().name()
                             .collect(Collectors.toList());
                     }
                 } catch (Exception e) {
                     log.debug("Could not map required roles for step {}: {}", step.getId(), e.getMessage());
+                    requiredRoles = new ArrayList<>();
                 }
                 
                 stepDTO.setRequiredRoles(requiredRoles);
@@ -337,11 +337,10 @@ public class WorkflowMapper {
                 
             } catch (Exception e) {
                 log.warn("Error mapping step {}: {}", step != null ? step.getId() : "null", e.getMessage());
-                // Continue with other steps
             }
         }
 
-        // ✅ Sort by step order
+        // Sort by step order
         stepDTOs.sort((a, b) -> {
             if (a.getStepOrder() == null) return 1;
             if (b.getStepOrder() == null) return -1;
@@ -369,5 +368,94 @@ public class WorkflowMapper {
             log.error("Failed to create even minimal DTO: {}", e.getMessage());
         }
         return dto;
+    }
+
+    /**
+     * ✅ FIXED: Helper method to safely map a single WorkflowTask to DTO
+     */
+    public static WorkflowTaskDTO toTaskDTO(WorkflowTask task) {
+        if (task == null) {
+            return null;
+        }
+
+        try {
+            WorkflowTaskDTO dto = new WorkflowTaskDTO();
+            dto.setId(task.getId());
+            dto.setTitle(task.getTitle() != null ? task.getTitle() : "Task");
+            dto.setDescription(task.getDescription());
+            dto.setStatus(task.getStatus());
+            dto.setAction(task.getAction());
+            dto.setPriority(task.getPriority());
+            dto.setCreatedDate(task.getCreatedDate());
+            dto.setDueDate(task.getDueDate());
+            dto.setCompletedDate(task.getCompletedDate());
+
+            // Assignee information
+            if (task.getAssignedTo() != null) {
+                dto.setAssignedToId(task.getAssignedTo().getId());
+                String assigneeName = task.getAssignedTo().getFullName();
+                if (assigneeName == null || assigneeName.trim().isEmpty()) {
+                    assigneeName = task.getAssignedTo().getUsername();
+                }
+                dto.setAssignedToName(assigneeName != null ? assigneeName : "Unknown User");
+            }
+
+            // Step information
+            if (task.getWorkflowStep() != null) {
+                dto.setStepOrder(task.getWorkflowStep().getStepOrder());
+                dto.setStepName(task.getWorkflowStep().getName() != null ? 
+                    task.getWorkflowStep().getName() : "Step " + task.getWorkflowStep().getStepOrder());
+            }
+
+            return dto;
+
+        } catch (Exception e) {
+            log.error("Error mapping WorkflowTask to DTO: {}", e.getMessage(), e);
+            return null;
+        }
+    }
+
+    /**
+     * ✅ COMPILATION ERRORS FIXED: Helper method to safely map a single WorkflowStep to DTO
+     */
+    public static WorkflowStepDTO toStepDTO(WorkflowStep step) {
+        if (step == null) {
+            return null;
+        }
+
+        try {
+            WorkflowStepDTO dto = new WorkflowStepDTO();
+            dto.setId(step.getId());
+            dto.setStepOrder(step.getStepOrder());
+            dto.setName(step.getName() != null ? step.getName() : "Step " + step.getStepOrder());
+            dto.setStepType(step.getStepType());
+            dto.setSlaHours(step.getSlaHours());
+
+            // ✅ COMPILATION ERRORS FIXED: Map required roles safely
+            List<String> requiredRoles = new ArrayList<>();
+            try {
+                if (step.getRoles() != null && !step.getRoles().isEmpty()) {
+                    requiredRoles = step.getRoles().stream()
+                        .filter(Objects::nonNull)
+                        .filter(stepRole -> stepRole.getRoleName() != null)
+                        .map(stepRole -> stepRole.getRoleName().getName().name()) // ✅ FIXED: Use getName().name()
+                        .collect(Collectors.toList());
+                } else if (step.getRequiredRoles() != null && !step.getRequiredRoles().isEmpty()) {
+                    requiredRoles = step.getRequiredRoles().stream()
+                        .filter(Objects::nonNull)
+                        .map(role -> role.getName().name()) // ✅ FIXED: Use getName().name()
+                        .collect(Collectors.toList());
+                }
+            } catch (Exception e) {
+                log.debug("Could not map required roles for step {}: {}", step.getId(), e.getMessage());
+            }
+
+            dto.setRequiredRoles(requiredRoles);
+            return dto;
+
+        } catch (Exception e) {
+            log.error("Error mapping WorkflowStep to DTO: {}", e.getMessage(), e);
+            return null;
+        }
     }
 }
