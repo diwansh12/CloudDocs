@@ -9,6 +9,10 @@ export interface OCRResult {
   filename: string;
   success: boolean;
   errorMessage?: string;
+   message?: string;              
+  reason?: string;              
+  alternative?: string;         
+  status?: string;   
 }
 
 export interface DocumentWithOCR {

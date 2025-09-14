@@ -191,3 +191,136 @@
 html {
   font-size: var(--font-size);
 }
+
+.message-container {
+  padding: 16px;
+  border-radius: 8px;
+  border-left: 4px solid;
+  margin: 16px 0;
+  transition: all 0.3s ease;
+}
+
+.message-container.success {
+  background-color: #f0f9f0;
+  border-color: #22c55e;
+  color: #166534;
+}
+
+.message-container.error {
+  background-color: #fef2f2;
+  border-color: #ef4444;
+  color: #991b1b;
+}
+
+.message-container.warning {
+  background-color: #fefce8;
+  border-color: #eab308;
+  color: #a16207;
+}
+
+.message-container.info {
+  background-color: #eff6ff;
+  border-color: #3b82f6;
+  color: #1e40af;
+}
+
+.message-text {
+  white-space: pre-line;
+  margin: 0;
+  font-family: inherit;
+  line-height: 1.6;
+  font-size: 14px;
+}
+
+/* Alternative Actions Styles */
+.alternative-actions {
+  padding: 20px;
+  background: #f8fafc;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  margin-top: 16px;
+}
+
+.alt-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  text-decoration: none;
+  text-align: center;
+  transition: all 0.3s ease;
+  font-weight: 500;
+  min-height: 100px;
+  justify-content: center;
+}
+
+.alt-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.alt-button p {
+  margin: 0;
+  opacity: 0.9;
+  font-weight: normal;
+}
+
+/* Loading Spinner Animation */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .alternative-actions .grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .alt-button {
+    min-height: 80px;
+  }
+  
+  .message-container {
+    padding: 12px;
+  }
+  
+  .message-text {
+    font-size: 13px;
+  }
+}
+
+/* Hover Effects */
+.transition-colors {
+  transition-property: color, background-color, border-color;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+/* Focus States */
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+
+/* Button States */
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+button:disabled:hover {
+  transform: none;
+  box-shadow: none;
+}
