@@ -171,7 +171,7 @@ ${document.alternative || 'All other features remain available'}`;
 
   const navigateToDocumentUpload = () => {
     // Navigate to regular document upload
-    window.location.href = '/upload';
+    window.location.href = '/documents/upload';
   };
 
   const navigateToSearch = () => {
