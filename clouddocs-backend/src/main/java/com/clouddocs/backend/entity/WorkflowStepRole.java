@@ -1,5 +1,7 @@
 package com.clouddocs.backend.entity;
 
+import com.clouddocs.backend.converter.ERoleConverter;
+
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -21,8 +23,8 @@ public class WorkflowStepRole {
     private WorkflowStep step;
 
     // ✅ FIXED: Using ERole enum
-    @Enumerated(EnumType.STRING)
-    @Column(name = "role_name", nullable = false)
+     @Convert(converter = ERoleConverter.class)
+    @Column(name = "role_name")
     private ERole roleName;
 
     // ✅ FIXED: Constructor now accepts ERole instead of Role
