@@ -35,9 +35,8 @@ public class SecurityConfig {
     @Value("${app.cors.allowed-origins:https://cloud-docs-tan.vercel.app,http://localhost:3000}")
     private String allowedOrigins;
 
-     @Bean
+    @Bean
     public PasswordEncoder passwordEncoder() {
-        // Production-grade BCrypt with strength 12 (recommended for 2024+)
         return new BCryptPasswordEncoder(12);
     }
 
@@ -91,15 +90,20 @@ public class SecurityConfig {
                     "/api/auth/**", "/auth/**"
                 ).permitAll()
                 
+                // ✅ CRITICAL: Database fix endpoint (temporary public access)
+                .requestMatchers("/api/admin/fix-roles").permitAll()
+                .requestMatchers("/admin/fix-roles").permitAll()
+                .requestMatchers("/public/fix-roles").permitAll()
+                
                 // ✅ CRITICAL: Public endpoints
                 .requestMatchers("/api/documents/shared/**").permitAll()
                 .requestMatchers("/api/users/profile/picture/**").permitAll()
                 
-                // ✅ FIXED: OCR endpoints - EXPLICIT MAPPING
+                // ✅ OCR and Search endpoints
                 .requestMatchers("/api/ocr/**").authenticated()
-                .requestMatchers("/api/search/**").authenticated()  // Add this line
+                .requestMatchers("/api/search/**").authenticated()
 
-                // ✅ FIXED: All API endpoints with proper /api/ prefix
+                // ✅ All API endpoints with proper /api/ prefix
                 .requestMatchers("/api/users/**").authenticated()
                 .requestMatchers("/api/documents/**").authenticated()
                 .requestMatchers("/api/dashboard/**").authenticated()
@@ -114,8 +118,9 @@ public class SecurityConfig {
                     "/notifications/**", "/settings/**", "/audit/**"
                 ).authenticated()
                 
-                // ✅ ADMIN: Admin-only endpoints
-                .requestMatchers("/admin/**", "/actuator/**").hasRole("ADMIN")
+                // ✅ ADMIN: Other admin endpoints (except fix-roles)
+                .requestMatchers("/admin/**").hasRole("ADMIN")
+                .requestMatchers("/actuator/**").hasRole("ADMIN")
                 
                 // ✅ TEST: Test endpoints
                 .requestMatchers("/test/**").permitAll()
@@ -129,7 +134,6 @@ public class SecurityConfig {
                     response.setContentType("application/json");
                     response.setCharacterEncoding("UTF-8");
                     
-                    // Dynamic CORS header
                     String origin = request.getHeader("Origin");
                     if (origin != null && (origin.contains("vercel.app") || origin.contains("localhost"))) {
                         response.setHeader("Access-Control-Allow-Origin", origin);
@@ -147,7 +151,6 @@ public class SecurityConfig {
                     response.setContentType("application/json");
                     response.setCharacterEncoding("UTF-8");
                     
-                    // Dynamic CORS header
                     String origin = request.getHeader("Origin");
                     if (origin != null && (origin.contains("vercel.app") || origin.contains("localhost"))) {
                         response.setHeader("Access-Control-Allow-Origin", origin);
