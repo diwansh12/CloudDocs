@@ -3,9 +3,7 @@ package com.clouddocs.backend.controller;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/public")
@@ -15,7 +13,16 @@ public class DatabaseFixController {
     private JdbcTemplate jdbcTemplate;
 
     @GetMapping("/fix-roles")
-    public ResponseEntity<String> fixRoles() {
+    public ResponseEntity<String> fixRolesGet() {
+        return fixRoles();
+    }
+
+    @PostMapping("/fix-roles")  
+    public ResponseEntity<String> fixRolesPost() {
+        return fixRoles();
+    }
+
+    private ResponseEntity<String> fixRoles() {
         StringBuilder result = new StringBuilder();
         
         try {
@@ -44,11 +51,10 @@ public class DatabaseFixController {
                 result.append("ROLE_MANAGER → MANAGER: ").append(safe1).append(" rows\n");
                 totalUpdated += safe1;
             } catch (Exception e) {
-                // Check if MANAGER already exists
+                // Check if MANAGER already exists - delete duplicates
                 Integer count = jdbcTemplate.queryForObject(
                     "SELECT COUNT(*) FROM roles WHERE name = 'MANAGER'", Integer.class);
                 if (count != null && count > 0) {
-                    // Delete old ROLE_MANAGER entries
                     Integer deleted = jdbcTemplate.update("DELETE FROM roles WHERE name = 'ROLE_MANAGER'");
                     result.append("Deleted duplicate ROLE_MANAGER: ").append(deleted != null ? deleted : 0).append(" rows\n");
                 }
@@ -112,3 +118,4 @@ public class DatabaseFixController {
         }
     }
 }
+
