@@ -16,36 +16,99 @@ public class DatabaseFixController {
 
     @GetMapping("/fix-roles")
     public ResponseEntity<String> fixRoles() {
+        StringBuilder result = new StringBuilder();
+        
         try {
-            // Store update results as Integer objects to handle potential nulls
-            Integer updated1 = jdbcTemplate.update("UPDATE roles SET name = 'MANAGER' WHERE name = 'ROLE_MANAGER'");
-            Integer updated2 = jdbcTemplate.update("UPDATE roles SET name = 'ADMIN' WHERE name = 'ROLE_ADMIN'");
-            Integer updated3 = jdbcTemplate.update("UPDATE roles SET name = 'USER' WHERE name = 'ROLE_USER'");
-
-            // Safely handle null values by defaulting to 0
-            int safeUpdated1 = updated1 != null ? updated1 : 0;
-            int safeUpdated2 = updated2 != null ? updated2 : 0;
-            int safeUpdated3 = updated3 != null ? updated3 : 0;
-
-            // Also fix workflow step roles if they exist
+            result.append("🔍 Database Role Fix Status:\n\n");
+            
+            // Test database connection
+            jdbcTemplate.queryForObject("SELECT 1", Integer.class);
+            result.append("✅ Database connection: OK\n\n");
+            
+            // Show current roles
+            result.append("📋 Current roles:\n");
+            jdbcTemplate.query("SELECT id, name FROM roles ORDER BY id", rs -> {
+                result.append(String.format("  ID: %d, Name: '%s'\n", 
+                    rs.getLong("id"), rs.getString("name")));
+            });
+            result.append("\n");
+            
+            // Apply fixes with safe handling
+            int totalUpdated = 0;
+            
+            // Handle ROLE_MANAGER -> MANAGER
+            try {
+                Integer updated1 = jdbcTemplate.update(
+                    "UPDATE roles SET name = 'MANAGER' WHERE name = 'ROLE_MANAGER'");
+                int safe1 = updated1 != null ? updated1 : 0;
+                result.append("ROLE_MANAGER → MANAGER: ").append(safe1).append(" rows\n");
+                totalUpdated += safe1;
+            } catch (Exception e) {
+                // Check if MANAGER already exists
+                Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM roles WHERE name = 'MANAGER'", Integer.class);
+                if (count != null && count > 0) {
+                    // Delete old ROLE_MANAGER entries
+                    Integer deleted = jdbcTemplate.update("DELETE FROM roles WHERE name = 'ROLE_MANAGER'");
+                    result.append("Deleted duplicate ROLE_MANAGER: ").append(deleted != null ? deleted : 0).append(" rows\n");
+                }
+            }
+            
+            // Handle ROLE_ADMIN -> ADMIN  
+            try {
+                Integer updated2 = jdbcTemplate.update(
+                    "UPDATE roles SET name = 'ADMIN' WHERE name = 'ROLE_ADMIN'");
+                int safe2 = updated2 != null ? updated2 : 0;
+                result.append("ROLE_ADMIN → ADMIN: ").append(safe2).append(" rows\n");
+                totalUpdated += safe2;
+            } catch (Exception e) {
+                Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM roles WHERE name = 'ADMIN'", Integer.class);
+                if (count != null && count > 0) {
+                    Integer deleted = jdbcTemplate.update("DELETE FROM roles WHERE name = 'ROLE_ADMIN'");
+                    result.append("Deleted duplicate ROLE_ADMIN: ").append(deleted != null ? deleted : 0).append(" rows\n");
+                }
+            }
+            
+            // Handle ROLE_USER -> USER
+            try {
+                Integer updated3 = jdbcTemplate.update(
+                    "UPDATE roles SET name = 'USER' WHERE name = 'ROLE_USER'");
+                int safe3 = updated3 != null ? updated3 : 0;
+                result.append("ROLE_USER → USER: ").append(safe3).append(" rows\n");
+                totalUpdated += safe3;
+            } catch (Exception e) {
+                Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM roles WHERE name = 'USER'", Integer.class);
+                if (count != null && count > 0) {
+                    Integer deleted = jdbcTemplate.update("DELETE FROM roles WHERE name = 'ROLE_USER'");
+                    result.append("Deleted duplicate ROLE_USER: ").append(deleted != null ? deleted : 0).append(" rows\n");
+                }
+            }
+            
+            // Fix workflow step roles if they exist
             try {
                 jdbcTemplate.update("UPDATE workflow_step_roles SET role_name = 'MANAGER' WHERE role_name = 'ROLE_MANAGER'");
                 jdbcTemplate.update("UPDATE workflow_step_roles SET role_name = 'ADMIN' WHERE role_name = 'ROLE_ADMIN'");
                 jdbcTemplate.update("UPDATE workflow_step_roles SET role_name = 'USER' WHERE role_name = 'ROLE_USER'");
+                result.append("✅ Workflow step roles updated\n");
             } catch (Exception e) {
-                // Workflow step roles table might not exist - that's okay
+                result.append("ℹ️ Workflow step roles table not found (OK)\n");
             }
-
-            int totalUpdated = safeUpdated1 + safeUpdated2 + safeUpdated3;
             
-            return ResponseEntity.ok("✅ Database roles fixed! Updated " + totalUpdated + " role records. " +
-                "ROLE_MANAGER→MANAGER: " + safeUpdated1 + ", " +
-                "ROLE_ADMIN→ADMIN: " + safeUpdated2 + ", " +
-                "ROLE_USER→USER: " + safeUpdated3);
-                
+            result.append("\n📋 Final roles:\n");
+            jdbcTemplate.query("SELECT id, name FROM roles ORDER BY id", rs -> {
+                result.append(String.format("  ID: %d, Name: '%s'\n", 
+                    rs.getLong("id"), rs.getString("name")));
+            });
+            
+            result.append("\n🎉 SUCCESS! Total updates: ").append(totalUpdated);
+            
+            return ResponseEntity.ok(result.toString());
+            
         } catch (Exception e) {
-            return ResponseEntity.status(500).body("❌ Error: " + e.getMessage() + 
-                "\nThis might be due to constraint violations. Check if 'MANAGER' already exists in your roles table.");
+            result.append("❌ ERROR: ").append(e.getMessage());
+            return ResponseEntity.status(500).body(result.toString());
         }
     }
 }
