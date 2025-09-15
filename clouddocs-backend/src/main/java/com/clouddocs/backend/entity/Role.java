@@ -5,6 +5,8 @@ import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 
+import com.clouddocs.backend.converter.ERoleConverter;
+
 @Entity
 @Table(name = "roles")
 public class Role {
@@ -13,9 +15,11 @@ public class Role {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     
-    @Enumerated(EnumType.STRING)
-    @Column(length = 20, unique = true)
-    private ERole name;
+    @Convert(converter = ERoleConverter.class)
+@Enumerated(EnumType.STRING)
+@Column(length = 20, unique = true)
+private ERole name;
+
     
     @Column(length = 100)
     private String description;
@@ -66,4 +70,6 @@ public class Role {
     public String toString() {
         return name != null ? name.name() : "UNKNOWN";
     }
+
+    
 }
