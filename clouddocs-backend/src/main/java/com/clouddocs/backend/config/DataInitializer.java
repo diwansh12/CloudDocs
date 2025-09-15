@@ -34,9 +34,9 @@ public class DataInitializer {
             User approver = userRepository.findByUsername("diwansh12").orElse(null);
 
             if (approver == null) {
-                // ✅ Fetch roles from database using RoleRepository
+                // ✅ FIXED: Use correct enum constant (ROLE_MANAGER, not MANAGER)
                 Role managerRole = roleRepository.findByName(ERole.ROLE_MANAGER)
-                    .orElseThrow(() -> new RuntimeException("ROLE_MANAGER not found in database"));
+                    .orElseThrow(() -> new RuntimeException("MANAGER role not found in database"));
 
                 approver = new User();
                 approver.setUsername("diwansh12");
@@ -72,13 +72,21 @@ public class DataInitializer {
     }
 
     /**
-     * ✅ FIXED: Initialize roles with proper existence check
+     * ✅ FIXED: Initialize roles with correct enum constants and existence check
      */
     private void initializeRoles(RoleRepository roleRepository) {
         System.out.println("🔧 Initializing roles...");
         
-        for (ERole eRole : ERole.values()) {
-            // ✅ FIXED: Use findByName instead of existsByName
+        // ✅ FIXED: Check if roles already exist to prevent duplicates
+        if (roleRepository.count() > 0) {
+            System.out.println("✅ Roles already exist, skipping role initialization");
+            return;
+        }
+        
+        // ✅ FIXED: Use correct enum constants (ROLE_ADMIN, ROLE_MANAGER, ROLE_USER)
+        ERole[] rolesToCreate = {ERole.ROLE_ADMIN, ERole.ROLE_MANAGER, ERole.ROLE_USER};
+        
+        for (ERole eRole : rolesToCreate) {
             if (!roleRepository.findByName(eRole).isPresent()) {
                 Role role = new Role();
                 role.setName(eRole);
@@ -92,7 +100,7 @@ public class DataInitializer {
     }
 
     /**
-     * ✅ Get default description for roles
+     * ✅ FIXED: Get default description using correct enum constants
      */
     private String getDefaultRoleDescription(ERole eRole) {
         return switch (eRole) {
@@ -103,7 +111,7 @@ public class DataInitializer {
     }
 
     /**
-     * ✅ FIXED: Complete workflow initialization with proper relationships
+     * ✅ FIXED: Complete workflow initialization with correct enum constants
      */
     private void initializeWorkflowTemplates(WorkflowTemplateRepository templateRepository,
                                            WorkflowStepRepository stepRepository,
@@ -121,17 +129,17 @@ public class DataInitializer {
         template.setDefaultSlaHours(48);
         template.setIsActive(true);
         
-        // ✅ FIXED: Initialize steps collection
+        // ✅ Initialize steps collection
         template.setSteps(new LinkedHashSet<>());
         
         template = templateRepository.save(template);
         System.out.println("✅ Created workflow template: " + template.getName());
 
-        // ✅ Fetch roles from database
+        // ✅ FIXED: Fetch roles using correct enum constants
         Role managerRole = roleRepository.findByName(ERole.ROLE_MANAGER)
-            .orElseThrow(() -> new RuntimeException("ROLE_MANAGER not found"));
+            .orElseThrow(() -> new RuntimeException("MANAGER role not found"));
         Role adminRole = roleRepository.findByName(ERole.ROLE_ADMIN)
-            .orElseThrow(() -> new RuntimeException("ROLE_ADMIN not found"));
+            .orElseThrow(() -> new RuntimeException("ADMIN role not found"));
 
         // ✅ FIXED: Step 1 creation with proper relationships
         WorkflowStep step1 = new WorkflowStep("Initial Review", 1, StepType.REVIEW);
@@ -141,21 +149,21 @@ public class DataInitializer {
         step1.setRequiredApprovals(1);
         step1.setSlaHours(24);
         
-        // ✅ FIXED: Use mutable HashSet instead of immutable Set.of()
+        // ✅ Use mutable HashSet
         Set<User> approvers1 = new HashSet<>();
         approvers1.add(approver);
         step1.setAssignedApprovers(approvers1);
         
-        // ✅ FIXED: Initialize roles collection
+        // ✅ Initialize roles collection
         step1.setRoles(new HashSet<>());
         
         step1 = stepRepository.save(step1);
         
-        // ✅ FIXED: Create step role relationship
+        // ✅ FIXED: Create step role relationship with correct enum constant
         WorkflowStepRole step1Role = new WorkflowStepRole(step1, managerRole.getName());
         stepRoleRepository.save(step1Role);
         
-        // ✅ CRITICAL: Add step to template's collection
+        // ✅ Add step to template's collection
         template.getSteps().add(step1);
         
         System.out.println("✅ Created step 1 '" + step1.getName() + "' with " + 
@@ -169,27 +177,27 @@ public class DataInitializer {
         step2.setRequiredApprovals(1);
         step2.setSlaHours(24);
         
-        // ✅ FIXED: Use mutable HashSet
+        // ✅ Use mutable HashSet
         Set<User> approvers2 = new HashSet<>();
         approvers2.add(approver);
         step2.setAssignedApprovers(approvers2);
         
-        // ✅ FIXED: Initialize roles collection
+        // ✅ Initialize roles collection
         step2.setRoles(new HashSet<>());
         
         step2 = stepRepository.save(step2);
         
-        // ✅ Create step role relationship
+        // ✅ FIXED: Create step role relationship with correct enum constant
         WorkflowStepRole step2Role = new WorkflowStepRole(step2, adminRole.getName());
         stepRoleRepository.save(step2Role);
         
-        // ✅ CRITICAL: Add step to template's collection
+        // ✅ Add step to template's collection
         template.getSteps().add(step2);
         
         System.out.println("✅ Created step 2 '" + step2.getName() + "' with " + 
             step2.getAssignedApprovers().size() + " direct approvers and role: " + adminRole.getName());
 
-        // ✅ CRITICAL: Save template with complete step relationships
+        // ✅ Save template with complete step relationships
         templateRepository.save(template);
         
         System.out.println("✅ Workflow template saved with " + template.getSteps().size() + " steps");
