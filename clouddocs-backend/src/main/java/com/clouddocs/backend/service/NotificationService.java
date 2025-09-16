@@ -7,11 +7,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalTime;
 
 @Service
@@ -25,8 +27,9 @@ public class NotificationService {
     @Autowired(required = false)
     private UserNotificationSettingsRepository settingsRepository;
     
-    @Autowired(required = false)
-    private JavaMailSender mailSender;
+    // ✅ NEW: SendGrid configuration (replacing JavaMailSender)
+    @Value("${sendgrid.api.key:}")
+    private String sendGridApiKey;
     
     @Value("${app.email.from:noreply@clouddocs.com}")
     private String fromEmail;
@@ -34,7 +37,7 @@ public class NotificationService {
     @Value("${app.base-url:https://cloud-docs-tan.vercel.app/}")
     private String baseUrl;
 
-    // ✅ KEEP: All your existing public methods
+    // ✅ KEEP: All your existing public methods unchanged
     public void sendTestNotification(User user, String title, String message) {
         if (user == null) {
             logger.warn("Cannot send test notification - user is null");
@@ -84,7 +87,6 @@ public class NotificationService {
         }
     }
 
-    // ✅ KEEP: All your workflow notification methods
     public void notifyTaskAssigned(User user, WorkflowTask task) {
         if (user == null || task == null) {
             logger.warn("Cannot send task assignment notification - user or task is null");
@@ -221,7 +223,7 @@ public class NotificationService {
         logger.info("Overdue task notification sent to user: {}", user.getUsername());
     }
 
-    // ✅ UPDATED: Multi-channel notification sender (EMAIL ONLY - No Firebase)
+    // ✅ UPDATED: Multi-channel notification using SendGrid
     @Async
     private void sendMultiChannelNotification(User user, Notification notification) {
         try {
@@ -234,15 +236,13 @@ public class NotificationService {
                 return;
             }
             
-            // ✅ KEEP: Email notifications only
+            // ✅ NEW: Email via SendGrid API (not SMTP)
             if (canSendEmail(user, settings)) {
                 boolean emailSent = sendEmailNotification(user, notification);
                 if (hasEnhancedFields(notification)) {
                     notification.setSentViaEmail(emailSent);
                 }
             }
-            
-           
             
             notificationRepository.save(notification);
             
@@ -251,49 +251,124 @@ public class NotificationService {
         }
     }
 
-    // ✅ KEEP: Email notification method (unchanged)
+    // ✅ UPDATED: SendGrid API email sending (replaces JavaMailSender)
     private boolean sendEmailNotification(User user, Notification notification) {
-        if (mailSender == null || user.getEmail() == null || user.getEmail().isBlank()) {
-            logger.debug("Skipping email notification - no mail sender or user email");
+        if (sendGridApiKey == null || sendGridApiKey.isBlank()) {
+            logger.warn("❌ SendGrid API key not configured - skipping email");
+            return false;
+        }
+        
+        if (user.getEmail() == null || user.getEmail().isBlank()) {
+            logger.warn("❌ User email is null/blank for user: {}", user.getUsername());
             return false;
         }
         
         try {
-            SimpleMailMessage message = new SimpleMailMessage();
-            message.setFrom(fromEmail);
-            message.setTo(user.getEmail());
-            message.setSubject("CloudDocs - " + notification.getTitle());
-            message.setText(buildEmailBody(notification, user));
+            logger.info("📧 Sending email via SendGrid API to: {}", user.getEmail());
             
-            mailSender.send(message);
-            logger.info("✅ Email sent to: {}", user.getEmail());
-            return true;
+            String subject = "CloudDocs - " + notification.getTitle();
+            String emailBody = buildEmailBody(notification, user);
+            
+            boolean success = sendViaSendGridAPI(user.getEmail(), subject, emailBody);
+            
+            if (success) {
+                logger.info("✅ Email sent successfully via SendGrid to: {}", user.getEmail());
+            } else {
+                logger.error("❌ SendGrid API call failed for: {}", user.getEmail());
+            }
+            
+            return success;
             
         } catch (Exception e) {
-            logger.error("❌ Failed to send email to: {}", user.getEmail(), e);
+            logger.error("❌ Failed to send email via SendGrid to: {} - Error: {}", user.getEmail(), e.getMessage());
             return false;
         }
     }
 
-    
+    // ✅ NEW: SendGrid HTTP API method
+    private boolean sendViaSendGridAPI(String to, String subject, String body) {
+        try {
+            // Escape JSON special characters
+            String escapedBody = body.replace("\\", "\\\\")
+                                   .replace("\"", "\\\"")
+                                   .replace("\n", "\\n")
+                                   .replace("\r", "\\r")
+                                   .replace("\t", "\\t");
+            
+            String jsonPayload = String.format("""
+                {
+                    "personalizations": [
+                        {
+                            "to": [{"email": "%s"}]
+                        }
+                    ],
+                    "from": {"email": "%s"},
+                    "subject": "%s",
+                    "content": [
+                        {
+                            "type": "text/plain",
+                            "value": "%s"
+                        }
+                    ]
+                }
+                """, to, fromEmail, subject, escapedBody);
+            
+            logger.debug("📧 SendGrid API payload prepared for: {}", to);
+            
+            URL url = new URL("https://api.sendgrid.com/v3/mail/send");
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Authorization", "Bearer " + sendGridApiKey);
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setDoOutput(true);
+            connection.setConnectTimeout(10000);
+            connection.setReadTimeout(10000);
+            
+            // Send JSON payload
+            try (OutputStream os = connection.getOutputStream()) {
+                byte[] input = jsonPayload.getBytes(StandardCharsets.UTF_8);
+                os.write(input, 0, input.length);
+            }
+            
+            int responseCode = connection.getResponseCode();
+            boolean success = responseCode >= 200 && responseCode < 300;
+            
+            if (success) {
+                logger.debug("📧 SendGrid API response code: {}", responseCode);
+            } else {
+                logger.error("❌ SendGrid API error - Response code: {}", responseCode);
+                // Try to read error response
+                try {
+                    String errorResponse = new String(connection.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+                    logger.error("❌ SendGrid API error response: {}", errorResponse);
+                } catch (Exception e) {
+                    logger.debug("Could not read error response");
+                }
+            }
+            
+            return success;
+            
+        } catch (Exception e) {
+            logger.error("❌ SendGrid API call exception: {}", e.getMessage());
+            return false;
+        }
+    }
 
-    // ✅ UPDATED: Helper methods (Firebase push removed)
+    // ✅ UPDATED: Helper methods (JavaMailSender removed)
     private UserNotificationSettings getUserSettings(User user) {
         if (settingsRepository == null) return null;
         return settingsRepository.findByUser(user).orElse(null);
     }
     
     private boolean canSendEmail(User user, UserNotificationSettings settings) {
-        if (mailSender == null || user.getEmail() == null || user.getEmail().isBlank()) {
+        if (user.getEmail() == null || user.getEmail().isBlank()) {
             return false;
         }
         if (settings == null) return true;
         return settings.getEmailEnabled() != null ? settings.getEmailEnabled() : true;
     }
     
-   
-    
-    // ✅ KEEP: All your existing helper methods
+    // ✅ KEEP: All existing helper methods unchanged
     private boolean isQuietHours(UserNotificationSettings settings) {
         if (settings == null) return false;
         
